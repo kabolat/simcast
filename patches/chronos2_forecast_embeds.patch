@@ -1,0 +1,27 @@
+diff --git a/src/chronos/chronos2/model.py b/src/chronos/chronos2/model.py
+--- a/src/chronos/chronos2/model.py
++++ b/src/chronos/chronos2/model.py
+@@ -200,5 +200,6 @@
+ class Chronos2Output(ModelOutput):
+     loss: torch.Tensor | None = None
+     quantile_preds: torch.Tensor | None = None
++    forecast_embeds: torch.Tensor | None = None
+     enc_time_self_attn_weights: tuple[torch.Tensor, ...] | None = None
+     enc_group_self_attn_weights: tuple[torch.Tensor, ...] | None = None
+@@ -708,6 +709,8 @@ class Chronos2Model(PreTrainedModel):
+         - quantile_preds: Quantile predictions of shape (batch_size, num_quantiles, num_output_patches * output_patch_size).
+             quantile_preds will contain an entry for every time series in the context batch regardless of whether it was a
+             known future covariate.
++        - forecast_embeds: Forecast-patch hidden representations of shape
++            (batch_size, num_output_patches, d_model).
+         - enc_time_self_attn_weights: Time self attention weights, if output_attentions=True
+         - enc_group_self_attn_weights: Group self attention weights, if output_attentions=True
+         """
+@@ -773,6 +776,7 @@ class Chronos2Model(PreTrainedModel):
+         return Chronos2Output(
+             loss=loss,
+             quantile_preds=quantile_preds,
++            forecast_embeds=forecast_embeds,
+             enc_time_self_attn_weights=encoder_outputs.all_time_self_attn_weights,
+             enc_group_self_attn_weights=encoder_outputs.all_group_self_attn_weights,
+         )
