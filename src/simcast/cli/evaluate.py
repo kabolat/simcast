@@ -459,7 +459,18 @@ def evaluate_from_config(
     coverage_key = f"coverage_{config.evaluation.interval_levels[-1]:g}"
     variable_rows: list[dict[str, Any]] = []
     for cardinality in config.evaluation.variable_k_sizes:
-        if cardinality >= len(all_entities):
+        if cardinality > len(all_entities):
+            continue
+        if cardinality == len(all_entities):
+            for name, result in results.items():
+                variable_rows.append(
+                    {
+                        "method": name,
+                        "entities": cardinality,
+                        "mean_pinball": result.aggregate.overall["mean_pinball"],
+                        coverage_key: result.aggregate.overall[coverage_key],
+                    }
+                )
             continue
         subset = all_entities[:cardinality]
         _, subset_truth, subset_predictions, _ = _test_arrays(library, subset)

@@ -43,7 +43,7 @@ def _config(tmp_path: Path) -> SimcastConfig:
                 "interval_levels": [0.8],
                 "scenario_batch_size": 2,
                 "joint_score_num_samples": 8,
-                "variable_k_sizes": [3],
+                "variable_k_sizes": [3, 4],
             },
             "output": {"root_dir": tmp_path / "runs"},
         }
@@ -74,3 +74,5 @@ def test_final_evaluation_writes_tables_figures_and_summary(tmp_path: Path) -> N
     assert (output / "resolved_config.yaml").is_file()
     assert (output / "figures" / "summary_coverage.png").is_file()
     assert (output / "figures" / "variable_cardinality.png").is_file()
+    variable_rows = (output / "variable_k.csv").read_text(encoding="utf-8").splitlines()
+    assert len(variable_rows) == 1 + 2 * 2
