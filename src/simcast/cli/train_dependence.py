@@ -21,6 +21,7 @@ import yaml  # type: ignore[import-untyped]
 from simcast.config import SimcastConfig, load_config
 from simcast.dependence import IndependentCopula, StaticGaussianCopula
 from simcast.dependence.conditional_low_rank import ConditionalLowRankGaussianCopula
+from simcast.dependence.set_aware_low_rank import SetAwareLowRankGaussianCopula
 from simcast.fm.cache import PITLibrary, load_pit_library
 from simcast.fm.feature_builder import FeatureBuilder
 from simcast.training import ConditionalTrainer, DependenceCollator, DependenceDataset
@@ -124,11 +125,12 @@ def _arrays(library: PITLibrary, indices: np.ndarray) -> tuple[torch.Tensor, tor
     )
 
 
-def _train_conditional_low_rank(
+def _train_conditional(
     config: SimcastConfig,
     library: PITLibrary,
     run_dir: Path,
     entity_ids: list[str],
+    method: str,
 ) -> None:
     train_indices = _split_indices(library, "train")
     validation_indices = _split_indices(library, "validation")
@@ -141,16 +143,37 @@ def _train_conditional_low_rank(
     builder = _feature_builder(config, library)
     train_features = builder.fit_transform(train_embeddings, train_predictions, levels, locations)
     validation_features = builder.transform(validation_embeddings, validation_predictions, levels, locations)
-    model_config = config.dependence.conditional_low_rank
-    model = ConditionalLowRankGaussianCopula(
-        input_dim=train_features.shape[-1],
-        latent_rank=model_config.latent_rank,
-        hidden_dims=model_config.hidden_dims,
-        dropout=model_config.dropout,
-        layer_norm=config.features.layer_normalize_embedding,
-        sigma_floor=model_config.sigma_floor,
-        jitter=model_config.jitter,
-    )
+    if method == "conditional_low_rank":
+        m2_config = config.dependence.conditional_low_rank
+        conditional_model = ConditionalLowRankGaussianCopula(
+            input_dim=train_features.shape[-1],
+            latent_rank=m2_config.latent_rank,
+            hidden_dims=m2_config.hidden_dims,
+            dropout=m2_config.dropout,
+            layer_norm=config.features.layer_normalize_embedding,
+            sigma_floor=m2_config.sigma_floor,
+            jitter=m2_config.jitter,
+        )
+        model: torch.nn.Module = conditional_model
+        model_kwargs = conditional_model.model_kwargs
+        model_jitter = m2_config.jitter
+    elif method == "set_aware_low_rank":
+        m3_config = config.dependence.set_aware_low_rank
+        set_model = SetAwareLowRankGaussianCopula(
+            input_dim=train_features.shape[-1],
+            model_dim=m3_config.model_dim,
+            num_layers=m3_config.num_layers,
+            num_heads=m3_config.num_heads,
+            latent_rank=m3_config.latent_rank,
+            dropout=m3_config.dropout,
+            sigma_floor=m3_config.sigma_floor,
+            jitter=m3_config.jitter,
+        )
+        model = set_model
+        model_kwargs = set_model.model_kwargs
+        model_jitter = m3_config.jitter
+    else:
+        raise ValueError(f"unsupported conditional method: {method}")
     device = config.chronos.device if torch.cuda.is_available() else "cpu"
     trainer = ConditionalTrainer(
         batch_size=config.training.batch_size,
@@ -159,7 +182,7 @@ def _train_conditional_low_rank(
         weight_decay=config.training.weight_decay,
         gradient_clip_norm=config.training.gradient_clip_norm,
         patience=config.training.patience,
-        jitter=model_config.jitter,
+        jitter=model_jitter,
         seed=config.seed,
         device=device,
     )
@@ -174,8 +197,8 @@ def _train_conditional_low_rank(
     def checkpoint_payload() -> dict[str, object]:
         return {
             "schema_version": 1,
-            "method": "conditional_low_rank",
-            "model_kwargs": model.model_kwargs,
+            "method": method,
+            "model_kwargs": model_kwargs,
             "feature_builder": builder.state_dict(),
             "entity_ids": entity_ids,
         }
@@ -188,7 +211,12 @@ def _train_conditional_low_rank(
         training_collator=collator,
         checkpoint_payload=checkpoint_payload,
     )
-    LOGGER.info("M2 best validation pseudo-NLL %.6f at epoch %d", result.best_validation_nll, result.best_epoch)
+    LOGGER.info(
+        "%s best validation pseudo-NLL %.6f at epoch %d",
+        method,
+        result.best_validation_nll,
+        result.best_epoch,
+    )
 
 
 def train_from_config(
@@ -197,7 +225,7 @@ def train_from_config(
     cache_dir: str | Path | None = None,
     output_dir: str | Path | None = None,
 ) -> Path:
-    """Fit M0, M1, or M2 without opening sealed test labels."""
+    """Fit M0 through M3 without opening sealed test labels."""
 
     _seed_everything(config.seed, config.runtime.deterministic)
     cache_path = _cache_path(config, cache_dir)
@@ -218,10 +246,10 @@ def train_from_config(
             jitter=settings.jitter,
         ).fit(train_z, entity_ids)
         model.save(run_dir / "model.npz")
-    elif method == "conditional_low_rank":
-        _train_conditional_low_rank(config, library, run_dir, entity_ids)
-    elif method in {"set_aware_low_rank", "conditional_kernel"}:
-        raise NotImplementedError(f"{method} is implemented in a later milestone")
+    elif method in {"conditional_low_rank", "set_aware_low_rank"}:
+        _train_conditional(config, library, run_dir, entity_ids, method)
+    elif method == "conditional_kernel":
+        raise NotImplementedError("conditional_kernel is implemented in the bounded smoke milestone")
     else:
         raise ValueError(f"unknown dependence method: {method}")
     return run_dir

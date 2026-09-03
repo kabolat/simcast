@@ -10,6 +10,7 @@ import torch
 from torch import nn
 
 from simcast.dependence.conditional_low_rank import ConditionalLowRankGaussianCopula
+from simcast.dependence.set_aware_low_rank import SetAwareLowRankGaussianCopula
 from simcast.fm.feature_builder import FeatureBuilder
 
 
@@ -41,6 +42,8 @@ def load_conditional_checkpoint(
         raise ValueError("conditional checkpoint has invalid entity IDs")
     if method == "conditional_low_rank":
         model: nn.Module = ConditionalLowRankGaussianCopula(**kwargs)
+    elif method == "set_aware_low_rank":
+        model = SetAwareLowRankGaussianCopula(**kwargs)
     else:
         raise ValueError(f"unsupported conditional checkpoint method: {method}")
     model.load_state_dict(state)

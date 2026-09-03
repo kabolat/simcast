@@ -38,6 +38,13 @@ def _config(tmp_path: Path, method: str) -> SimcastConfig:
             "dependence": {
                 "method": method,
                 "conditional_low_rank": {"hidden_dims": [8], "latent_rank": 2, "dropout": 0.0},
+                "set_aware_low_rank": {
+                    "model_dim": 8,
+                    "num_layers": 1,
+                    "num_heads": 2,
+                    "latent_rank": 2,
+                    "dropout": 0.0,
+                },
             },
             "features": {"use_location": True},
             "subset_training": {"enabled": False},
@@ -69,4 +76,16 @@ def test_train_and_restore_conditional_model(tmp_path: Path) -> None:
     loaded = load_conditional_checkpoint(run / "best.pt")
     assert loaded.method == "conditional_low_rank"
     assert loaded.entity_ids == ("e-0", "e-1", "e-2", "e-3")
+    assert torch.isfinite(loaded.model(torch.randn(2, 4, 13))).all()
+
+
+def test_train_and_restore_set_aware_model(tmp_path: Path) -> None:
+    cache = _cache(tmp_path / "cache")
+    run = train_from_config(
+        _config(tmp_path, "set_aware_low_rank"),
+        cache_dir=cache,
+        output_dir=tmp_path / "m3",
+    )
+    loaded = load_conditional_checkpoint(run / "best.pt")
+    assert loaded.method == "set_aware_low_rank"
     assert torch.isfinite(loaded.model(torch.randn(2, 4, 13))).all()
