@@ -23,7 +23,7 @@ from simcast.data.liander2024 import load_entity_frame
 from simcast.data.windows import ChronologicalSplit, ForecastWindow, build_aligned_group_windows, chronological_split
 from simcast.fm.cache import build_cache_dataset, save_pit_library
 from simcast.fm.diagnostics import compute_marginal_diagnostics
-from simcast.fm.pit import build_group_pit
+from simcast.fm.pit import build_group_pit, repair_quantiles_isotonic
 from simcast.types import EntityGroup, EntityMetadata
 
 LOGGER = logging.getLogger(__name__)
@@ -382,6 +382,10 @@ def build_cache_from_config(
     )
     pit_u = pit.u.cpu().numpy().astype(np.float32, copy=False)
     pit_z = pit.z.cpu().numpy().astype(np.float32, copy=False)
+    if config.pit.monotone_repair == "isotonic":
+        quantile_predictions = (
+            repair_quantiles_isotonic(torch.from_numpy(quantile_predictions)).numpy().astype(np.float32, copy=False)
+        )
     valid_origin_lead = pit.valid_origin_lead.cpu().numpy()
     dropped_vectors = int((~valid_origin_lead).sum())
     diagnostics = pit.crossing_diagnostics

@@ -23,8 +23,9 @@ class _MockForecast:
 
 
 class _MockForecaster:
-    def __init__(self) -> None:
+    def __init__(self, *, crossed: bool = False) -> None:
         self.calls = 0
+        self.crossed = crossed
 
     def predict(
         self,
@@ -40,6 +41,8 @@ class _MockForecaster:
         medians = torch.tensor([float(np.asarray(item["target"])[-1]) for item in inputs])
         medians = medians[:, None].expand(-1, prediction_length)
         predictions = torch.stack((medians - 1.0, medians - 0.5, medians, medians + 0.5, medians + 1.0), -1)
+        if self.crossed:
+            predictions[..., 1] = medians + 0.5
         return _MockForecast(
             entity_ids=list(entity_ids),
             quantile_levels=torch.tensor([0.1, 0.25, 0.5, 0.75, 0.9]),
@@ -49,7 +52,7 @@ class _MockForecaster:
         )
 
 
-def _config(tmp_path: Path) -> SimcastConfig:
+def _config(tmp_path: Path, *, monotone_repair: str = "none") -> SimcastConfig:
     return SimcastConfig.model_validate(
         {
             "data": {"local_dir": str(tmp_path), "entity_type": "transformer"},
@@ -63,6 +66,7 @@ def _config(tmp_path: Path) -> SimcastConfig:
             "covariates": {"weather": ["temperature_2m"], "calendar": {"enabled": False}},
             "split": {"tune_fraction": 0.8, "validation_fraction_within_tune": 0.2},
             "chronos": {"batch_size": 16},
+            "pit": {"monotone_repair": monotone_repair},
             "evaluation": {"interval_levels": [0.5, 0.8]},
             "output": {"cache_dir": str(tmp_path / "cache")},
         }
@@ -120,3 +124,19 @@ def test_mocked_cache_pipeline_seals_test_truth(monkeypatch, tmp_path: Path) -> 
     assert np.isfinite(evaluation.test_data()["true_y"]).all()
     assert (destination / "marginal_diagnostics.json").is_file()
     assert (destination / "resolved_config.json").is_file()
+
+
+def test_isotonic_cache_persists_repaired_quantiles(monkeypatch, tmp_path: Path) -> None:
+    group, frames = _fixtures()
+    monkeypatch.setattr(cache_cli, "build_entity_group", lambda *_args, **_kwargs: group)
+    monkeypatch.setattr(cache_cli, "_load_frames", lambda *_args, **_kwargs: frames)
+    destination = cache_cli.build_cache_from_config(
+        _config(tmp_path, monotone_repair="isotonic"),
+        forecaster=_MockForecaster(crossed=True),
+        output_dir=tmp_path / "repaired-library",
+    )
+
+    library = load_pit_library(destination)
+    predictions = library.dataset["quantile_prediction"].values
+    assert np.all(np.diff(predictions, axis=-1) >= 0)
+    assert library.metadata["pit"]["crossing_frequency"] > 0
