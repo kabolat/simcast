@@ -1,0 +1,7 @@
+extends: liander2024_transformer.yaml
+
+dependence:
+  method: static_gaussian
+
+output:
+  experiment_name: static_gaussian

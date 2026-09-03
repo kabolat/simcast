@@ -1,0 +1,7 @@
+extends: liander2024_transformer.yaml
+
+dependence:
+  method: independent
+
+output:
+  experiment_name: independent

@@ -1,0 +1,138 @@
+seed: 42
+
+data:
+  dataset_id: OpenSTEF/liander2024-energy-forecasting-benchmark
+  revision: dce7fe9bbae0d62288986fa97fa1ee7e9d3b7044
+  local_dir: ${SIMCAST_DATA_DIR:-data/liander2024}
+  entity_type: transformer
+  target_column: load
+  include_epex: false
+  include_profiles: false
+
+forecast:
+  timezone: UTC
+  frequency_minutes: 15
+  origin_time: "23:45"
+  lookback_steps: 672
+  horizon_steps: 96
+  origin_stride_steps: 96
+
+covariates:
+  weather:
+    - temperature_2m
+    - relative_humidity_2m
+    - cloud_cover
+    - wind_speed_10m
+    - shortwave_radiation
+  calendar:
+    enabled: true
+    include_hour: true
+    include_day_of_week: true
+    include_day_of_year: true
+  epex:
+    enabled: false
+  profiles:
+    enabled: false
+
+split:
+  tune_fraction: 0.80
+  validation_fraction_within_tune: 0.20
+  purge_overlapping_horizons: true
+
+chronos:
+  source_url: https://github.com/amazon-science/chronos-forecasting.git
+  source_revision: 8589d1988e9676817548e9626738ff06b6ca6370
+  model_id: amazon/chronos-2
+  model_revision: 29ec3766d36d6f73f0696f85560a422f50e8498c
+  device: ${SIMCAST_DEVICE:-cuda}
+  dtype: bfloat16
+  batch_size: 16
+  cross_learning: false
+
+pit:
+  mode: discretized
+  monotone_repair: none
+  eps: 1.0e-7
+
+features:
+  use_forecast_embedding: true
+  layer_normalize_embedding: true
+  use_quantile_shape: true
+  use_median: true
+  use_log_spread: true
+  use_within_patch_position: true
+  use_location: true
+  use_entity_id_embedding: false
+  shape_eps: 1.0e-6
+  standardize_scalar_features: true
+
+dependence:
+  method: independent
+  independent: {}
+  static_gaussian:
+    shrinkage: ledoit_wolf
+    share_across_leads: false
+    jitter: 1.0e-6
+  conditional_low_rank:
+    latent_rank: 4
+    hidden_dims: [256, 128]
+    activation: gelu
+    dropout: 0.1
+    sigma_floor: 1.0e-3
+    jitter: 1.0e-6
+  set_aware_low_rank:
+    model_dim: 128
+    num_layers: 2
+    num_heads: 4
+    latent_rank: 4
+    dropout: 0.1
+    sigma_floor: 1.0e-3
+    jitter: 1.0e-6
+  conditional_kernel:
+    hidden_dims: [256, 128]
+    embedding_dim: 16
+    activation: gelu
+    dropout: 0.1
+    initial_length_scale: 1.0
+    nugget: 1.0e-3
+    jitter: 1.0e-6
+    smoke_only: true
+    smoke_max_origins: 32
+
+subset_training:
+  enabled: true
+  min_entities: 4
+  full_group_probability: 0.25
+
+training:
+  optimizer: adamw
+  batch_size: 64
+  epochs: 100
+  learning_rate: 1.0e-3
+  weight_decay: 1.0e-4
+  gradient_clip_norm: 1.0
+  patience: 12
+
+sampling:
+  num_samples: 4096
+  empirical_quantile_method: nearest
+  common_random_numbers: true
+
+evaluation:
+  quantile_levels: [0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95]
+  interval_levels: [0.50, 0.80, 0.90]
+  energy_score: true
+  variogram_score: true
+  variogram_power: 0.5
+  report_by_lead: true
+
+runtime:
+  deterministic: true
+  num_workers: 0
+  log_level: INFO
+
+output:
+  root_dir: runs
+  cache_dir: artifacts/cache
+  experiment_name: null
+  save_resolved_config: true

@@ -1,0 +1,17 @@
+extends: liander2024_transformer.yaml
+
+dependence:
+  method: conditional_kernel
+  conditional_kernel:
+    smoke_only: true
+    smoke_max_origins: 32
+
+subset_training:
+  enabled: false
+
+training:
+  epochs: 5
+  patience: 2
+
+output:
+  experiment_name: conditional_kernel_smoke

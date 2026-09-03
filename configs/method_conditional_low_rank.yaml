@@ -1,0 +1,7 @@
+extends: liander2024_transformer.yaml
+
+dependence:
+  method: conditional_low_rank
+
+output:
+  experiment_name: conditional_low_rank

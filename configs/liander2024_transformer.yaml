@@ -1,0 +1,8 @@
+extends: base.yaml
+
+data:
+  entity_type: transformer
+  local_dir: ${SIMCAST_DATA_DIR:-data/liander2024}
+
+output:
+  experiment_name: liander2024_transformer
