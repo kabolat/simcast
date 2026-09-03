@@ -51,8 +51,7 @@ def _level_index(levels: np.ndarray, requested: float, label: str) -> int:
     matches = np.flatnonzero(np.isclose(levels, requested, rtol=0.0, atol=1.0e-6))
     if matches.size != 1:
         raise ValueError(
-            f"{label} {requested:g} is not a native quantile level; "
-            "marginal diagnostics do not interpolate quantiles"
+            f"{label} {requested:g} is not a native quantile level; marginal diagnostics do not interpolate quantiles"
         )
     return int(matches[0])
 

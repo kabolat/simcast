@@ -46,7 +46,7 @@ chronos:
   model_revision: 29ec3766d36d6f73f0696f85560a422f50e8498c
   device: ${SIMCAST_DEVICE:-cuda}
   dtype: bfloat16
-  batch_size: 16
+  batch_size: 256
   cross_learning: false
 
 pit:
@@ -125,6 +125,9 @@ evaluation:
   variogram_score: true
   variogram_power: 0.5
   report_by_lead: true
+  scenario_batch_size: 16
+  joint_score_num_samples: 512
+  variable_k_sizes: [3, 7, 15]
 
 runtime:
   deterministic: true
@@ -134,5 +137,6 @@ runtime:
 output:
   root_dir: runs
   cache_dir: artifacts/cache
+  cache_name: null
   experiment_name: null
   save_resolved_config: true

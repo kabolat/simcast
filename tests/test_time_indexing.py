@@ -92,9 +92,7 @@ def test_aligned_builder_keeps_static_group_only_when_every_entity_is_eligible()
         is_entity_eligible=eligible,
     )
 
-    assert [window.origin_timestamp for window in windows] == [
-        pd.Timestamp("2025-01-01 00:30", tz="UTC")
-    ]
+    assert [window.origin_timestamp for window in windows] == [pd.Timestamp("2025-01-01 00:30", tz="UTC")]
     assert all(window.entity_ids == ("transformer::a", "transformer::b") for window in windows)
     assert ("transformer::a", rejected_origin) in calls
     assert ("transformer::b", rejected_origin) in calls

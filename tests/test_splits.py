@@ -59,21 +59,11 @@ def test_stride_shorter_than_horizon_purges_earlier_boundaries() -> None:
     assert split.purged_validation == tuple(origins[7:9])
     assert split.test == tuple(origins[9:])
 
-    train_targets = {
-        origin + lead * pd.Timedelta(minutes=15)
-        for origin in split.train
-        for lead in range(1, 6)
-    }
+    train_targets = {origin + lead * pd.Timedelta(minutes=15) for origin in split.train for lead in range(1, 6)}
     validation_targets = {
-        origin + lead * pd.Timedelta(minutes=15)
-        for origin in split.validation
-        for lead in range(1, 6)
+        origin + lead * pd.Timedelta(minutes=15) for origin in split.validation for lead in range(1, 6)
     }
-    test_targets = {
-        origin + lead * pd.Timedelta(minutes=15)
-        for origin in split.test
-        for lead in range(1, 6)
-    }
+    test_targets = {origin + lead * pd.Timedelta(minutes=15) for origin in split.test for lead in range(1, 6)}
     assert train_targets.isdisjoint(validation_targets)
     assert validation_targets.isdisjoint(test_targets)
 

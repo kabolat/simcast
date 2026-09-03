@@ -44,6 +44,7 @@ def evaluate_aggregate_ensemble(
     quantile_levels: torch.Tensor,
     *,
     interval_coverages: tuple[float, ...] = (0.5, 0.8, 0.9),
+    valid_mask: torch.Tensor | None = None,
 ) -> AggregateEvaluation:
     """Evaluate samples shaped ``[origin, lead, sample]`` against ``[origin, lead]``."""
 
@@ -52,19 +53,27 @@ def evaluate_aggregate_ensemble(
     levels = torch.as_tensor(quantile_levels, dtype=samples.dtype, device=samples.device)
     if samples.ndim != 3 or samples.shape[:-1] != truth.shape:
         raise ValueError("expected aggregate_samples [origin, lead, sample] and truth [origin, lead]")
-    if not bool(torch.isfinite(samples).all()) or not bool(torch.isfinite(truth).all()):
-        raise ValueError("aggregate evaluation requires complete finite cases")
+    finite = torch.isfinite(samples).all(dim=-1) & torch.isfinite(truth)
+    if valid_mask is None:
+        valid = finite
+    else:
+        supplied = torch.as_tensor(valid_mask, dtype=torch.bool, device=samples.device)
+        if supplied.shape != truth.shape:
+            raise ValueError("valid_mask must match [origin, lead]")
+        valid = supplied & finite
+    if not bool(valid.any()):
+        raise ValueError("aggregate evaluation has no complete finite cases")
 
     quantiles = empirical_quantiles(samples, levels)
     pinball = pinball_loss(truth, quantiles, levels, reduction="none")
     crps = crps_ensemble(samples, truth)
     median = empirical_quantiles(samples, samples.new_tensor([0.5]))[..., 0]
     overall: dict[str, float] = {
-        "mean_pinball": float(pinball.mean()),
-        "crps": float(crps.mean()),
+        "mean_pinball": float(pinball[valid].mean()),
+        "crps": float(crps[valid].mean()),
     }
     for index, level in enumerate(levels):
-        overall[f"pinball_q{float(level):g}"] = float(pinball[..., index].mean())
+        overall[f"pinball_q{float(level):g}"] = float(pinball[..., index][valid].mean())
 
     lower_columns: list[torch.Tensor] = []
     upper_columns: list[torch.Tensor] = []
@@ -85,29 +94,32 @@ def evaluate_aggregate_ensemble(
         width_arrays.append(width)
         interval_scores.append(score)
         suffix = f"{coverage:g}"
-        overall[f"coverage_{suffix}"] = float(covered.float().mean())
-        overall[f"interval_width_{suffix}"] = float(width.mean())
-        overall[f"interval_score_{suffix}"] = float(score.mean())
+        overall[f"coverage_{suffix}"] = float(covered[valid].float().mean())
+        overall[f"interval_width_{suffix}"] = float(width[valid].mean())
+        overall[f"interval_score_{suffix}"] = float(score[valid].mean())
     lowers = torch.stack(lower_columns, dim=-1)
     uppers = torch.stack(upper_columns, dim=-1)
     wis = weighted_interval_score(truth, median, lowers, uppers, coverages)
-    overall["weighted_interval_score"] = float(wis.mean())
+    overall["weighted_interval_score"] = float(wis[valid].mean())
 
     rows: list[dict[str, float | int]] = []
     for lead_index in range(samples.shape[1]):
+        lead_valid = valid[:, lead_index]
+        if not bool(lead_valid.any()):
+            continue
         row: dict[str, float | int] = {
             "lead": lead_index + 1,
-            "mean_pinball": float(pinball[:, lead_index].mean()),
-            "crps": float(crps[:, lead_index].mean()),
-            "weighted_interval_score": float(wis[:, lead_index].mean()),
+            "mean_pinball": float(pinball[:, lead_index][lead_valid].mean()),
+            "crps": float(crps[:, lead_index][lead_valid].mean()),
+            "weighted_interval_score": float(wis[:, lead_index][lead_valid].mean()),
         }
         for coverage, covered, width, score in zip(
             interval_coverages, coverage_arrays, width_arrays, interval_scores, strict=True
         ):
             suffix = f"{coverage:g}"
-            row[f"coverage_{suffix}"] = float(covered[:, lead_index].float().mean())
-            row[f"interval_width_{suffix}"] = float(width[:, lead_index].mean())
-            row[f"interval_score_{suffix}"] = float(score[:, lead_index].mean())
+            row[f"coverage_{suffix}"] = float(covered[:, lead_index][lead_valid].float().mean())
+            row[f"interval_width_{suffix}"] = float(width[:, lead_index][lead_valid].mean())
+            row[f"interval_score_{suffix}"] = float(score[:, lead_index][lead_valid].mean())
         rows.append(row)
     return AggregateEvaluation(
         overall=overall,

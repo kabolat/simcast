@@ -246,6 +246,9 @@ class EvaluationConfig(ConfigModel):
     variogram_score: bool = True
     variogram_power: Annotated[float, Field(gt=0.0, le=2.0)] = 0.5
     report_by_lead: bool = True
+    scenario_batch_size: PositiveInt = 16
+    joint_score_num_samples: PositiveInt = 512
+    variable_k_sizes: list[PositiveInt] = Field(default_factory=lambda: [3, 7, 15])
 
     @field_validator("quantile_levels", "interval_levels")
     @classmethod
@@ -258,6 +261,13 @@ class EvaluationConfig(ConfigModel):
             raise ValueError("probability levels must be sorted and unique")
         return value
 
+    @field_validator("variable_k_sizes")
+    @classmethod
+    def ordered_unique_cardinalities(cls, value: list[int]) -> list[int]:
+        if not value or value != sorted(set(value)):
+            raise ValueError("evaluation.variable_k_sizes must be sorted and unique")
+        return value
+
 
 class RuntimeConfig(ConfigModel):
     deterministic: bool = True
@@ -268,6 +278,7 @@ class RuntimeConfig(ConfigModel):
 class OutputConfig(ConfigModel):
     root_dir: Path = Path("runs")
     cache_dir: Path = Path("artifacts/cache")
+    cache_name: str | None = None
     experiment_name: str | None = None
     save_resolved_config: bool = True
 

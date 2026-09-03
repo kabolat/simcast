@@ -3,6 +3,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
+from simcast.cli.reproduce import reproduce_run
 from simcast.cli.train_dependence import train_from_config
 from simcast.config import SimcastConfig
 from simcast.fm.cache import build_cache_dataset, save_pit_library
@@ -45,6 +46,13 @@ def _config(tmp_path: Path, method: str) -> SimcastConfig:
                     "latent_rank": 2,
                     "dropout": 0.0,
                 },
+                "conditional_kernel": {
+                    "hidden_dims": [8],
+                    "embedding_dim": 3,
+                    "dropout": 0.0,
+                    "smoke_only": True,
+                    "smoke_max_origins": 4,
+                },
             },
             "features": {"use_location": True},
             "subset_training": {"enabled": False},
@@ -64,6 +72,8 @@ def test_train_static_from_sealed_cache(tmp_path: Path) -> None:
     assert (run / "model.npz").is_file()
     assert (run / "resolved_config.yaml").is_file()
     assert (run / "run_metadata.json").is_file()
+    reproduced = reproduce_run(run, output_dir=tmp_path / "m1-reproduced")
+    assert (reproduced / "model.npz").is_file()
 
 
 def test_train_and_restore_conditional_model(tmp_path: Path) -> None:
@@ -88,4 +98,16 @@ def test_train_and_restore_set_aware_model(tmp_path: Path) -> None:
     )
     loaded = load_conditional_checkpoint(run / "best.pt")
     assert loaded.method == "set_aware_low_rank"
+    assert torch.isfinite(loaded.model(torch.randn(2, 4, 13))).all()
+
+
+def test_train_and_restore_bounded_kernel_smoke(tmp_path: Path) -> None:
+    cache = _cache(tmp_path / "cache")
+    run = train_from_config(
+        _config(tmp_path, "conditional_kernel"),
+        cache_dir=cache,
+        output_dir=tmp_path / "m4",
+    )
+    loaded = load_conditional_checkpoint(run / "best.pt")
+    assert loaded.method == "conditional_kernel"
     assert torch.isfinite(loaded.model(torch.randn(2, 4, 13))).all()

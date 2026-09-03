@@ -5,4 +5,5 @@ data:
   local_dir: ${SIMCAST_DATA_DIR:-data/liander2024}
 
 output:
+  cache_name: liander2024_transformer
   experiment_name: liander2024_transformer

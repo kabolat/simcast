@@ -20,8 +20,10 @@ import yaml  # type: ignore[import-untyped]
 
 from simcast.config import SimcastConfig, load_config
 from simcast.dependence import IndependentCopula, StaticGaussianCopula
+from simcast.dependence.conditional_kernel import ConditionalKernelGaussianCopula
 from simcast.dependence.conditional_low_rank import ConditionalLowRankGaussianCopula
 from simcast.dependence.set_aware_low_rank import SetAwareLowRankGaussianCopula
+from simcast.evaluation.plots import plot_training_history
 from simcast.fm.cache import PITLibrary, load_pit_library
 from simcast.fm.feature_builder import FeatureBuilder
 from simcast.training import ConditionalTrainer, DependenceCollator, DependenceDataset
@@ -32,7 +34,7 @@ LOGGER = logging.getLogger(__name__)
 def _cache_path(config: SimcastConfig, override: str | Path | None) -> Path:
     if override is not None:
         return Path(override).expanduser().resolve()
-    name = config.output.experiment_name or f"liander2024_{config.data.entity_type}"
+    name = config.output.cache_name or f"liander2024_{config.data.entity_type}"
     return (Path(config.output.cache_dir).expanduser() / name).resolve()
 
 
@@ -70,8 +72,7 @@ def _write_run_metadata(run_dir: Path, config: SimcastConfig, cache_path: Path, 
     resolved = config.model_dump(mode="json")
     (run_dir / "resolved_config.yaml").write_text(yaml.safe_dump(resolved, sort_keys=False), encoding="utf-8")
     packages = {
-        name: version(name)
-        for name in ("numpy", "pandas", "torch", "scikit-learn", "xarray", "zarr", "transformers")
+        name: version(name) for name in ("numpy", "pandas", "torch", "scikit-learn", "xarray", "zarr", "transformers")
     }
     metadata = {
         "created_at": datetime.now(UTC).isoformat(),
@@ -134,6 +135,12 @@ def _train_conditional(
 ) -> None:
     train_indices = _split_indices(library, "train")
     validation_indices = _split_indices(library, "validation")
+    if method == "conditional_kernel":
+        smoke = config.dependence.conditional_kernel
+        if not smoke.smoke_only:
+            raise ValueError("M4 is intentionally bounded; dependence.conditional_kernel.smoke_only must remain true")
+        train_indices = train_indices[: smoke.smoke_max_origins]
+        validation_indices = validation_indices[: smoke.smoke_max_origins]
     if not train_indices.size or not validation_indices.size:
         raise ValueError("conditional training requires non-empty chronological train and validation partitions")
     train_embeddings, train_predictions, train_z = _arrays(library, train_indices)
@@ -172,6 +179,20 @@ def _train_conditional(
         model = set_model
         model_kwargs = set_model.model_kwargs
         model_jitter = m3_config.jitter
+    elif method == "conditional_kernel":
+        kernel_config = config.dependence.conditional_kernel
+        kernel_model = ConditionalKernelGaussianCopula(
+            input_dim=train_features.shape[-1],
+            hidden_dims=kernel_config.hidden_dims,
+            embedding_dim=kernel_config.embedding_dim,
+            dropout=kernel_config.dropout,
+            initial_length_scale=kernel_config.initial_length_scale,
+            nugget=kernel_config.nugget,
+            jitter=kernel_config.jitter,
+        )
+        model = kernel_model
+        model_kwargs = kernel_model.model_kwargs
+        model_jitter = kernel_config.jitter
     else:
         raise ValueError(f"unsupported conditional method: {method}")
     device = config.chronos.device if torch.cuda.is_available() else "cpu"
@@ -211,6 +232,12 @@ def _train_conditional(
         training_collator=collator,
         checkpoint_payload=checkpoint_payload,
     )
+    plot_training_history(
+        [item.epoch for item in result.history],
+        [item.training_nll for item in result.history],
+        [item.validation_nll for item in result.history],
+        run_dir / "training_curve.png",
+    )
     LOGGER.info(
         "%s best validation pseudo-NLL %.6f at epoch %d",
         method,
@@ -246,10 +273,8 @@ def train_from_config(
             jitter=settings.jitter,
         ).fit(train_z, entity_ids)
         model.save(run_dir / "model.npz")
-    elif method in {"conditional_low_rank", "set_aware_low_rank"}:
+    elif method in {"conditional_low_rank", "set_aware_low_rank", "conditional_kernel"}:
         _train_conditional(config, library, run_dir, entity_ids, method)
-    elif method == "conditional_kernel":
-        raise NotImplementedError("conditional_kernel is implemented in the bounded smoke milestone")
     else:
         raise ValueError(f"unknown dependence method: {method}")
     return run_dir

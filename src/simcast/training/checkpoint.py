@@ -9,6 +9,7 @@ from typing import Any
 import torch
 from torch import nn
 
+from simcast.dependence.conditional_kernel import ConditionalKernelGaussianCopula
 from simcast.dependence.conditional_low_rank import ConditionalLowRankGaussianCopula
 from simcast.dependence.set_aware_low_rank import SetAwareLowRankGaussianCopula
 from simcast.fm.feature_builder import FeatureBuilder
@@ -44,6 +45,8 @@ def load_conditional_checkpoint(
         model: nn.Module = ConditionalLowRankGaussianCopula(**kwargs)
     elif method == "set_aware_low_rank":
         model = SetAwareLowRankGaussianCopula(**kwargs)
+    elif method == "conditional_kernel":
+        model = ConditionalKernelGaussianCopula(**kwargs)
     else:
         raise ValueError(f"unsupported conditional checkpoint method: {method}")
     model.load_state_dict(state)

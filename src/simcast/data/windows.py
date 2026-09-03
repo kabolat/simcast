@@ -176,9 +176,7 @@ def build_aligned_group_windows(
             frequency_minutes=frequency_minutes,
             entity_ids=entities,
         )
-        if is_entity_eligible is None or all(
-            is_entity_eligible(entity_id, window) for entity_id in entities
-        ):
+        if is_entity_eligible is None or all(is_entity_eligible(entity_id, window) for entity_id in entities):
             windows.append(window)
     return tuple(windows)
 

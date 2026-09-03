@@ -238,7 +238,7 @@ def _default_forecaster(config: SimcastConfig) -> FrozenForecaster:
 def _cache_destination(config: SimcastConfig, output_dir: str | Path | None) -> Path:
     if output_dir is not None:
         return Path(output_dir).expanduser().resolve()
-    name = config.output.experiment_name or f"liander2024_{config.data.entity_type}"
+    name = config.output.cache_name or f"liander2024_{config.data.entity_type}"
     return (Path(config.output.cache_dir).expanduser() / name).resolve()
 
 
@@ -478,9 +478,7 @@ def build_cache_from_config(
             "masked_history_count_by_entity": dict(
                 zip(group.entity_ids, history_missing.sum(axis=0).astype(int).tolist(), strict=True)
             ),
-            "future_truth_count_by_entity": dict(
-                zip(group.entity_ids, truth_missing_by_entity.tolist(), strict=True)
-            ),
+            "future_truth_count_by_entity": dict(zip(group.entity_ids, truth_missing_by_entity.tolist(), strict=True)),
         },
         "origins": {
             "candidate_count": len(candidates),

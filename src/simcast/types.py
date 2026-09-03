@@ -66,4 +66,3 @@ class EntityGroup:
 
     def __len__(self) -> int:
         return len(self.entity_ids)
-

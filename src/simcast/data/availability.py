@@ -94,9 +94,7 @@ def select_latest_weather_forecast(
     if "available_at" not in normalized.columns:
         raise ValueError("versioned weather requires an available_at column")
     origin = as_utc_timestamp(origin_timestamp)
-    eligible = normalized.loc[normalized["available_at"] <= origin].sort_values(
-        "available_at", kind="stable"
-    )
+    eligible = normalized.loc[normalized["available_at"] <= origin].sort_values("available_at", kind="stable")
     selected = eligible.loc[~eligible.index.duplicated(keep="last")].sort_index(kind="stable")
     if target_timestamps is not None:
         requested = pd.DatetimeIndex(

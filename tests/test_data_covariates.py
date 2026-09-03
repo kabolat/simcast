@@ -63,4 +63,3 @@ def test_past_and_future_covariates_use_distinct_weather_sources_without_leakage
 def test_missingness_is_explicit() -> None:
     frame = pd.DataFrame({"a": [1.0, np.nan], "b": [np.nan, np.nan]})
     assert missingness_percent(frame) == {"a": 50.0, "b": 100.0}
-

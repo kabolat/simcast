@@ -13,9 +13,7 @@ import yaml  # type: ignore[import-untyped]
 from simcast.types import EntityGroup, EntityMetadata
 
 LOGGER = logging.getLogger(__name__)
-ALLOWED_ENTITY_TYPES = frozenset(
-    {"transformer", "solar_park", "wind_park", "mv_feeder", "station_installation"}
-)
+ALLOWED_ENTITY_TYPES = frozenset({"transformer", "solar_park", "wind_park", "mv_feeder", "station_installation"})
 
 
 def _utc_timestamp(value: Any, field_name: str) -> pd.Timestamp | None:

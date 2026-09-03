@@ -32,3 +32,21 @@ the attached research specification.
   spatial vector at that origin and lead.
 - Core comparison: M0 through M3. M4 is a bounded smoke experiment only.
 
+## Milestone status
+
+- [x] M1: typed configuration, pinned downloader, entity metadata/grouping,
+  availability-safe windows, purged chronological splits, and tests.
+- [x] M2: idempotent pinned Chronos setup, minimal forecast-embedding patch,
+  frozen direct-prediction wrapper, native quantiles, and regression tests.
+- [x] M3: labeled and test-gated Zarr PIT library, discretized PIT construction,
+  crossing handling, and tune-only marginal diagnostics.
+- [x] M4: independent and Ledoit-Wolf static copulas, common marginal
+  projection, spatial scenarios, aggregate metrics, and smoke pipeline.
+- [x] M5: deterministic FM feature builder, conditional low-rank copula,
+  Cholesky pseudo-likelihood, local trainer, and portable checkpoints.
+- [x] M6: set-aware position-free transformer, padding/subset training,
+  permutation equivariance, and variable-cardinality tests.
+- [x] M7: one-time final evaluation, joint and aggregate comparisons,
+  variable-cardinality diagnostics, paper figures, scientific summary,
+  high-level runner, and reproduction command.
+- [x] Optional M4 method: bounded conditional RBF-kernel smoke implementation.

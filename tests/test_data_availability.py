@@ -60,4 +60,3 @@ def test_latest_weather_vintage_uses_origin_equality_and_excludes_later_revision
     assert selected.loc[target, "available_at"] == origin
     assert selected.loc[other_target, "temperature_2m"] == 30.0
     assert bool((selected["available_at"] <= origin).all())
-

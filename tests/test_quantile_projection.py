@@ -33,6 +33,4 @@ def test_projection_validates_inputs() -> None:
     with pytest.raises(ValueError):
         quantile_cell_boundaries(torch.tensor([0.5, 0.1]))
     with pytest.raises(ValueError):
-        project_uniforms_to_quantiles(
-            torch.tensor([[1.1]]), torch.tensor([[1.0, 2.0]]), torch.tensor([0.25, 0.75])
-        )
+        project_uniforms_to_quantiles(torch.tensor([[1.1]]), torch.tensor([[1.0, 2.0]]), torch.tensor([0.25, 0.75]))

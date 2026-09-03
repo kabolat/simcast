@@ -92,4 +92,3 @@ def test_parquet_schema_and_missingness_are_normalized(tmp_path: Path) -> None:
     assert stats.missing_percent == pytest.approx(100 / 6)
     assert stats.start == timestamps[0]
     assert stats.end == timestamps[-1]
-
