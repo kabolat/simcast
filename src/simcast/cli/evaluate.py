@@ -16,7 +16,7 @@ import torch
 import typer
 import yaml  # type: ignore[import-untyped]
 
-from simcast.cli.train_dependence import _cache_path
+from simcast.cli.train_dependence import _cache_path, _git_commit
 from simcast.config import SimcastConfig, load_config
 from simcast.dependence import IndependentCopula, StaticGaussianCopula
 from simcast.evaluation.aggregate import AggregateEvaluation, evaluate_aggregate_ensemble
@@ -522,7 +522,13 @@ def evaluate_from_config(
         "test_origin_count": int(truth.shape[0]),
         "valid_origin_lead_count": int(valid.sum()),
         "entity_ids": _entity_ids(library),
+        "variable_k_entity_ids": {
+            str(cardinality): _entity_ids(library, all_entities[:cardinality])
+            for cardinality in config.evaluation.variable_k_sizes
+            if cardinality <= len(all_entities)
+        },
         "joint_score_estimator": "cyclic paired Monte Carlo estimator",
+        "git_commit": _git_commit(),
         "created_at": datetime.now(UTC).isoformat(),
     }
     (output / "evaluation_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
