@@ -90,6 +90,12 @@ def _split_indices(library: PITLibrary, label: str) -> np.ndarray:
     return np.flatnonzero(np.asarray(library.dataset["split"].values) == label)
 
 
+def _complete_origin_indices(library: PITLibrary, indices: np.ndarray, limit: int) -> np.ndarray:
+    scores = np.asarray(library.dataset["pit_z"].isel(origin=indices).values)
+    has_complete_vector = np.isfinite(scores).all(axis=1).any(axis=1)
+    return indices[has_complete_vector][:limit]
+
+
 def _locations(library: PITLibrary) -> torch.Tensor | None:
     dataset = library.dataset
     if "latitude" not in dataset or "longitude" not in dataset:
@@ -139,8 +145,8 @@ def _train_conditional(
         smoke = config.dependence.conditional_kernel
         if not smoke.smoke_only:
             raise ValueError("M4 is intentionally bounded; dependence.conditional_kernel.smoke_only must remain true")
-        train_indices = train_indices[: smoke.smoke_max_origins]
-        validation_indices = validation_indices[: smoke.smoke_max_origins]
+        train_indices = _complete_origin_indices(library, train_indices, smoke.smoke_max_origins)
+        validation_indices = _complete_origin_indices(library, validation_indices, smoke.smoke_max_origins)
     if not train_indices.size or not validation_indices.size:
         raise ValueError("conditional training requires non-empty chronological train and validation partitions")
     train_embeddings, train_predictions, train_z = _arrays(library, train_indices)

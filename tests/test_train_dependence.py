@@ -10,18 +10,20 @@ from simcast.fm.cache import build_cache_dataset, save_pit_library
 from simcast.training.checkpoint import load_conditional_checkpoint
 
 
-def _cache(path: Path) -> Path:
+def _cache(path: Path, *, invalid_train_prefix: int = 0) -> Path:
     rng = np.random.default_rng(31)
     n, k, h, p, d = 10, 4, 2, 1, 5
     medians = rng.normal(size=(n, k, h)).astype(np.float32)
     predictions = np.stack((medians - 1, medians, medians + 1), axis=-1)
+    pit_z = rng.normal(size=(n, k, h)).astype(np.float32)
+    pit_z[:invalid_train_prefix] = np.nan
     dataset = build_cache_dataset(
         origin_timestamps=np.arange(n).astype("datetime64[D]"),
         entity_ids=[f"e-{idx}" for idx in range(k)],
         true_y=medians,
         quantile_predictions=predictions,
         pit_u=np.full((n, k, h), 0.5, dtype=np.float32),
-        pit_z=rng.normal(size=(n, k, h)).astype(np.float32),
+        pit_z=pit_z,
         forecast_embeddings=rng.normal(size=(n, k, p, d)).astype(np.float16),
         quantile_levels=[0.1, 0.5, 0.9],
         split=["train"] * 6 + ["validation"] * 2 + ["test"] * 2,
@@ -102,7 +104,7 @@ def test_train_and_restore_set_aware_model(tmp_path: Path) -> None:
 
 
 def test_train_and_restore_bounded_kernel_smoke(tmp_path: Path) -> None:
-    cache = _cache(tmp_path / "cache")
+    cache = _cache(tmp_path / "cache", invalid_train_prefix=4)
     run = train_from_config(
         _config(tmp_path, "conditional_kernel"),
         cache_dir=cache,
