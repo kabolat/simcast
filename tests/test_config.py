@@ -46,6 +46,24 @@ def test_method_configs_resolve(filename: str, method: str) -> None:
     assert config.covariates.weather[0] == "temperature_2m"
 
 
+@pytest.mark.parametrize(
+    ("filename", "entity_type", "repair"),
+    [
+        ("liander2024_transformer.yaml", "transformer", "none"),
+        ("liander2024_solar_park.yaml", "solar_park", "isotonic"),
+        ("liander2024_wind_park.yaml", "wind_park", "none"),
+        ("liander2024_mv_feeder.yaml", "mv_feeder", "none"),
+        ("liander2024_station_installation.yaml", "station_installation", "none"),
+    ],
+)
+def test_entity_type_configs_resolve(filename: str, entity_type: str, repair: str) -> None:
+    config = load_config(CONFIGS / filename)
+
+    assert config.data.entity_type == entity_type
+    assert config.pit.monotone_repair == repair
+    assert config.output.cache_name is not None
+
+
 def test_kernel_config_is_bounded_smoke() -> None:
     config = load_config(CONFIGS / "method_conditional_kernel_smoke.yaml")
 

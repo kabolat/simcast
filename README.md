@@ -100,6 +100,19 @@ uv run python -m simcast.cli.run_experiment \
 Add `--include-kernel-smoke` to include bounded M4. An existing compatible
 cache is reused. `--rebuild-cache` explicitly replaces it.
 
+Named configs are also provided for every homogeneous Liander entity type:
+
+- `configs/liander2024_transformer.yaml`
+- `configs/liander2024_solar_park.yaml`
+- `configs/liander2024_wind_park.yaml`
+- `configs/liander2024_mv_feeder.yaml`
+- `configs/liander2024_station_installation.yaml`
+
+The solar config explicitly enables isotonic repair because raw Chronos solar
+quantiles cross frequently around zero-output hours; without repair, several
+leads have too few complete PIT vectors to estimate M1. Raw crossing rates are
+still recorded in cache diagnostics.
+
 Configuration values can be overridden with repeatable dotted assignments:
 
 ```bash

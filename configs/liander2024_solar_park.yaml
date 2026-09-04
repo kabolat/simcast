@@ -1,0 +1,11 @@
+extends: liander2024_transformer.yaml
+
+data:
+  entity_type: solar_park
+
+pit:
+  monotone_repair: isotonic
+
+output:
+  cache_name: liander2024_solar_park_isotonic
+  experiment_name: liander2024_solar_park_isotonic
