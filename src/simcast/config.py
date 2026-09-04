@@ -131,6 +131,11 @@ class PitConfig(ConfigModel):
     eps: Annotated[float, Field(gt=0.0, lt=0.5)] = 1.0e-7
 
 
+class ProtocolConfig(ConfigModel):
+    name: Literal["legacy", "powertech2027"] = "legacy"
+    full_group_only: bool = False
+
+
 class FeaturesConfig(ConfigModel):
     use_forecast_embedding: bool = True
     layer_normalize_embedding: bool = True
@@ -206,7 +211,7 @@ class DependenceConfig(ConfigModel):
 
 
 class SubsetTrainingConfig(ConfigModel):
-    enabled: bool = True
+    enabled: bool = False
     min_entities: Annotated[int, Field(ge=2)] = 4
     full_group_probability: Probability = 0.25
 
@@ -248,7 +253,7 @@ class EvaluationConfig(ConfigModel):
     report_by_lead: bool = True
     scenario_batch_size: PositiveInt = 16
     joint_score_num_samples: PositiveInt = 512
-    variable_k_sizes: list[PositiveInt] = Field(default_factory=lambda: [3, 7, 15])
+    variable_k_sizes: list[PositiveInt] = Field(default_factory=list)
 
     @field_validator("quantile_levels", "interval_levels")
     @classmethod
@@ -264,7 +269,7 @@ class EvaluationConfig(ConfigModel):
     @field_validator("variable_k_sizes")
     @classmethod
     def ordered_unique_cardinalities(cls, value: list[int]) -> list[int]:
-        if not value or value != sorted(set(value)):
+        if value != sorted(set(value)):
             raise ValueError("evaluation.variable_k_sizes must be sorted and unique")
         return value
 
@@ -285,6 +290,7 @@ class OutputConfig(ConfigModel):
 
 class SimcastConfig(ConfigModel):
     seed: NonNegativeInt = 42
+    protocol: ProtocolConfig = Field(default_factory=ProtocolConfig)
     data: DataConfig = Field(default_factory=DataConfig)
     forecast: ForecastConfig = Field(default_factory=ForecastConfig)
     covariates: CovariatesConfig = Field(default_factory=CovariatesConfig)
@@ -299,6 +305,16 @@ class SimcastConfig(ConfigModel):
     evaluation: EvaluationConfig = Field(default_factory=EvaluationConfig)
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
+
+    @model_validator(mode="after")
+    def validate_full_group_protocol(self) -> Self:
+        if self.protocol.name == "powertech2027" and not self.protocol.full_group_only:
+            raise ValueError("powertech2027 protocol requires full_group_only=true")
+        if self.protocol.full_group_only and self.subset_training.enabled:
+            raise ValueError("full-group protocol forbids subset training")
+        if self.protocol.full_group_only and self.evaluation.variable_k_sizes:
+            raise ValueError("full-group protocol forbids variable-cardinality evaluation")
+        return self
 
 
 _ENV_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-(.*?))?\}")

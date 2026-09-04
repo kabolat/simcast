@@ -2,120 +2,126 @@
 
 ## Shared Gaussian-copula construction
 
-For a valid origin and lead, every method supplies a correlation matrix
-$R_{i,\tau}\in\mathbb R^{K\times K}$. A scenario is generated as
+For forecast instance $i$, lead $\tau$, and static group $g$, each method
+supplies
 
 $$
-\eta^{(m)}\sim\mathcal N(0,I_K),\qquad
-x^{(m)}=L_{i,\tau}\eta^{(m)},\quad
-L_{i,\tau}L_{i,\tau}^{\mathsf T}=R_{i,\tau},
+R_{g,\tau}^{(i)}\in\mathbb R^{K_g\times K_g}.
+$$
+
+For scenario $m$,
+
+$$
+\eta^{(m)}\sim\mathcal N(0,I_{K_g}),\qquad
+x^{(i,m)}=L_{g,\tau}^{(i)}\eta^{(m)},
 $$
 
 $$
-u_k^{(m)}=\Phi(x_k^{(m)}).
+L_{g,\tau}^{(i)}L_{g,\tau}^{(i)\mathsf T}=R_{g,\tau}^{(i)},
+\qquad
+u_{k,\tau}^{(i,m)}=\Phi(x_k^{(i,m)}).
 $$
 
-The uniform vector is projected independently through the same fixed discrete
-Chronos marginals for all methods. Valid model matrices are symmetric,
-positive definite after numerical jitter, and have unit diagonal.
+The uniforms are projected through the same fixed FM-derived discrete marginal
+grid for every method. The grid is the raw Chronos-2 native grid for most
+groups and the deterministically repaired Chronos grid for solar. No dependence
+model changes any marginal quantile value.
 
-## M0: independent copula
+Every PowerTech matrix is symmetric, positive definite after stabilization,
+has unit diagonal, and covers the complete ordered $\mathcal E_g$.
 
-M0 sets
+## M0: independent Gaussian copula
 
-$$
-R_{i,\tau}=I_K
-$$
-
-for every origin and lead. `fit` records only entity IDs and the number of
-leads; it estimates no parameters. It is the causal-control-like baseline for
-the experiment: aggregate differences relative to M0 are attributable to
-cross-entity dependence assumptions.
-
-Independence refers to scenario ranks conditional on the frozen forecasts. It
-does not claim that raw loads or forecast errors are empirically independent.
-
-## M1: static Gaussian copula
-
-M1 estimates correlation from training-only Gaussianized PIT vectors. By
-default, one matrix is fitted per lead:
+M0 is the independent-copula or null-dependence baseline:
 
 $$
-\widehat\Sigma_\tau^{\mathrm{LW}}
-=\operatorname{LedoitWolf}\left(
-\{z_{i,:,\tau}:i\in\mathcal D_{\mathrm{train}},V_{i,\tau}=1\}
+R_{g,\tau}^{(i)}=I_{K_g}.
+$$
+
+It estimates no parameters; `fit` records only entity IDs and lead count.
+Independence concerns scenario ranks conditional on the fixed forecasts. It
+does not assert that raw loads or empirical forecast errors are independent.
+
+## M1: static lead-specific Gaussian copula
+
+M1 estimates one training-only matrix for each lead:
+
+$$
+\widehat\Sigma_{g,\tau}^{\mathrm{LW}}
+=\operatorname{LedoitWolf}\!\left(
+\left\{\mathbf z_{g,\tau}^{(i)}:
+i\in\mathcal D_{\mathrm{train}},V_{g,\tau}^{(i)}=1\right\}
 \right).
 $$
 
-Ledoit--Wolf shrinkage combines an empirical covariance matrix with a
-well-conditioned structured target using an estimated shrinkage intensity.
-This is preferable to an unregularized sample covariance when $K$ is not tiny
-relative to the number of complete cases.
+Ledoit--Wolf shrinkage combines the empirical covariance with a
+well-conditioned structured target using a data-estimated shrinkage intensity.
+This is safer than an unregularized covariance when $K_g$ is not tiny relative
+to the number of complete cases.
 
-Covariance is converted to correlation as
+Covariance is converted to correlation by
 
 $$
 R_{ab}=\frac{\Sigma_{ab}}{\sqrt{\Sigma_{aa}\Sigma_{bb}}}.
 $$
 
-The implementation then symmetrizes, clips negative eigenvalues to zero,
-reconstructs the matrix, normalizes its diagonal, adds positive diagonal
-jitter, normalizes again, and sets the diagonal exactly to one. Zero or
-numerically nonpositive covariance variances are treated as independent from
-other entities before the projection. At least two complete samples are
-required for every estimated matrix.
+The implementation symmetrizes, clips negative eigenvalues to zero,
+reconstructs, normalizes the diagonal, adds positive jitter, normalizes again,
+and fixes the diagonal exactly at one. Numerically nonpositive variances are
+treated as independent from other entities before projection. At least two
+complete full-group vectors are required per estimated matrix.
 
-With `share_across_leads: true`, valid vectors from all leads are pooled and one
-estimate is repeated across $H$. The supplied experiments use the default
-lead-specific variant.
+With `share_across_leads: true`, complete vectors are pooled over leads and one
+matrix is repeated across $H$. PowerTech uses the default lead-specific form.
+M1 never applies entity selection, regardless of the legacy subset flag that
+appeared in some old resolved configurations.
 
-Properties:
+## Shared low-rank parameterization
 
-- no origin conditioning;
-- $H K(K-1)/2$ effective off-diagonal values after shrinkage;
-- requested entity subsets are principal submatrices in requested order;
-- no neural optimization or validation-based early stopping.
-
-## Shared low-rank covariance parameterization
-
-M2 and M3 output one loading vector $\lambda_k\in\mathbb R^r$ and positive
-uniqueness scale $\sigma_k$ per entity. Their latent representation is
+M2 and M3 output loading $\lambda_{k,\tau}^{(i)}\in\mathbb R^r$ and positive
+uniqueness scale $\sigma_{k,\tau}^{(i)}$ for every
+$k\in\mathcal E_g$. Their latent representation is
 
 $$
-z_k=\lambda_k^{\mathsf T}\xi+\sigma_k\epsilon_k,qquad
-\xi\sim\mathcal N(0,I_r),\quad
-\epsilon_k\overset{\mathrm{iid}}\sim\mathcal N(0,1).
+z_{k,\tau}^{(i)}
+=\lambda_{k,\tau}^{(i)\mathsf T}\xi
++\sigma_{k,\tau}^{(i)}\epsilon_k,
+\qquad
+\xi\sim\mathcal N(0,I_r),
+\quad \epsilon_k\overset{\mathrm{iid}}\sim\mathcal N(0,1).
 $$
 
-Hence
+Writing the complete loading matrix as $\Lambda_{g,\tau}^{(i)}$, the implied
+covariance is
 
 $$
-\Sigma=\Lambda\Lambda^{\mathsf T}+\operatorname{diag}(\sigma_1^2,\ldots,\sigma_K^2),
+\Sigma_{g,\tau}^{(i)}
+=\Lambda_{g,\tau}^{(i)}\Lambda_{g,\tau}^{(i)\mathsf T}
++\operatorname{diag}\!\left(
+\left\{\sigma_{k,\tau}^{(i)2}\right\}_{k\in\mathcal E_g}
+\right),
 $$
 
-followed by covariance-to-correlation normalization and jitter. Positivity is
-enforced by
+which is normalized to correlation. Positivity is enforced with
 
 $$
-\sigma_k=\operatorname{softplus}(a_k)+\sigma_{\min},
-\qquad\sigma_{\min}=10^{-3}.
+\sigma_{k,\tau}^{(i)}
+=\operatorname{softplus}(b_{k,\tau}^{(i)})+\sigma_{\min},
+\qquad \sigma_{\min}=10^{-3}.
 $$
 
-This construction is positive semidefinite before uniqueness and strictly
-positive definite under positive uniqueness/jitter. Rank $r=4$ constrains the
-shared covariance component but the diagonal uniqueness preserves full matrix
-rank. Factor orientation is not identifiable: $\Lambda$ and $\Lambda Q$ yield
+The shared component has default rank $r=4$; uniqueness preserves full matrix
+rank. Factors are rotation non-identifiable: $\Lambda$ and $\Lambda Q$ imply
 the same covariance for any orthogonal $Q$. Individual loading coordinates
-must therefore not be given standalone physical interpretations.
+therefore have no standalone physical interpretation.
 
-## M2: conditional low-rank copula
+## M2: conditional low-rank Gaussian copula
 
-M2 applies the same entity-wise network $f_\theta$ independently to every
-feature vector:
+M2 applies one shared entity-wise network:
 
 $$
-(\lambda_{i,k,\tau},a_{i,k,\tau})
-=f_\theta(v_{i,k,\tau}).
+(\lambda_{k,\tau}^{(i)},b_{k,\tau}^{(i)})
+=f_\theta(v_{k,\tau}^{(i)}).
 $$
 
 The default architecture is:
@@ -127,36 +133,33 @@ Linear(256,128) -> GELU -> Dropout(0.1)
 Linear(128,r+1), r=4
 ```
 
-The same weights are used for every entity and the output size is independent
-of $K$. M2 is permutation equivariant in the limited element-wise sense: if
-entity features are permuted, the loadings and resulting matrix are permuted
-accordingly. However, entity $k$ cannot inspect the other entities before
-choosing $\lambda_k$; cross-entity interaction occurs only through the inner
-products $\lambda_a^{\mathsf T}\lambda_b$.
+Weights and parameter count do not depend on $K_g$. Reordering entities
+reorders the outputs and the resulting correlation. Entity $k$ does not inspect
+other entity features before choosing its parameters; interaction occurs
+through $\lambda_a^{\mathsf T}\lambda_b$.
 
-Location and forecast features can implicitly distinguish entities, but there
-is no learned ID lookup. A previously unseen entity can technically be passed
-if its feature semantics match, although the current checkpoint loader and
-evaluator deliberately require evaluation IDs to be a subset of fitted IDs.
+Location and forecast features can indirectly distinguish entities, but no
+trainable entity-ID lookup exists. Although the model can process another
+cardinality as a software property, PowerTech training and evaluation assert
+that its input contains exactly the complete ordered $\mathcal E_g$.
 
-## M3: set-aware low-rank copula
+## M3: set-aware conditional low-rank Gaussian copula
 
-M3 first maps each entity to a shared latent width and applies a transformer
-encoder across the current entity set:
+M3 first contextualizes every member of the complete group:
 
 $$
-h_{i,:,\tau}
-=\operatorname{TransformerEncoder}_\theta
-\left(\operatorname{Linear}(\operatorname{LayerNorm}(v_{i,:,\tau}))\right).
+h_{g,\tau}^{(i)}
+=\operatorname{TransformerEncoder}_\theta\!\left(
+\operatorname{Linear}(\operatorname{LayerNorm}(v_{g,\tau}^{(i)}))
+\right).
 $$
 
-A shared linear head maps each contextual representation to
-$(\lambda_k,a_k)$. Defaults are model width 128, two encoder layers, four
-attention heads, pre-norm layers, GELU feed-forward blocks of width 512,
-dropout 0.1, and rank four.
+A shared head maps each contextual representation to $(\lambda_k,b_k)$.
+Defaults are width 128, two encoder layers, four attention heads, pre-norm,
+GELU feed-forward width 512, dropout 0.1, and rank four.
 
-There are no positional encodings and no entity-ID embeddings. Self-attention
-is therefore permutation equivariant:
+There are no positional encodings or entity-ID embeddings. For permutation
+matrix $P$,
 
 $$
 f_\theta(PV)=P f_\theta(V),
@@ -164,67 +167,70 @@ f_\theta(PV)=P f_\theta(V),
 R_\theta(PV)=P R_\theta(V)P^{\mathsf T}
 $$
 
-for any permutation matrix $P$ when dropout is disabled at evaluation. Tests
-assert this property numerically. Unlike M2, an entity's factor parameters can
-change with the features of other members in the current set.
+at evaluation. Tests verify this numerically. Unlike M2, each entity can use
+all other full-group features through self-attention.
 
-An optional padding mask exists for batched variable-cardinality sets. Masked
-loadings are zero, masked uniqueness is one, and the caller must still avoid
-interpreting padded rows as physical members. Current training uses
-fixed-cardinality batches or randomly selected same-size subsets, so no padding
-is needed in the main experiment.
+A padding-mask interface remains as a possible future software capability.
+PowerTech never pads, drops, or selects entities; M3 always contextualizes all
+$K_g$ members.
 
-## M4: conditional RBF-kernel copula
+## M4: optional conditional RBF-kernel copula
 
-M4 embeds each entity feature with a shared MLP:
+M4 embeds each full-group entity with a shared MLP,
 
 $$
-h_k=g_\theta(v_k)\in\mathbb R^{16},
+h_{k,\tau}^{(i)}=g_\theta(v_{k,\tau}^{(i)})\in\mathbb R^{16},
 $$
 
-using LayerNorm, hidden widths 256 and 128, GELU, and dropout 0.1. It constructs
+then constructs
 
 $$
-K_{ab}=\exp\left(-\frac{\|h_a-h_b\|_2^2}{2\ell^2}\right)
-+\delta_{ab}\nu,
+K_{ab}=\exp\!\left(
+-\frac{\|h_a-h_b\|_2^2}{2\ell^2}
+\right)+\delta_{ab}\nu,
 $$
 
-where $\ell=\operatorname{softplus}(\ell_{\mathrm{raw}})$ is learned from an
-initial value of one and nugget $\nu=10^{-3}$. Correlation normalization and
-jitter follow. The RBF Gram matrix is positive semidefinite by construction.
+where $\ell=\operatorname{softplus}(\ell_{\mathrm{raw}})$ is learned from one
+and nugget $\nu=10^{-3}$. Correlation normalization and jitter follow. The RBF
+Gram matrix is positive semidefinite and permutation equivariant, but its
+off-diagonal correlations are nonnegative, a substantive restriction.
 
-M4 is permutation equivariant because the embedding network is shared and
-pairwise distances do not depend on order. Its correlations are nonnegative
-before numerical normalization, a substantive restriction compared with the
-factor models.
+The bounded smoke config uses at most 32 train and validation origins, five
+epochs, patience two, and no entity selection. The full M4 config uses complete
+partitions and the normal optimizer budget, also without entity selection.
+Legacy smoke results remain diagnostic. The previous full transformer M4 run
+used random subset augmentation and is also legacy; neither is a core
+PowerTech result.
 
-M4 has two protocols. `method_conditional_kernel_smoke.yaml` and the high-level
-runner's `--include-kernel-smoke` path use at most 32 training origins and 32
-validation origins that contain at least one complete lead, disable subset
-training, cap optimization at five epochs, and use patience two. The resulting
-original all-entity M4 numbers are systems/feasibility results only.
+## Model hierarchy
 
-`method_conditional_kernel.yaml` sets `smoke_only: false`, so training uses the
-complete chronological train and validation partitions, the same 100-epoch
-maximum and patience 12 as M2/M3, and default subset training. This makes M4 a
-fully trained comparison, although it remains untuned unless its
-hyperparameters are selected on validation data.
-
-## Model comparison
-
-| Method | Learns from PIT | Changes by origin | Set interaction before $R$ | Parameter count independent of $K$ | Intended status |
+| Method | Learns from PIT | Changes by instance | Full-group context before $R$ | Parameters independent of $K_g$ | PowerTech status |
 |---|---|---|---|---|---|
 | M0 independent | no | no | no | yes | core baseline |
-| M1 static | yes | no | empirical group estimate | no, matrix grows with $K$ | core baseline |
+| M1 static | yes | no | empirical group estimate | no | core baseline |
 | M2 conditional low-rank | yes | yes | no | yes | core method |
 | M3 set-aware low-rank | yes | yes | self-attention | yes | core method |
-| M4 conditional kernel | yes | yes | pairwise embedded distance | yes | optional full or smoke protocol |
+| M4 conditional kernel | yes | yes | pairwise embedded distance | yes | optional diagnostic |
 
-## Numerical stabilization
+## Numerical-stabilization audit
 
-Several layers intentionally repeat stabilization because matrices pass through
-different public interfaces. Correlations are symmetrized, forced to unit
-diagonal, given jitter, then renormalized to unit diagonal before Cholesky
-factorization. Adding jitter without the final normalization would change
-Gaussian marginal variances and violate the copula construction. A Cholesky
-failure is allowed to surface rather than silently replacing the model matrix.
+Stabilization is intentionally repeated at different interfaces:
+
+1. M1 adds jitter after PSD projection and renormalizes. M2/M3 add jitter while
+   converting low-rank covariance to correlation. M4 normalizes its
+   nugget-augmented kernel and applies model-stage jitter.
+2. M2--M4 training then symmetrizes, restores unit diagonal, adds
+   likelihood-stage jitter, renormalizes, and performs Cholesky factorization.
+3. Scenario generation for every method again symmetrizes, normalizes, adds
+   sampling-stage jitter, renormalizes, and performs Cholesky factorization.
+
+Conditional training therefore encounters model-stage and likelihood-stage
+jitter; scenario generation encounters model-stage (except M0) and
+sampling-stage jitter. Since every addition is followed by diagonal
+renormalization, this is not equivalent to simply adding the constants.
+
+The cleanup does not consolidate these operations because doing so would alter
+the learned objective or scenario law and make old checkpoints numerically
+incomparable. Tests verify unit diagonal, symmetry, and strict positive
+definiteness after repeated stabilization. Cholesky failure remains visible
+rather than silently substituting independence.

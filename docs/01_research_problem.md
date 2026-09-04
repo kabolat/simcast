@@ -2,148 +2,246 @@
 
 ## Scientific objective
 
-Consider a fixed physical group of `K` electricity-producing or consuming
-entities. At forecast origin `t_i`, the quantity of operational interest at
-lead `tau` is the spatial aggregate
+Simcast studies whether spatial aggregate forecasts improve when residual
+cross-entity forecast dependence is modeled explicitly while the
+foundation-model-derived marginal quantile grids are held fixed.
+
+Chronos-2 remains frozen. For most Liander groups the fixed grid is the raw
+Chronos-2 native quantile output. For solar parks, raw crossings are substantial,
+so a deterministic isotonic monotonicity repair is first applied. The resulting
+repaired solar grid is then fixed across every dependence method. No dependence
+model can change any marginal quantile value.
+
+This is a controlled predictive comparison of copulas. It is not a causal
+experiment and does not claim novelty for joint probabilistic energy
+forecasting as a general topic.
+
+## Indices and static groups
+
+For a positive integer $n$, write $[n]=\{1,\ldots,n\}$.
+
+Forecast instances are indexed by
 
 $$
-A_{i,\tau}=\sum_{k=1}^{K}Y_{i,k,\tau}.
+i\in[N],
 $$
 
-A foundation model can issue useful marginal probabilistic forecasts
-$F_{i,k,\tau}$ for each component $Y_{i,k,\tau}$ without determining their
-joint distribution. The aggregate distribution nevertheless depends strongly
-on cross-entity error co-occurrence. For example, independent positive errors
-partly cancel in a sum, while spatially correlated positive errors do not.
-
-The primary estimand is therefore the out-of-sample change in proper scoring
-rules for $A_{i,\tau}$ when its joint scenarios are generated with a learned
-cross-entity copula rather than independence, holding every
-$F_{i,k,\tau}$ fixed.
-
-The core comparison is:
-
-- M0: independent Gaussian copula;
-- M1: static, lead-specific Gaussian copula;
-- M2: conditionally predicted low-rank Gaussian copula;
-- M3: set-aware conditionally predicted low-rank Gaussian copula.
-
-The M4 values in the original all-entity study came from a deliberately bounded
-smoke test and are not fully trained or tuned results. The repository now also
-provides a full-training M4 configuration, used for the separate transformer
-result reported in [08_experiments_and_results.md](08_experiments_and_results.md#full-m4-transformer-follow-up).
-
-## Notation
-
-| Symbol | Meaning | Code axis or object |
-|---|---|---|
-| $i\in\{1,\ldots,N\}$ | forecast-origin index | `origin` |
-| $t_i$ | UTC forecast-origin timestamp | `origin_timestamp` |
-| $k\in\{1,\ldots,K\}$ | physical entity index | `entity` |
-| $\tau\in\{1,\ldots,H\}$ | one-based forecast lead | `lead` |
-| $j\in\{1,\ldots,Q\}$ | native Chronos quantile index | `quantile` |
-| $m\in\{1,\ldots,M\}$ | Monte Carlo scenario index | in-memory sample axis |
-| $p(\tau)$ | Chronos output patch containing lead $\tau$ | `patch` |
-| $Y_{i,k,\tau}$ | realized target | `true_y` |
-| $\widehat q_{i,k,\tau,j}$ | Chronos value at probability $q_j$ | `quantile_prediction` |
-| $u_{i,k,\tau}$ | discretized PIT pseudo-observation | `pit_u` |
-| $z_{i,k,\tau}=\Phi^{-1}(u_{i,k,\tau})$ | Gaussianized PIT score | `pit_z` |
-| $v_{i,k,\tau}$ | fixed feature vector for a conditional copula | constructed in memory |
-| $R_{i,\tau}$ | $K\times K$ same-lead correlation matrix | model output |
-| $A_{i,\tau}$ | observed spatial sum | `true_y.sum(entity)` |
-
-Arrays in the repository use order `[origin, entity, lead, ...]` in the cache.
-Training flattens valid `(origin, lead)` cases and presents a network with
-`[batch, entity, feature]`. Evaluation stores correlations as
-`[origin, lead, entity, entity]`.
-
-## Factorization being studied
-
-At a single origin and lead, Sklar's theorem motivates the decomposition
+with actual UTC forecast-origin time $t^{(i)}$ and chronological ordering
 
 $$
-P(Y_1\le y_1,\ldots,Y_K\le y_K\mid\mathcal I_i)
-=C_{i,\tau}\!\left(
-F_{i,1,\tau}(y_1),\ldots,F_{i,K,\tau}(y_K)
-\right),
+t^{(1)}<t^{(2)}<\cdots<t^{(N)}.
 $$
 
-where $\mathcal I_i$ is the information available at origin $t_i$. Simcast
-approximates $C_{i,\tau}$ with a Gaussian copula parameterized by
-$R_{i,\tau}$, and approximates each marginal $F_{i,k,\tau}$ by Chronos's
-finite native quantile grid.
+Static physical entity groups are indexed by $g\in[G]$. Group $g$ has the
+complete ordered entity set
 
-The experiment changes $R_{i,\tau}$ and nothing in the quantile grid. This
-creates a controlled intervention on spatial dependence: a method can improve
-aggregate forecasts only by changing joint rank co-occurrence, not by changing
-an entity's values or probability-cell frequencies.
+$$
+\mathcal E_g=\{k_1,\ldots,k_{K_g}\},
+\qquad K_g=|\mathcal E_g|.
+$$
+
+Each current Liander homogeneous entity type is one separate group. The entity
+set never varies with forecast instance. If any member is invalid at a case,
+the case is discarded for the complete group; $\mathcal E_g$ is not reduced.
+
+The one-based forecast lead is $\tau\in[H]$. Its physical target time is
+
+$$
+t^{(i)}+\tau\Delta,
+\qquad \Delta=15\text{ minutes}
+$$
+
+in the present experiments.
+
+## Random variables and observations
+
+Use
+
+$$
+Y_{k,\tau}^{(i)}
+$$
+
+for the future target **random variable** of entity $k$ at forecast instance
+$i$ and lead $\tau$, and
+
+$$
+y_{k,\tau}^{(i)}
+$$
+
+for its observed realization. The distinction is maintained throughout the
+scientific documentation.
+
+Let $\mathcal I^{(i)}$ be the information available at origin $t^{(i)}$. The
+entity-wise predictive marginal is
+
+$$
+F_{k,\tau}^{(i)}(y)
+=P\!\left(Y_{k,\tau}^{(i)}\le y\mid\mathcal I^{(i)}\right).
+$$
+
+Chronos-2 approximates it with the finite native quantile grid
+
+$$
+\left\{
+\left(\hat y_{k,\tau,q_j}^{(i)},q_j\right)
+\right\}_{j=1}^{Q},
+\qquad 0<q_1<\cdots<q_Q<1.
+$$
+
+The random spatial aggregate and its observation are respectively
+
+$$
+A_{g,\tau}^{(i)}
+=\sum_{k\in\mathcal E_g}Y_{k,\tau}^{(i)},
+\qquad
+a_{g,\tau}^{(i)}
+=\sum_{k\in\mathcal E_g}y_{k,\tau}^{(i)}.
+$$
+
+$\Lambda$ is reserved for low-rank factor loadings; $A$ is used only for the
+random aggregate.
+
+## Central controlled comparison
+
+For one group, forecast instance, and lead, the modeled joint distribution is
+
+$$
+P\!\left(
+Y_{k,\tau}^{(i)}\le y_k,\;k\in\mathcal E_g
+\mid\mathcal I^{(i)}
+\right)
+=C_{g,\tau}^{(i)}\!\left(
+\left\{F_{k,\tau}^{(i)}(y_k)\right\}_{k\in\mathcal E_g}
+\right).
+$$
+
+The methods differ only in $C_{g,\tau}^{(i)}$, currently represented by a
+Gaussian-copula correlation matrix
+
+$$
+R_{g,\tau}^{(i)}\in\mathbb R^{K_g\times K_g}.
+$$
+
+All methods use the same complete ordered $\mathcal E_g$, fixed FM-derived
+quantile grid, test cases, and base random draws. The core hierarchy is:
+
+- M0: independent-copula baseline;
+- M1: static lead-specific Gaussian copula;
+- M2: conditional low-rank Gaussian copula with a shared entity-wise network;
+- M3: set-aware conditional low-rank Gaussian copula that contextualizes the
+  complete group with self-attention.
+
+M4 is an optional conditional kernel diagnostic and is not central to the
+PowerTech comparison.
+
+## PIT pseudo-observations
+
+For an observed realization, the deterministic finite-quantile pseudo-PIT is
+
+$$
+u_{k,\tau}^{(i)}
+=f^{\mathrm{PIT}}\!\left(
+y_{k,\tau}^{(i)},
+\left\{
+\left(\hat y_{k,\tau,q_j}^{(i)},q_j\right)
+\right\}_{j=1}^{Q}
+\right).
+$$
+
+The implementation assigns the observation to one of $Q+1$ cells. It does not
+interpolate or reconstruct a continuous predictive CDF. Gaussianized scores are
+
+$$
+z_{k,\tau}^{(i)}=\Phi^{-1}\!\left(u_{k,\tau}^{(i)}\right),
+$$
+
+and the complete group vector is
+
+$$
+\mathbf z_{g,\tau}^{(i)}
+=\left[z_{k,\tau}^{(i)}\right]_{k\in\mathcal E_g}
+\in\mathbb R^{K_g}.
+$$
+
+This vector exists for training/evaluation only when every group member is
+valid at $(i,\tau)$.
+
+## Primary estimand
+
+For a proper aggregate score $S$, the descriptive method contrast over the
+held-out full-group cases is
+
+$$
+\frac{1}{|\mathcal D_{g,\mathrm{test}}|}
+\sum_{(i,\tau)\in\mathcal D_{g,\mathrm{test}}}
+\left[
+S\!\left(C_{g,\tau}^{(i)},a_{g,\tau}^{(i)}\right)
+-S\!\left(C_{g,\tau}^{(i),\mathrm{M0}},a_{g,\tau}^{(i)}\right)
+\right],
+$$
+
+where notation suppresses the shared fixed marginals. Mean aggregate pinball
+loss is the headline descriptive score; CRPS, interval scores, WIS, coverage,
+Energy Score, and Variogram Score provide complementary evidence.
 
 ## What is and is not modeled
 
 Modeled:
 
-- forecast-error dependence across entities in one homogeneous physical group;
-- variation of that dependence with forecast origin and lead for M2--M4;
-- robustness to evaluating smaller prefixes of the fitted group;
-- aggregate uncertainty induced by the resulting spatial scenarios.
+- same-lead forecast-error dependence across all entities in one static group;
+- origin- and lead-dependent correlations for M2/M3;
+- aggregate uncertainty induced by full-group spatial scenarios.
 
 Not modeled:
 
-- temporal covariance between lead $\tau$ and lead $\tau'\ne\tau$;
-- a trajectory-level copula across the full 96-lead day;
-- relationships between different Liander entity types in one joint group;
-- improvements to the Chronos marginal model;
-- interpolation or tail extrapolation beyond native Chronos quantile values;
-- causal effects or operational dispatch decisions.
+- random, prefix, or reduced-cardinality entity sets;
+- entity dropout or subset augmentation;
+- covariance between different forecast leads;
+- trajectory-level temporal copulas;
+- mixed-type Liander groups;
+- Chronos fine-tuning or new foundation models;
+- continuous CDF interpolation or tail extrapolation;
+- causal effects or operational decisions.
 
-Scenarios at different leads are sampled and scored as separate same-lead
-experiments. Concatenating them does **not** produce scientifically valid daily
-trajectories.
+M2/M3 remain mathematically capable of accepting other cardinalities, but this
+is an architectural property only and is not evaluated in the PowerTech study.
 
 ## Scientific assumptions
 
-1. **PIT scores identify residual dependence.** Conditional on useful
-   marginals, co-movement in $z$ is treated as forecast-error dependence. Raw
-   target correlation is not used as a substitute.
-2. **A Gaussian copula is an adequate first dependence family.** It captures
-   rank association through a correlation matrix but not asymmetric or
-   tail-specific dependence.
-3. **Historical pseudo-observations transfer chronologically.** Dependence
-   learned in the training period is assumed informative for validation and
-   test periods.
-4. **The static group is meaningful.** Every method sees all physical members
-   of the selected entity category. Missing values invalidate a case; they do
-   not redefine the group.
-5. **Discrete marginals are acceptable for controlled comparison.** Scenario
-   values have finite support at Chronos's native quantiles. This introduces
-   ties and discretization, but ensures exact method-to-method marginal parity.
-6. **Weather vintages and reporting delays encode the information set.** Only
-   data knowable at $t_i$ are used.
+1. Gaussianized finite-cell PIT scores provide a useful approximation to
+   residual rank dependence.
+2. A Gaussian copula is an adequate first family despite excluding asymmetric
+   and tail-specific dependence.
+3. Training-period dependence transfers to the chronological test period.
+4. Each homogeneous metadata-defined entity group is scientifically meaningful.
+5. Complete-case filtering does not invalidate the intended full-group
+   interpretation; its possible selection effect remains a limitation.
+6. The discrete fixed marginal approximation is acceptable for a controlled
+   method comparison.
+7. Reporting delays and weather vintages correctly represent
+   $\mathcal I^{(i)}$.
 
-## Primary scientific questions
+## PowerTech scientific questions
 
-The generated `scientific_summary.json` frames six descriptive questions:
+1. How much residual dependence remains after the fixed FM-derived marginal
+   forecasts?
+2. How well does the independent-copula baseline represent full-group aggregate
+   uncertainty?
+3. Does a static lead-specific PIT copula improve aggregate forecasts?
+4. Does context-conditioned low-rank dependence improve over static dependence?
+5. Does full-group set-aware contextualization improve over entity-wise
+   conditioning?
+6. How heterogeneous is the benefit of dependence modeling across physical
+   entity groups?
 
-1. Is residual PIT correlation present?
-2. Does independence give calibrated aggregate intervals?
-3. Does a static PIT copula improve over independence?
-4. Does context conditioning improve over the static copula?
-5. Does set-aware conditioning improve over entity-wise conditioning?
-6. Do conclusions persist at smaller group cardinalities?
-
-Answers are descriptive for the current test set. A rigorous publication
-should add paired uncertainty intervals or block-bootstrap tests over origins,
-repeat neural training over multiple seeds, and predeclare the primary score
-and model comparison.
+These are predictive questions. “Best” means lowest held-out mean aggregate
+pinball among M0--M3 under the declared full-group protocol, not causal,
+universally superior, or statistically significant.
 
 ## Interpretation discipline
 
-Lower pinball loss, CRPS, WIS, interval score, Energy Score, and Variogram Score
-is better. Coverage is not an optimization score: it must be read jointly with
-nominal coverage and interval width. A wider method can have coverage closer to
-nominal while being less sharp. Absolute scores cannot be compared across
-entity types because load scales and units differ.
-
-The term “best” in this repository means lowest mean aggregate pinball loss
-among M0--M3 on the single held-out test split. It does not mean statistically
-significant, universally best, or operationally optimal.
+Lower pinball, CRPS, WIS, interval score, Energy Score, and Variogram Score is
+better. Coverage must be considered with nominal coverage and interval width;
+coverage alone is not a proper score. Absolute values are not comparable across
+entity types because scales and units differ. Confirmatory claims require
+paired temporal uncertainty intervals and multiple neural-training seeds.

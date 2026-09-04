@@ -45,10 +45,11 @@ the attached research specification.
   projection, spatial scenarios, aggregate metrics, and smoke pipeline.
 - [x] M5: deterministic FM feature builder, conditional low-rank copula,
   Cholesky pseudo-likelihood, local trainer, and portable checkpoints.
-- [x] M6: set-aware position-free transformer, padding/subset training,
-  permutation equivariance, and variable-cardinality tests.
-- [x] M7: one-time final evaluation, joint and aggregate comparisons,
-  variable-cardinality diagnostics, paper figures, scientific summary,
-  high-level runner, and reproduction command.
+- [x] M6: set-aware position-free transformer and permutation
+  equivariance. Legacy subset/cardinality experiments are excluded from the
+  PowerTech protocol.
+- [x] M7: one-time full-group final evaluation, joint and aggregate
+  comparisons, paper figures, scientific summary, high-level runner, and
+  reproduction command.
 - [x] Optional M4 method: conditional RBF-kernel implementation with separate
   bounded-smoke and full-training configurations.

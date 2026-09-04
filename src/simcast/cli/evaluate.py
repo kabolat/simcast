@@ -137,11 +137,15 @@ def _prepare_method(
         return PreparedMethod(name, matrix.expand(n_origin, horizon, n_entity, n_entity).clone())
     if name == "static_gaussian":
         model = StaticGaussianCopula.load(run_paths[name] / "model.npz")
+        if config.protocol.full_group_only and tuple(ids) != model.entity_ids:
+            raise ValueError("full-group evaluation requires the exact ordered M1 entity set")
         matrices = torch.stack([model.correlation_matrix(lead, entity_ids=ids) for lead in range(1, horizon + 1)])
         return PreparedMethod(name, matrices[None].expand(n_origin, -1, -1, -1).to(torch.float32).clone())
     checkpoint = load_conditional_checkpoint(run_paths[name] / "best.pt", device="cpu")
     if checkpoint.method != name:
         raise ValueError(f"{name} run contains a {checkpoint.method} checkpoint")
+    if config.protocol.full_group_only and tuple(ids) != checkpoint.entity_ids:
+        raise ValueError(f"full-group evaluation requires the exact ordered {name} checkpoint entity set")
     if not set(ids).issubset(checkpoint.entity_ids):
         raise ValueError(f"{name} checkpoint entity IDs do not cover the evaluation group")
     levels = torch.tensor(library.dataset["quantile"].values, dtype=torch.float32)
@@ -171,8 +175,10 @@ def _valid_pairs(truth: torch.Tensor, predictions: torch.Tensor) -> torch.Tensor
 
 def _joint_scores(samples: torch.Tensor, truth: torch.Tensor, power: float) -> tuple[torch.Tensor, torch.Tensor]:
     first = torch.linalg.vector_norm(samples - truth[:, None, :], dim=-1).mean(dim=-1)
-    paired = torch.linalg.vector_norm(samples - samples.roll(1, dims=1), dim=-1).mean(dim=-1)
-    energy = first - 0.5 * paired
+    pair_sum = samples.new_zeros(samples.shape[0])
+    for start in range(0, samples.shape[1], 128):
+        pair_sum += torch.cdist(samples[:, start : start + 128], samples).sum(dim=(-2, -1))
+    energy = first - pair_sum / (2.0 * samples.shape[1] ** 2)
     left, right = torch.triu_indices(samples.shape[-1], samples.shape[-1], offset=1, device=samples.device)
     observed = torch.abs(truth[:, left] - truth[:, right]).pow(power)
     predicted = torch.abs(samples[:, :, left] - samples[:, :, right]).pow(power).mean(dim=1)
@@ -193,6 +199,11 @@ def _sample_and_evaluate(
 ) -> MethodEvaluation:
     sample_count = config.sampling.num_samples if num_samples is None else num_samples
     n_origin, n_entity, horizon = truth.shape
+    expected_shape = (n_origin, horizon, n_entity, n_entity)
+    if prepared.correlations.shape != expected_shape:
+        raise ValueError(
+            f"full group requires correlations with shape {expected_shape}, got {tuple(prepared.correlations.shape)}"
+        )
     aggregate = torch.full((n_origin * horizon, sample_count), torch.nan)
     energy = torch.full((n_origin * horizon,), torch.nan)
     variogram = torch.full((n_origin * horizon,), torch.nan)
@@ -380,7 +391,9 @@ def _plots(
 def _scientific_summary(
     metrics: Mapping[str, Mapping[str, float | int]],
     mean_abs_pit_correlation: float,
-    variable_k_path: Path,
+    *,
+    full_group_only: bool,
+    variable_k_path: Path | None,
 ) -> dict[str, str]:
     def delta(left: str, right: str) -> str:
         if left not in metrics or right not in metrics:
@@ -410,7 +423,16 @@ def _scientific_summary(
         "question_3": delta("independent", "static_gaussian"),
         "question_4": delta("static_gaussian", "conditional_low_rank"),
         "question_5": delta("conditional_low_rank", "set_aware_low_rank"),
-        "question_6": f"Variable-cardinality aggregate diagnostics are stored in {variable_k_path.name}.",
+        "question_6": (
+            "Cross-group heterogeneity is assessed in the consolidated PowerTech summary; "
+            "this evaluation uses the complete static group only."
+            if full_group_only
+            else (
+                f"Variable-cardinality aggregate diagnostics are stored in {variable_k_path.name}."
+                if variable_k_path is not None
+                else "Variable-cardinality diagnostics were not requested."
+            )
+        ),
     }
 
 
@@ -456,62 +478,69 @@ def evaluate_from_config(
         output / "metrics_by_lead.csv", index=False
     )
 
-    coverage_key = f"coverage_{config.evaluation.interval_levels[-1]:g}"
-    variable_rows: list[dict[str, Any]] = []
-    for cardinality in config.evaluation.variable_k_sizes:
-        if cardinality > len(all_entities):
-            continue
-        if cardinality == len(all_entities):
-            for name, result in results.items():
+    variable_k_path: Path | None = None
+    if not config.protocol.full_group_only:
+        coverage_key = f"coverage_{config.evaluation.interval_levels[-1]:g}"
+        variable_rows: list[dict[str, Any]] = []
+        for cardinality in config.evaluation.variable_k_sizes:
+            if cardinality > len(all_entities):
+                continue
+            if cardinality == len(all_entities):
+                for name, result in results.items():
+                    variable_rows.append(
+                        {
+                            "method": name,
+                            "entities": cardinality,
+                            "mean_pinball": result.aggregate.overall["mean_pinball"],
+                            coverage_key: result.aggregate.overall[coverage_key],
+                        }
+                    )
+                continue
+            subset = all_entities[:cardinality]
+            _, subset_truth, subset_predictions, _ = _test_arrays(library, subset)
+            subset_valid = _valid_pairs(subset_truth, subset_predictions)
+            for name in methods:
+                subset_prepared = _prepare_method(name, runs, library, config, subset)
+                subset_result = _sample_and_evaluate(
+                    subset_prepared,
+                    subset_truth,
+                    subset_predictions,
+                    levels,
+                    subset_valid,
+                    config,
+                    num_samples=min(1024, config.sampling.num_samples),
+                    compute_joint=False,
+                )
                 variable_rows.append(
                     {
                         "method": name,
                         "entities": cardinality,
-                        "mean_pinball": result.aggregate.overall["mean_pinball"],
-                        coverage_key: result.aggregate.overall[coverage_key],
+                        "mean_pinball": subset_result.aggregate.overall["mean_pinball"],
+                        coverage_key: subset_result.aggregate.overall[coverage_key],
                     }
                 )
-            continue
-        subset = all_entities[:cardinality]
-        _, subset_truth, subset_predictions, _ = _test_arrays(library, subset)
-        subset_valid = _valid_pairs(subset_truth, subset_predictions)
-        for name in methods:
-            subset_prepared = _prepare_method(name, runs, library, config, subset)
-            subset_result = _sample_and_evaluate(
-                subset_prepared,
-                subset_truth,
-                subset_predictions,
-                levels,
-                subset_valid,
-                config,
-                num_samples=min(1024, config.sampling.num_samples),
-                compute_joint=False,
-            )
-            variable_rows.append(
+        variable_k_path = output / "variable_k.csv"
+        variable_table = pd.DataFrame(variable_rows, columns=["method", "entities", "mean_pinball", coverage_key])
+        variable_table.to_csv(variable_k_path, index=False)
+        if not variable_table.empty:
+            plot_variable_cardinality(
                 {
-                    "method": name,
-                    "entities": cardinality,
-                    "mean_pinball": subset_result.aggregate.overall["mean_pinball"],
-                    coverage_key: subset_result.aggregate.overall[coverage_key],
-                }
+                    str(name): (
+                        subset["entities"].astype(int).tolist(),
+                        subset["mean_pinball"].astype(float).tolist(),
+                    )
+                    for name, subset in variable_table.groupby("method", sort=False)
+                },
+                output / "figures" / "variable_cardinality.png",
             )
-    variable_k_path = output / "variable_k.csv"
-    variable_table = pd.DataFrame(variable_rows, columns=["method", "entities", "mean_pinball", coverage_key])
-    variable_table.to_csv(variable_k_path, index=False)
-    if not variable_table.empty:
-        plot_variable_cardinality(
-            {
-                str(name): (
-                    subset["entities"].astype(int).tolist(),
-                    subset["mean_pinball"].astype(float).tolist(),
-                )
-                for name, subset in variable_table.groupby("method", sort=False)
-            },
-            output / "figures" / "variable_cardinality.png",
-        )
     _plots(output, library, prepared, results, truth, predictions, valid, config)
     _, off_diagonal = _training_correlations(library)
-    summary = _scientific_summary(metrics, float(np.mean(np.abs(off_diagonal))), variable_k_path)
+    summary = _scientific_summary(
+        metrics,
+        float(np.mean(np.abs(off_diagonal))),
+        full_group_only=config.protocol.full_group_only,
+        variable_k_path=variable_k_path,
+    )
     (output / "scientific_summary.json").write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
@@ -522,12 +551,18 @@ def evaluate_from_config(
         "test_origin_count": int(truth.shape[0]),
         "valid_origin_lead_count": int(valid.sum()),
         "entity_ids": _entity_ids(library),
-        "variable_k_entity_ids": {
-            str(cardinality): _entity_ids(library, all_entities[:cardinality])
-            for cardinality in config.evaluation.variable_k_sizes
-            if cardinality <= len(all_entities)
+        "group": {
+            "name": config.data.entity_type,
+            "entity_ids": _entity_ids(library),
+            "entity_count": len(all_entities),
         },
-        "joint_score_estimator": "cyclic paired Monte Carlo estimator",
+        "experimental_protocol": {
+            "name": config.protocol.name,
+            "full_group_only": config.protocol.full_group_only,
+            "subset_training": config.subset_training.enabled,
+            "entity_selection_augmentation_enabled": bool(config.evaluation.variable_k_sizes),
+        },
+        "joint_score_estimator": "empirical all-pairs estimator on the selected joint ensemble",
         "git_commit": _git_commit(),
         "created_at": datetime.now(UTC).isoformat(),
     }

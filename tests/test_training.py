@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 import torch
 
 from simcast.dependence.conditional_low_rank import ConditionalLowRankGaussianCopula
@@ -32,6 +33,27 @@ def test_subset_collator_uses_variable_but_batch_consistent_cardinality() -> Non
     batch = collator([dataset[0], dataset[1], dataset[2]])
     assert 3 <= batch.features.shape[1] < 7
     assert batch.z.shape[:2] == batch.features.shape[:2]
+
+
+def test_full_group_trainer_rejects_legacy_subset_batches(tmp_path: Path) -> None:
+    dataset = _dataset(3, 7)
+    model = ConditionalLowRankGaussianCopula(input_dim=6, latent_rank=2, hidden_dims=(8,), dropout=0.0)
+    trainer = ConditionalTrainer(
+        batch_size=3,
+        epochs=1,
+        patience=1,
+        seed=5,
+        expected_num_entities=7,
+    )
+    collator = DependenceCollator(
+        subset_enabled=True,
+        min_entities=3,
+        full_group_probability=0.0,
+        generator=torch.Generator().manual_seed(3),
+    )
+
+    with pytest.raises(ValueError, match="expected 7 entities"):
+        trainer.fit(model, dataset, dataset, output_dir=tmp_path, training_collator=collator)
 
 
 def test_small_trainer_saves_best_final_and_curves(tmp_path: Path) -> None:

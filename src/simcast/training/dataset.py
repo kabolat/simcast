@@ -51,7 +51,7 @@ class DependenceDataset(Dataset[DependenceSample]):
 
 @dataclass(frozen=True, slots=True)
 class DependenceBatch:
-    """A fixed-cardinality stochastic view of several dependence samples."""
+    """A batch of dependence samples sharing one entity dimension."""
 
     features: torch.Tensor
     z: torch.Tensor
@@ -60,7 +60,11 @@ class DependenceBatch:
 
 
 class DependenceCollator:
-    """Optionally draw entity subsets while retaining full-group samples."""
+    """Collate complete groups, with subset sampling retained for legacy runs.
+
+    PowerTech configurations disable the legacy option and the trainer asserts
+    the complete group dimension independently of this collator.
+    """
 
     def __init__(
         self,

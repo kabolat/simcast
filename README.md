@@ -6,15 +6,18 @@
 > protocol/results, artifact schemas, limitations, and reproduction guide.
 
 Simcast is a research proof of concept for learning same-lead, cross-entity
-forecast-error dependence on top of frozen Chronos-2 marginal forecasts. It
-keeps every entity-wise quantile forecast fixed and changes only the copula
-used to form probabilistic spatial aggregates.
+forecast-error dependence on top of frozen Chronos-2 forecasts. FM-derived
+marginal quantile grids are fixed across dependence methods: raw native grids
+are used for most groups, while solar uses one deterministic isotonic repair
+before the grid is fixed. Only the copula used to form spatial aggregates
+changes.
 
-For origin index `i`, lead `tau`, and the static group `E_g`, each method draws
-entity scenarios from the same Chronos marginals and evaluates
+For forecast instance $i$, lead $\tau$, and complete static group
+$\mathcal E_g$, each method draws entity scenarios and evaluates the observed
+aggregate
 
 ```text
-A[g, tau, i] = sum(Y[k, tau, i] for k in E_g).
+a[g, tau, i] = sum(y[k, tau, i] for k in E_g).
 ```
 
 The dependence target is the vector of discretized, Gaussianized PIT
@@ -34,10 +37,17 @@ dependence.
 - M4 `conditional_kernel`: optional RBF-kernel correlation with separate full
   training and bounded smoke configurations.
 
-M2 and M3 have parameter counts independent of entity cardinality. M3 is
-permutation equivariant, and both accept variable-size entity sets. Optional
-random entity-subset views improve cardinality robustness without changing the
-physical group.
+M2 and M3 have parameter counts independent of entity cardinality, and M3 is
+permutation equivariant. The PowerTech 2027 protocol nevertheless uses every
+member of each complete static group in every training, validation, and test
+case. Configuration validation rejects subset training and reduced-cardinality
+evaluation.
+
+The corrected five-group PowerTech headline table and the audit that excludes
+the earlier subset-trained neural runs are in
+[`docs/08_experiments_and_results.md`](docs/08_experiments_and_results.md).
+Machine-readable results are tracked in
+[`results/powertech2027_metrics.csv`](results/powertech2027_metrics.csv).
 
 ## Reproducible setup with uv
 
@@ -105,8 +115,8 @@ uv run python -m simcast.cli.run_experiment \
 Add `--include-kernel-smoke` to include bounded M4. An existing compatible
 cache is reused. `--rebuild-cache` explicitly replaces it.
 
-To train only M4 with the full transformer train/validation partitions and the
-same optimizer budget as M2/M3:
+To train optional M4 with the full transformer train/validation partitions and
+the same optimizer budget as M2/M3:
 
 ```bash
 uv run python -m simcast.cli.train_dependence \
@@ -149,10 +159,10 @@ uv run python -m simcast.cli.run_experiment \
 - A missing realization or invalid/crossing marginal drops the complete
   `(origin, lead)` spatial vector, never an entity from the static group.
 
-Quantiles are not interpolated. PIT values use the specified `Q+1` deterministic
-bins, and scenario uniforms are projected to the nearest native probability
-cell. Consequently every method has exactly the same discrete marginal law;
-only joint co-occurrence changes.
+Quantiles are not interpolated. Historical pseudo-PIT values use deterministic
+`Q+1` cells; scenario uniforms use a separate nearest-quantile probability-cell
+projection. Consequently every method has exactly the same fixed discrete
+marginal law within a group; only joint co-occurrence changes.
 
 ## Outputs
 
@@ -161,15 +171,15 @@ The PIT library is an xarray/Zarr artifact with named `origin`, `entity`,
 are stored once per patch in float16 and converted to float32 for adapter
 training.
 
-Each model run contains its resolved configuration, selected entity IDs,
+Each model run contains its resolved configuration, complete ordered entity IDs,
 software and Git metadata, model/checkpoints, training histories, and a training
 curve. Final evaluation writes:
 
 - overall JSON and lead-wise CSV metrics;
 - aggregate pinball, coverage, interval width/score, WIS, and CRPS;
-- spatial Energy and Variogram Scores (Energy Score uses a documented paired
-  Monte Carlo estimate for tractability);
-- variable-cardinality diagnostics;
+- spatial Energy and Variogram Scores (Energy Score uses the empirical
+  all-pairs estimator on the selected 512-member joint ensemble, with chunking
+  only for memory efficiency);
 - marginal, correlation, factor, dynamics, aggregate-fan, and summary figures;
 - a six-question scientific summary.
 

@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import numpy as np
@@ -37,6 +38,7 @@ def _cache(path: Path, *, invalid_train_prefix: int = 0) -> Path:
 def _config(tmp_path: Path, method: str) -> SimcastConfig:
     return SimcastConfig.model_validate(
         {
+            "protocol": {"name": "powertech2027", "full_group_only": True},
             "chronos": {"device": "cpu"},
             "dependence": {
                 "method": method,
@@ -89,6 +91,18 @@ def test_train_and_restore_conditional_model(tmp_path: Path) -> None:
     assert loaded.method == "conditional_low_rank"
     assert loaded.entity_ids == ("e-0", "e-1", "e-2", "e-3")
     assert torch.isfinite(loaded.model(torch.randn(2, 4, 13))).all()
+    metadata = json.loads((run / "run_metadata.json").read_text(encoding="utf-8"))
+    assert metadata["group"] == {
+        "name": "transformer",
+        "entity_ids": ["e-0", "e-1", "e-2", "e-3"],
+        "entity_count": 4,
+    }
+    assert metadata["experimental_protocol"] == {
+        "name": "powertech2027",
+        "full_group_only": True,
+        "subset_training": False,
+        "entity_selection_augmentation_enabled": False,
+    }
 
 
 def test_train_and_restore_set_aware_model(tmp_path: Path) -> None:

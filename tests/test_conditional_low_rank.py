@@ -101,3 +101,7 @@ def test_correlation_normalization_and_loss_stabilization() -> None:
     torch.testing.assert_close(stabilized, stabilized.T, atol=1e-7, rtol=0)
     torch.testing.assert_close(stabilized.diagonal(), torch.ones(2), atol=1e-7, rtol=0)
     assert torch.linalg.cholesky_ex(stabilized).info.item() == 0
+    stabilized_twice = stabilize_correlation(stabilized)
+    torch.testing.assert_close(stabilized_twice, stabilized_twice.T, atol=1e-7, rtol=0)
+    torch.testing.assert_close(stabilized_twice.diagonal(), torch.ones(2), atol=1e-7, rtol=0)
+    assert torch.linalg.eigvalsh(stabilized_twice).min() > 0

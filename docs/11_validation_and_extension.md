@@ -17,9 +17,9 @@ input validation. Major protected invariants include:
 - labeled cache dimensions, float16 embeddings, atomic writes, and physical
   test-label separation;
 - train-only feature standardization and exact patch-to-lead mapping;
-- M0 identity and M1 shrinkage/subsetting/save-load behavior;
+- M0 identity and M1 shrinkage/full-group/save-load behavior;
 - M2/M3/M4 positive-definite normalized matrices and shape contracts;
-- M3 permutation equivariance and variable-cardinality behavior;
+- M3 permutation equivariance while operating on the declared full group;
 - pseudo-NLL numerical behavior and trainer checkpoint/history output;
 - common discrete marginal projection and aggregate score formulas;
 - final evaluation outputs, method comparisons, figures, and replay paths.
@@ -70,7 +70,7 @@ Low-rank factors are rotation-invariant; interpret $R$, not individual factor
 coordinates. Location is standardized as raw latitude/longitude, not projected
 physical distance. The networks may recognize entities indirectly through
 stable location/load-scale features even without ID embeddings. Generalization
-to truly new assets is not tested by current subset evaluation.
+to truly new assets is not tested by the PowerTech experiment.
 
 ### Hyperparameters and selection
 
@@ -84,14 +84,14 @@ study should define validation-only selection rules before opening test labels.
 1. State the new statistical hypothesis and whether it remains same-lead.
 2. Implement a module that maps `[batch,K,F]` to symmetric positive-definite
    unit-diagonal `[batch,K,K]` correlations.
-3. Decide and test its permutation and variable-cardinality properties.
+3. Decide and test its permutation properties on the complete group.
 4. Add strict config fields with scientifically meaningful defaults.
 5. Add construction and checkpoint loading in training/checkpoint modules.
 6. Reuse the existing feature builder, pseudo-NLL, valid cases, scenario
    projection, base normals, and evaluator unless the hypothesis explicitly
    requires changing them.
 7. Add unit tests for PSD/Cholesky, gradients, save/load, permutations,
-   subsetting, and malformed inputs.
+   full-group shape enforcement, and malformed inputs.
 8. Add a synthetic end-to-end test without touching real test labels.
 9. Predeclare whether the method is core, ablation, or smoke-only.
 10. Update the mathematical and artifact documentation before running the
@@ -178,8 +178,8 @@ noise; scenario-count sensitivity can be evaluated separately.
 - either joint-score flag enables both Energy and Variogram calculations.
 - `evaluation.report_by_lead` does not currently suppress the lead table.
 - `runtime.num_workers` is not passed to the current trainer DataLoaders.
-- variable-K evaluation uses deterministic metadata prefixes, not random
-  subset averaging.
+- PowerTech configurations reject subset training and variable-$K$ evaluation;
+  architecture-level variable-size capability is not an experiment.
 - M4 smoke mode uses only the first eligible complete origins within each
   partition; full mode uses the complete train and validation partitions.
 - cache reuse is not automatically validated against a full config hash.

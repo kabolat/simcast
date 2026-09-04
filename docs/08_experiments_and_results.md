@@ -1,228 +1,210 @@
-# Experimental protocol and results
+# Experiments and results
 
-## Protocol snapshot
+## PowerTech 2027 status
 
-The completed real-data study evaluates all five Liander entity types with the
-same pinned data and Chronos revisions. Each group uses:
+The PowerTech 2027 experiment uses one complete, ordered, static physical
+entity group per Liander entity type. Every training, validation, and test case
+for group $g$ has entity dimension $K_g=|\mathcal E_g|$. If any entity is
+invalid at a forecast instance and lead, the complete $(i,\tau)$ case is
+excluded. The entity set is never reduced.
 
-- 15-minute resolution, seven-day lookback, one-day horizon;
-- daily 23:45 UTC origins;
-- 347 retained origins: 222 train, 55 validation, 70 test;
-- 21 native Chronos quantile levels and six 16-step output patches;
-- 4,096 aggregate scenarios per valid test origin/lead;
-- 512 scenarios for joint scores;
-- one global seed, 42;
-- complete-vector missingness/crossing gates;
-- M0--M3 as core methods and M4 as a bounded smoke result.
+The corrected full-group M0--M3 results are generated in new
+`runs/powertech2027_*_m0_m3/` directories. They must not overwrite the legacy
+artifacts described below. The tracked tables in this chapter are updated only
+from runs whose manifests state all of the following:
 
-There are $70\times96=6,720$ possible test origin-lead cases per group. The
-valid counts differ because all entities must have finite truth and valid
-marginals. Solar uses predeclared isotonic repair in its supplied named config;
-all other groups use raw noncrossing marginals.
+- `full_group_only: true`;
+- `subset_training: false`;
+- `entity_selection_augmentation_enabled: false`;
+- the complete ordered entity ID list and its exact $K_g$.
 
-## Main result
+## Audit of earlier results
 
-The table ranks only core methods M0--M3 by mean aggregate pinball loss.
-`Change vs M0` is
+The earlier five-group runs under `runs/real_liander2024_*_m0_m4/` inherited
+`subset_training.enabled: true` from the old base configuration. Consequently:
+
+| Method | Actual earlier training protocol | PowerTech status |
+|---|---|---|
+| M0 independent | no learned entity-selection step; always evaluated on the complete group | scientifically unaffected, but old metadata is not protocol-clean |
+| M1 static | fitted from complete PIT vectors; always evaluated on the complete group | scientifically unaffected, but old metadata is not protocol-clean |
+| M2 conditional low-rank | random-cardinality entity subsets were sampled during training | legacy/exploratory only |
+| M3 set-aware | random-cardinality entity subsets were sampled during training | legacy/exploratory only |
+| M4 bounded smoke | its method-specific configuration disabled subset training | optional diagnostic only |
+
+The later transformer-only full-duration M4 run under
+`runs/real_liander2024_transformer_m4_full/` also inherited random subset
+training. It is therefore a legacy exploratory run despite using the full
+training-origin budget. Its prefix-cardinality evaluation is not a PowerTech
+result and is not reproduced here.
+
+No numerical table from those neural runs is retained as a headline
+PowerTech result. Their directories may remain available for provenance, but
+their values must not be mixed with the corrected full-group experiment.
+The per-run resolved-configuration evidence is summarized in
+`results/legacy_experiment_audit.md`.
+
+## Corrected protocol
+
+All groups use the frozen Chronos-2 cache, 15-minute resolution, a seven-day
+lookback, a one-day horizon, daily 23:45 UTC forecast origins, 21 native
+quantile levels, 4,096 aggregate scenarios per valid test case, and a selected
+512-member joint ensemble for joint scores. Solar uses its predeclared
+deterministic isotonic repair. The resulting FM-derived marginal quantile grid
+is fixed across M0--M3.
+
+The core comparison changes only the Gaussian-copula dependence model:
+
+- M0: independent Gaussian copula;
+- M1: static lead-specific Gaussian copula;
+- M2: conditional low-rank Gaussian copula;
+- M3: set-aware conditional low-rank Gaussian copula.
+
+M4 remains optional and diagnostic. No random subsets, prefixes,
+reduced-cardinality evaluations, or entity-selection augmentations belong to
+this experiment.
+
+Energy Score is evaluated with the empirical all-pairs estimator on the
+selected 512-member joint ensemble. Selecting those 512 members is ensemble
+subsampling; chunked `torch.cdist` changes only memory use, not the estimator.
+
+## Corrected full-group results
+
+All five M0--M3 experiments completed under the protocol above. The primary
+ranking uses mean aggregate pinball loss; lower is better. `Change vs M0` is
 
 $$
 100\frac{S_{\mathrm{best}}-S_{\mathrm{M0}}}{S_{\mathrm{M0}}},
 $$
 
-so a negative number is an improvement.
+so a negative value is an improvement. These are descriptive, single-seed
+results.
 
-| Entity type | $K$ | Mean absolute off-diagonal training PIT correlation | Raw crossing rate | Valid test cases | Best core method | Change vs M0 | Best-method 90% coverage |
-|---|---:|---:|---:|---:|---|---:|---:|
-| Transformer | 15 | 0.0760 | 0.764% | 6,439 | M3 set-aware | -1.278% | 0.8980 |
-| Solar park | 5 | 0.0794 | 25.290% | 6,717 | M1 static | -0.635% | 0.8721 |
-| Wind park | 5 | 0.5466 | 0.160% | 6,664 | M1 static | -8.457% | 0.8957 |
-| MV feeder | 15 | 0.0902 | 0.469% | 6,347 | M1 static | -14.713% | 0.8907 |
-| Station installation | 15 | 0.1468 | 0.769% | 6,427 | M2 conditional low-rank | -9.222% | 0.9192 |
+| Entity group | $K_g$ | Mean absolute off-diagonal training PIT correlation | Valid test cases | Best method | Change vs M0 | Best-method 90% coverage |
+|---|---:|---:|---:|---|---:|---:|
+| Transformer | 15 | 0.0760 | 6,439 | M2 conditional low-rank | -1.511% | 0.9219 |
+| Solar park | 5 | 0.0794 | 6,717 | M1 static | -0.633% | 0.8733 |
+| Wind park | 5 | 0.5466 | 6,664 | M1 static | -8.456% | 0.8950 |
+| MV feeder | 15 | 0.0902 | 6,347 | M1 static | -14.715% | 0.8927 |
+| Station installation | 15 | 0.1468 | 6,427 | M2 conditional low-rank | -8.873% | 0.9115 |
 
-Residual dependence is present in every group and is especially strong for
-wind. A dependence model improves mean pinball over M0 for every entity type,
-but increased neural complexity does not win uniformly: M1 wins three groups,
-M2 one, and M3 one.
+Dependence modelling improves mean pinball over independence for every group,
+but its benefit and the preferred model are heterogeneous. M1 wins three
+groups and M2 wins two. M3 does not win any group in this corrected single-seed
+experiment. In particular, the former transformer M3 headline does not survive
+removal of subset training.
 
-## Complete mean-pinball and calibration comparison
+### Complete metric table
 
-| Entity type | Method | Mean pinball | Change vs M0 | 90% coverage | WIS |
-|---|---|---:|---:|---:|---:|
-| Transformer | M0 independent | 3,945,888 | 0.000% | 0.9259 | 30,690,242 |
-|  | M1 static | 3,943,344.75 | -0.064% | 0.9135 | 30,670,464 |
-|  | M2 conditional low-rank | 3,920,982.75 | -0.631% | 0.8950 | 30,496,534 |
-|  | **M3 set-aware** | **3,895,459** | **-1.278%** | **0.8980** | **30,298,014** |
-|  | M4 bounded kernel | 4,416,806.5 | +11.934% | 0.9929 | 34,352,936 |
-| Solar park | M0 independent | 0.0197566 | 0.000% | 0.8437 | 0.153663 |
-|  | **M1 static** | **0.0196311** | **-0.635%** | **0.8721** | **0.152686** |
-|  | M2 conditional low-rank | 0.0202271 | +2.382% | 0.8958 | 0.157322 |
-|  | M3 set-aware | 0.0200586 | +1.529% | 0.8682 | 0.156012 |
-|  | M4 bounded kernel | 0.0203446 | +2.976% | 0.8931 | 0.158236 |
-| Wind park | M0 independent | 0.225179 | 0.000% | 0.6955 | 1.751392 |
-|  | **M1 static** | **0.206136** | **-8.457%** | **0.8957** | **1.603282** |
-|  | M2 conditional low-rank | 0.206677 | -8.217% | 0.8849 | 1.607485 |
-|  | M3 set-aware | 0.206819 | -8.154% | 0.8869 | 1.608588 |
-|  | M4 bounded kernel | 0.206423 | -8.330% | 0.9263 | 1.605510 |
-| MV feeder | M0 independent | 459,931.69 | 0.000% | 0.6337 | 3,577,246.75 |
-|  | **M1 static** | **392,263.44** | **-14.713%** | **0.8907** | **3,050,938** |
-|  | M2 conditional low-rank | 398,596.69 | -13.336% | 0.9200 | 3,100,196.5 |
-|  | M3 set-aware | 397,109.53 | -13.659% | 0.9379 | 3,088,630 |
-|  | M4 bounded kernel | 396,489.19 | -13.794% | 0.9540 | 3,083,804.75 |
-| Station installation | M0 independent | 5,861,676.5 | 0.000% | 0.7187 | 45,590,820 |
-|  | M1 static | 5,348,282 | -8.758% | 0.8838 | 41,597,748 |
-|  | **M2 conditional low-rank** | **5,321,089.5** | **-9.222%** | **0.9192** | **41,386,252** |
-|  | M3 set-aware | 5,371,470 | -8.363% | 0.9046 | 41,778,100 |
-|  | M4 bounded kernel | 5,373,569 | -8.327% | 0.9389 | 41,794,432 |
+| Entity group | Method | Mean pinball | WIS | 90% coverage | 90% width | Energy Score |
+|---|---|---:|---:|---:|---:|---:|
+| Transformer | M0 independent | 3,946,312.5 | 30,693,540 | 0.9258 | 62,003,436 | 12,806,960 |
+|  | M1 static | 3,944,830.25 | 30,682,010 | 0.9144 | 59,698,028 | 12,739,834 |
+|  | **M2 conditional low-rank** | **3,886,698** | **30,229,870** | **0.9219** | **59,714,272** | **12,725,114** |
+|  | M3 set-aware | 3,904,673 | 30,369,680 | 0.9230 | 59,424,064 | 12,730,929 |
+| Solar park | M0 independent | 0.019742087 | 0.15354955 | 0.8446 | 0.25837108 | 0.037339915 |
+|  | **M1 static** | **0.019617192** | **0.15257819** | **0.8733** | **0.30911481** | **0.037203334** |
+|  | M2 conditional low-rank | 0.020104649 | 0.15636951 | 0.8921 | 0.35972953 | 0.037245993 |
+|  | M3 set-aware | 0.020085147 | 0.15621781 | 0.8860 | 0.36205295 | 0.037256483 |
+| Wind park | M0 independent | 0.22512449 | 1.7509683 | 0.6955 | 1.6298919 | 0.32283098 |
+|  | **M1 static** | **0.20608784** | **1.6029054** | **0.8950** | **2.5734615** | **0.32034478** |
+|  | M2 conditional low-rank | 0.20611842 | 1.6031435 | 0.8969 | 2.6567435 | 0.32047984 |
+|  | M3 set-aware | 0.20619807 | 1.6037629 | 0.9034 | 2.7380993 | 0.32067937 |
+| MV feeder | M0 independent | 459,843.594 | 3,576,561.5 | 0.6342 | 2,713,431.25 | 527,885.562 |
+|  | **M1 static** | **392,177.125** | **3,050,266.75** | **0.8927** | **5,173,175.5** | **522,559.031** |
+|  | M2 conditional low-rank | 396,026.625 | 3,080,207.25 | 0.9450 | 6,425,532 | 521,631.375 |
+|  | M3 set-aware | 397,109.031 | 3,088,625.75 | 0.9464 | 6,508,360 | 521,691 |
+| Station installation | M0 independent | 5,860,416.5 | 45,581,016 | 0.7192 | 47,225,272 | 9,127,623 |
+|  | M1 static | 5,348,543 | 41,599,780 | 0.8827 | 71,646,592 | 9,061,769 |
+|  | **M2 conditional low-rank** | **5,340,423** | **41,536,624** | **0.9115** | **80,262,528** | **9,050,469** |
+|  | M3 set-aware | 5,370,834.5 | 41,773,160 | 0.8859 | 73,881,952 | 9,052,517 |
 
-Bold marks the lowest core mean pinball, not necessarily the lowest value in
-every metric column. M4 is displayed for transparency but excluded from model
-selection because it received at most 32 origins and five epochs.
-
-## Full M4 transformer follow-up
-
-A subsequent transformer-only experiment removed the M4 smoke restriction. It
-used all 222 training origins (18,088 complete origin-lead vectors), all 55
-validation origins (5,206 complete vectors), the same maximum 100 epochs and
-patience 12 as M2/M3, default subset training, and seed 42. Early stopping
-completed after 13 epochs and selected epoch 1 at validation pseudo-NLL
--1.473613. No Chronos cache was rebuilt.
-
-The test evaluation reused the original M0--M3 checkpoints and evaluated all
-methods together on the same 6,439 valid transformer cases. It was regenerated
-on CPU, so the common Monte Carlo draws produce very small numerical changes in
-the M0--M3 values relative to the earlier GPU-generated table.
-
-| Method | Mean pinball | CRPS | WIS | 90% coverage | 90% width | Energy Score |
-|---|---:|---:|---:|---:|---:|---:|
-| M0 independent | 3,946,312.5 | 9,757,837 | 30,693,540 | 0.9258 | 62,003,436 | 12,782,282 |
-| M1 static | 3,944,830.25 | 9,760,598 | 30,682,010 | 0.9144 | 59,698,028 | 12,714,452 |
-| M2 conditional low-rank | 3,920,756 | 9,727,597 | 30,494,772 | 0.8942 | 55,402,296 | 12,718,841 |
-| **M3 set-aware** | **3,894,989.75** | **9,703,453** | **30,294,368** | 0.8969 | 55,244,292 | **12,701,536** |
-| M4 full conditional kernel | 4,289,735.5 | 10,251,721 | 33,364,610 | 0.9854 | 88,623,736 | 12,754,201 |
-
-Full training improves M4 mean pinball by 2.877% relative to its bounded smoke
-checkpoint, but M4 remains 8.702% worse than M0 and 10.135% worse than M3. Its
-90% coverage of 0.9854 comes with a much larger interval width, indicating
-overdispersion rather than superior calibration/sharpness balance.
-
-The fitted M4 test correlations are nonnegative by construction: their mean
-off-diagonal value is 0.1600, ranging approximately from 0 to 0.9908. By
-comparison, the transformer PIT dependence contains both signs and the core
-models can represent negative correlations. This provides a plausible
-model-based explanation for M4's overly wide full-group aggregate forecast,
-but it is an inference from the fitted matrices rather than a causal diagnosis.
-The best checkpoint's learned RBF length scale is 1.0143, close to its initial
-value of one.
-
-At the exploratory prefix-cardinality diagnostic, M4 mean pinball is 2,847,024
-for $K=3$, 2,993,279 for $K=7$, and 4,289,735.5 for $K=15$. It is best among
-the five methods at $K=7$ in that 1,024-scenario prefix calculation, but the
-diagnostic uses only one deterministic entity prefix and is not evidence of a
-general cardinality advantage.
-
-The full checkpoint is stored in
-`runs/real_liander2024_transformer_m4_full/`; its comparison is in
-`runs/real_liander2024_transformer_m4_full_evaluation/`. These generated paths
-are local experiment artifacts and may be excluded from version control.
+Bold identifies the lowest mean pinball within a group. It does not assert
+that the same method is optimal for every secondary metric.
 
 ## Interpretation by group
 
 ### Transformer
 
-Residual PIT correlation is modest. M1 barely changes mean pinball (-0.064%),
-while conditional models improve progressively and M3 reaches -1.278% with
-90% coverage 0.898. This is the one group supporting the hypothesis that
-set-level context adds value beyond entity-wise conditional factors. The gain
-is small enough that paired uncertainty analysis is necessary before claiming
-a reliable effect.
+Residual training PIT dependence is modest. M1 changes mean pinball by only
+-0.038%, whereas full-group M2 improves it by 1.511% relative to M0. M3 also
+improves on M0 but is 17,975 mean-pinball units worse than M2. This reverses the
+legacy, subset-trained transformer ordering and removes the former evidence
+for an M3 headline win. A paired uncertainty analysis is still needed before
+calling the M2 improvement reliable.
 
 ### Solar park
 
-The primary scientific complication is marginal crossing, not dependence.
-Isotonic repair makes the comparison executable while preserving raw crossing
-diagnostics. M1 improves mean pinball slightly, whereas M2/M3 are worse than M0
-on that score. The neural methods' wider/altered intervals can move coverage
-closer to nominal without producing a better proper-score result. This warns
-against using coverage alone as the selection criterion.
+The main complication is the marginal intervention: substantial raw Chronos
+quantile crossing required deterministic isotonic repair. That repaired grid
+was fixed across all four methods. M1 improves slightly on M0; M2 and M3 have
+coverage closer to 0.9 but worse pinball and WIS. Coverage alone therefore
+does not justify preferring a conditional model.
 
 ### Wind park
 
-Mean absolute PIT correlation is 0.5466, far larger than any other group.
-Independence severely undercovers at 90% (0.6955). All dependence methods
-recover most of the aggregate improvement; the simple static M1 is marginally
-best. The conditional methods' differences from M1 are tiny relative to the
-large M0-to-M1 step, suggesting that estimating dependence is essential here
-but context variation has not demonstrated added value.
+Wind has the strongest residual PIT dependence. M0 severely undercovers at the
+90% level (0.6955), while M1 reaches 0.8950 and improves mean pinball by 8.456%.
+M2 and M3 are extremely close to M1 but do not improve the primary score. The
+large gain comes from modelling dependence, not from conditional complexity.
 
 ### MV feeder
 
-M0 has the strongest aggregate undercoverage (0.6337). M1 reduces mean pinball
-by 14.713%, the largest relative improvement in the study, and brings coverage
-to 0.8907. Neural methods produce wider intervals and coverage above nominal
-but slightly worse pinball/WIS than M1. A low mean absolute correlation can
-still matter materially for a 15-component sum; average absolute correlation
-alone is not a sufficient predictor of aggregate impact.
+M0 has the strongest undercoverage (0.6342). M1 improves mean pinball by
+14.715% and reaches 0.8927 coverage. M2 and M3 create wider intervals and
+overcoverage while scoring slightly worse on mean pinball and WIS. A modest
+average pairwise correlation can still have a large effect on a 15-entity sum.
 
 ### Station installation
 
-All dependence methods improve substantially over independence. M2 is best on
-mean pinball and WIS, providing the clearest positive evidence for conditional
-dependence in this study. M3 is worse than M2, so set-aware complexity is not
-uniformly beneficial.
+All dependence models materially improve over M0. M2 is best on mean pinball,
+WIS, and Energy Score, although its 90% interval is the widest and covers at
+0.9115. M3 is worse than both M1 and M2 on mean pinball, so set-aware attention
+is not uniformly beneficial.
 
-## What the study supports
+## Interpretation rules
 
-The evidence supports these descriptive conclusions:
+The primary scientific question is whether modelling cross-entity dependence
+improves the aggregate predictive distribution while holding every
+FM-derived marginal quantile grid fixed. Results are interpreted separately by
+physical entity group because units, scales, marginal repairs, and dependence
+strength differ.
 
-- ignoring cross-entity forecast-error dependence can materially distort
-  spatial aggregate uncertainty;
-- a static shrinkage copula is a strong baseline and often sufficient;
-- conditional low-rank modelling can help for some entity types;
-- set-aware attention is promising for transformers but not a universal
-  improvement;
-- the value of dependence modelling is heterogeneous across physical groups;
-- marginal validity, especially quantile crossings, can dominate feasibility.
+The study does not claim novelty for joint probabilistic energy forecasting in
+general. Nor does a single-seed comparison establish statistical superiority.
+Any observed ranking is descriptive until paired uncertainty analysis over
+chronological forecast origins is performed.
 
-It does **not** support claims that M3 is generally superior, that M4 has been
-fairly compared, that results transfer beyond the selected year/groups, or that
-the differences are statistically significant.
+The central cross-group question is:
 
-## Threats to validity
+> How heterogeneous is the benefit of dependence modelling across physical
+> entity groups?
 
-1. **Single seed.** Neural optimization and subset sampling are observed once.
-2. **Single chronological test block.** Seasonality and regime changes may make
-   this block unrepresentative.
-3. **No uncertainty on score differences.** Cases within an origin and nearby
-   days are dependent; naive IID standard errors would be inappropriate.
-4. **Discrete truncated marginals.** No interpolation or tail extrapolation is
-   used, limiting achievable calibration and scenario resolution.
-5. **Gaussian copula.** Tail dependence and asymmetric co-errors are excluded.
-6. **Complete-case selection.** Missing/crossing cases may be systematically
-   harder than retained cases.
-7. **Solar intervention differs.** Solar uses isotonic repair; cross-type score
-   comparisons are inappropriate regardless, but protocol heterogeneity should
-   remain visible.
-8. **Variable-K prefixes.** Cardinality and entity composition are confounded.
-9. **M4 resource inequality.** Its results are diagnostic only.
-10. **Test reuse risk.** The repository enforces access separation, not a
-    one-time cryptographic seal; repeated researcher inspection can overfit.
+## Threats to validity retained for the corrected study
 
-## Recommended confirmatory experiment
+1. Neural optimization is observed for a single seed.
+2. The evaluation uses one chronological test block.
+3. Nearby origins are dependent, so naive IID uncertainty intervals are not
+   appropriate.
+4. The finite native-quantile construction is a discrete approximation with
+   no interpolated predictive CDF or tail extrapolation.
+5. Gaussian copulas exclude asymmetric and non-Gaussian tail dependence.
+6. Complete-case selection may exclude systematically difficult cases.
+7. Solar receives deterministic isotonic repair whereas the other groups use
+   raw Chronos-2 native quantiles.
+8. Repeated inspection of the test block can introduce researcher overfitting.
 
-Predeclare mean aggregate pinball as primary, M1 as the main baseline, and
-M2/M3 as paired alternatives. Repeat M2/M3 over multiple seeds. Estimate
-confidence intervals for per-origin average score differences using a moving
-block bootstrap over chronological origins, with block length justified by
-dependence diagnostics. Report effect sizes, intervals, calibration/width, and
-joint scores. Treat entity type as a stratification factor rather than pooling
-absolute scores. Run sensitivity analyses for PIT repair, pooled-vs-lead M1,
-factor rank, and several random entity subsets.
+## Reproducible result source
 
-## Source artifacts
+The machine-readable tracked table is
+`results/powertech2027_metrics.csv`; its generated narrative and complete
+ordered entity lists are in `results/powertech2027_summary.md`. Regenerate both
+with:
 
-The compact generated summary is in `runs/all_entity_types_summary.csv` and its
-narrative companion `runs/all_entity_types_summary.md`. Full metrics,
-lead-specific tables, variable-cardinality tables, correlations, and figures
-are under each `runs/real_liander2024_*_m0_m4/evaluation/` directory. These run
-directories are generated artifacts and may be excluded from version control;
-the table above preserves the headline scientific record in tracked docs.
+```bash
+uv run python scripts/summarize_powertech_results.py
+```
+
+The summarizer refuses runs with incorrect protocol flags, inconsistent group
+metadata, missing methods, method-specific valid-case counts, or any
+reduced-cardinality output. Full artifacts remain under
+`runs/powertech2027_*_m0_m3/` and are intentionally separate from legacy runs.

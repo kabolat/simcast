@@ -17,7 +17,7 @@ weather_forecasts_versioned/<entity_type>/*.parquet
 The optional EPEX and profile files are disabled in the present experiments.
 The code supports five homogeneous groups:
 
-| Entity type | Experimental cardinality $K$ | Target availability rule |
+| Entity type / static group $g$ | Full-group cardinality $K_g$ | Target availability rule |
 |---|---:|---|
 | `transformer` | 15 | available at measurement timestamp |
 | `solar_park` | 5 | two-day delay unless `available_at` is explicit |
@@ -25,7 +25,7 @@ The code supports five homogeneous groups:
 | `mv_feeder` | 15 | available at measurement timestamp |
 | `station_installation` | 15 | available at measurement timestamp |
 
-Cardinality is not hardcoded in model code. The group builder selects every
+Full-group cardinality is not hardcoded in model code. The group builder selects every
 metadata row whose `group_name` equals the requested type, preserving YAML
 order. The canonical ID is `group_name::name`; names alone are insufficient
 because some physical names occur in multiple categories.
@@ -47,19 +47,19 @@ may still contain missing observations around transitions.
 ## Forecast windows
 
 Let $\Delta=15$ minutes, lookback $L=672$ steps (seven days), and horizon
-$H=96$ steps (one day). For an origin timestamp $t_i$, the exact windows are
+$H=96$ steps (one day). For forecast instance $i$ with origin $t^{(i)}$, the exact windows are
 
 $$
-\mathcal T_i^{\mathrm{past}}
-=\{t_i-(L-1)\Delta,\ldots,t_i\},
+\mathcal T_{\mathrm{past}}^{(i)}
+=\{t^{(i)}-(L-1)\Delta,\ldots,t^{(i)}\},
 $$
 
 $$
-\mathcal T_i^{\mathrm{future}}
-=\{t_i+\Delta,\ldots,t_i+H\Delta\}.
+\mathcal T_{\mathrm{future}}^{(i)}
+=\{t^{(i)}+\Delta,\ldots,t^{(i)}+H\Delta\}.
 $$
 
-Thus lead $\tau$ corresponds to $t_i+\tau\Delta$ and is one-based in public
+Thus lead $\tau$ corresponds to $t^{(i)}+\tau\Delta$ and is one-based in public
 interfaces. Origins are generated daily (`origin_stride_steps: 96`) at 23:45
 UTC on a stable phase anchored to 1970-01-01 23:45 UTC. A candidate is created
 only when the common target coverage contains both complete timestamp grids.
@@ -70,7 +70,7 @@ through 2024-12-30 23:45 UTC.
 ## The point-in-time information set
 
 For every origin, inputs must be measurable with respect to the information
-set $\mathcal I_i$ available at $t_i$.
+set $\mathcal I^{(i)}$ available at $t^{(i)}$.
 
 ### Historical target values
 
@@ -85,9 +85,9 @@ s, & \text{otherwise}.
 \end{cases}
 $$
 
-The value is supplied to Chronos only if both $s\le t_i$ and $a_k(s)\le t_i$.
+The value is supplied to Chronos only if both $s\le t^{(i)}$ and $a_k(s)\le t^{(i)}$.
 Otherwise it is replaced with `NaN`, allowing Chronos's native missing-value
-handling to operate. The extra condition $s\le t_i$ protects against a corrupt
+handling to operate. The extra condition $s\le t^{(i)}$ protects against a corrupt
 record that claims a future timestamp was available early.
 
 For solar and wind, the two-day reporting delay masks the most recent 192
@@ -102,14 +102,14 @@ Chronos test-mode dataset.
 ### Historical weather
 
 `weather_measurements` has no separate publication timestamp. The conservative
-rule treats measurement time as availability time, selects only $s\le t_i$,
+rule treats measurement time as availability time, selects only $s\le t^{(i)}$,
 and reindexes to the exact lookback grid.
 
 ### Future weather
 
 Versioned weather forecasts contain `available_at`. For each requested future
-timestamp $s>t_i$, the pipeline filters to vintages with
-`available_at <= t_i`, stably sorts by availability, and takes the newest
+timestamp $s>t^{(i)}$, the pipeline filters to vintages with
+`available_at <= t^{(i)}`, stably sorts by availability, and takes the newest
 eligible vintage for $s$. It then reindexes to the exact horizon grid.
 
 If any configured past or future covariate is non-finite for any entity, the
@@ -154,7 +154,7 @@ their last target time is greater than or equal to the first target time in
 the next partition:
 
 $$
-t_i+H\Delta\ge t_{\mathrm{next}}+\Delta.
+t^{(i)}+H\Delta\ge t^{(i_{\mathrm{next}})}+\Delta.
 $$
 
 This prevents a realized target timestamp from appearing on both sides of a

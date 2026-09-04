@@ -1,5 +1,9 @@
 seed: 42
 
+protocol:
+  name: powertech2027
+  full_group_only: true
+
 data:
   dataset_id: OpenSTEF/liander2024-energy-forecasting-benchmark
   revision: dce7fe9bbae0d62288986fa97fa1ee7e9d3b7044
@@ -100,7 +104,7 @@ dependence:
     smoke_max_origins: 32
 
 subset_training:
-  enabled: true
+  enabled: false
   min_entities: 4
   full_group_probability: 0.25
 
@@ -127,7 +131,7 @@ evaluation:
   report_by_lead: true
   scenario_batch_size: 16
   joint_score_num_samples: 512
-  variable_k_sizes: [3, 7, 15]
+  variable_k_sizes: []
 
 runtime:
   deterministic: true

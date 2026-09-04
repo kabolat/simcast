@@ -14,7 +14,8 @@ class SetAwareLowRankGaussianCopula(nn.Module):
 
     No positional or physical entity-ID embedding is used, so reordering the
     entities reorders the output correlation as ``P R P^T``. A padding mask is
-    accepted solely for batching future variable-cardinality groups.
+    accepted solely as a possible software extension outside the PowerTech
+    protocol, which always supplies the complete static group.
     """
 
     def __init__(

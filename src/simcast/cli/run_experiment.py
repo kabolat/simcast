@@ -75,6 +75,9 @@ def run_experiment_from_config(
         cache_dir=cache,
         output_dir=experiment / "evaluation",
     )
+    group_metadata = json.loads((next(iter(run_paths.values())) / "run_metadata.json").read_text(encoding="utf-8"))[
+        "group"
+    ]
     manifest = {
         "created_at": datetime.now(UTC).isoformat(),
         "cache_path": str(cache),
@@ -82,6 +85,13 @@ def run_experiment_from_config(
         "evaluation_path": str(evaluation),
         "methods": methods,
         "kernel_is_bounded_smoke": include_kernel_smoke,
+        "group": group_metadata,
+        "experimental_protocol": {
+            "name": config.protocol.name,
+            "full_group_only": config.protocol.full_group_only,
+            "subset_training": config.subset_training.enabled,
+            "entity_selection_augmentation_enabled": bool(config.evaluation.variable_k_sizes),
+        },
         "git_commit": _git_commit(),
     }
     (experiment / "experiment_manifest.json").write_text(

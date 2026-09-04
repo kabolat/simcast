@@ -1,9 +1,12 @@
+import json
 from math import erf
 from pathlib import Path
 
 import numpy as np
+import pytest
+import torch
 
-from simcast.cli.evaluate import evaluate_from_config
+from simcast.cli.evaluate import PreparedMethod, _sample_and_evaluate, evaluate_from_config
 from simcast.cli.train_dependence import train_from_config
 from simcast.config import SimcastConfig
 from simcast.fm.cache import build_cache_dataset, save_pit_library
@@ -36,6 +39,7 @@ def _cache(path: Path) -> Path:
 def _config(tmp_path: Path) -> SimcastConfig:
     return SimcastConfig.model_validate(
         {
+            "protocol": {"name": "powertech2027", "full_group_only": True},
             "chronos": {"device": "cpu"},
             "sampling": {"num_samples": 32},
             "evaluation": {
@@ -43,14 +47,13 @@ def _config(tmp_path: Path) -> SimcastConfig:
                 "interval_levels": [0.8],
                 "scenario_batch_size": 2,
                 "joint_score_num_samples": 8,
-                "variable_k_sizes": [3, 4],
             },
             "output": {"root_dir": tmp_path / "runs"},
         }
     )
 
 
-def test_final_evaluation_writes_tables_figures_and_summary(tmp_path: Path) -> None:
+def test_powertech_evaluation_uses_only_the_complete_group(tmp_path: Path) -> None:
     cache = _cache(tmp_path / "cache")
     config = _config(tmp_path)
     static_config = config.model_copy(
@@ -68,11 +71,35 @@ def test_final_evaluation_writes_tables_figures_and_summary(tmp_path: Path) -> N
 
     assert (output / "metrics.json").is_file()
     assert (output / "metrics_by_lead.csv").is_file()
-    assert (output / "variable_k.csv").is_file()
+    assert not (output / "variable_k.csv").exists()
     assert (output / "scientific_summary.json").is_file()
     assert (output / "evaluation_manifest.json").is_file()
     assert (output / "resolved_config.yaml").is_file()
     assert (output / "figures" / "summary_coverage.png").is_file()
-    assert (output / "figures" / "variable_cardinality.png").is_file()
-    variable_rows = (output / "variable_k.csv").read_text(encoding="utf-8").splitlines()
-    assert len(variable_rows) == 1 + 2 * 2
+    assert not (output / "figures" / "variable_cardinality.png").exists()
+    manifest = json.loads((output / "evaluation_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["group"]["entity_count"] == 4
+    assert manifest["experimental_protocol"] == {
+        "name": "powertech2027",
+        "full_group_only": True,
+        "subset_training": False,
+        "entity_selection_augmentation_enabled": False,
+    }
+    assert "variable_k_entity_ids" not in manifest
+
+
+def test_evaluation_rejects_a_shrunken_correlation_matrix(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    truth = torch.ones(2, 4, 3)
+    predictions = torch.stack((truth - 1, truth, truth + 1), dim=-1)
+    prepared = PreparedMethod("independent", torch.eye(3).expand(2, 3, 3, 3))
+
+    with pytest.raises(ValueError, match="shape"):
+        _sample_and_evaluate(
+            prepared,
+            truth,
+            predictions,
+            torch.tensor([0.1, 0.5, 0.9]),
+            torch.ones(2, 3, dtype=torch.bool),
+            config,
+        )

@@ -26,6 +26,10 @@ def test_base_protocol_and_pins() -> None:
     assert config.forecast.origin_time.isoformat(timespec="minutes") == "23:45"
     assert config.features.use_entity_id_embedding is False
     assert config.sampling.num_samples == 4096
+    assert config.protocol.name == "powertech2027"
+    assert config.protocol.full_group_only
+    assert not config.subset_training.enabled
+    assert not config.evaluation.variable_k_sizes
 
 
 @pytest.mark.parametrize(
@@ -80,7 +84,20 @@ def test_full_kernel_config_uses_core_training_protocol() -> None:
     assert not config.dependence.conditional_kernel.smoke_only
     assert config.training.epochs == 100
     assert config.training.patience == 12
-    assert config.subset_training.enabled
+    assert not config.subset_training.enabled
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        "protocol.full_group_only=false",
+        "subset_training.enabled=true",
+        "evaluation.variable_k_sizes=[3]",
+    ],
+)
+def test_powertech_protocol_rejects_entity_selection_augmentation(override: str) -> None:
+    with pytest.raises(ValidationError, match="full_group_only|full-group protocol forbids"):
+        load_config(CONFIGS / "base.yaml", [override])
 
 
 def test_recursive_inheritance_environment_and_overrides(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

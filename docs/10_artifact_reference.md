@@ -69,7 +69,9 @@ training_curve.png              M2/M3/M4 only
 ```
 
 `run_metadata.json` records creation time, Git commit, Python and key package
-versions, absolute cache path, entity IDs, and seed. M0's NPZ stores IDs and
+versions, absolute cache path, seed, group name, complete ordered entity IDs,
+$K_g$, `full_group_only`, subset-training status, and whether entity-selection
+augmentation was enabled. M0's NPZ stores IDs and
 lead count. M1's stores all correlation matrices plus estimator settings.
 
 Conditional PyTorch checkpoints contain `schema_version`, method, model
@@ -82,7 +84,6 @@ used in evaluation; `final.pt` is retained to diagnose optimization.
 ```text
 metrics.json
 metrics_by_lead.csv
-variable_k.csv
 <method>_aggregate_predictions.npz
 scientific_summary.json
 evaluation_manifest.json
@@ -110,7 +111,7 @@ the current evaluator always writes this table.
 |---|---|---|
 | `quantile_predictions` | `[N_test,H,Q_eval]` | empirical aggregate quantiles |
 | `correlations` | `[N_test,H,K,K]` | evaluated copula correlations |
-| `energy_score` | `[N_test,H]` | paired MC score or NaN |
+| `energy_score` | `[N_test,H]` | empirical all-pairs score on the selected joint ensemble, or NaN |
 | `variogram_score` | `[N_test,H]` | score or NaN |
 | `valid` | `[N_test,H]` | common evaluation mask |
 
@@ -118,17 +119,12 @@ Entity-level and aggregate Monte Carlo samples are not persisted, which keeps
 artifacts manageable but means exact secondary analyses requiring raw scenarios
 must regenerate them.
 
-### `variable_k.csv`
-
-Rows contain method, entity-prefix cardinality, mean pinball, and widest
-configured coverage. The manifest maps every cardinality to its exact entity
-IDs, preventing ambiguous subset interpretation.
-
 ### Manifests and summary
 
 `evaluation_manifest.json` records cache path, method-run paths, methods,
-test-origin/case counts, full entity IDs, variable-K subset IDs, joint-score
-estimator name, Git commit, and time. `scientific_summary.json` gives six
+test-origin/case counts, the complete ordered group and $K_g$, full-group
+protocol flags, joint-score estimator name, Git commit, and time.
+`scientific_summary.json` gives six
 machine-readable descriptive answers; it is not a substitute for inspecting
 proper scores and uncertainty.
 
@@ -137,8 +133,8 @@ proper scores and uncertainty.
 Evaluation normally creates dataset location/load/missingness plots; marginal
 PIT, coverage, and pinball diagnostics; empirical/static correlation heatmaps
 and eigenvalues; per-method correlation and aggregate-fan examples; M2/M3
-dependence-dynamics and factor plots; score/coverage summaries; and
-variable-cardinality plots. Example fans use the first valid flattened
+dependence-dynamics and factor plots; and full-group score/coverage summaries.
+Example fans use the first valid flattened
 origin-lead position, while the fan traces all leads for that origin.
 
 Factor plots must be interpreted cautiously because low-rank factors are

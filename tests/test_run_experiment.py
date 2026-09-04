@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import simcast.cli.run_experiment as workflow
@@ -13,6 +14,10 @@ def test_high_level_workflow_reuses_cache_and_runs_core_plus_bounded_kernel(monk
         assert cache_dir == cache
         path = Path(output_dir)
         path.mkdir()
+        (path / "run_metadata.json").write_text(
+            json.dumps({"group": {"name": config.data.entity_type, "entity_ids": ["a"], "entity_count": 1}}),
+            encoding="utf-8",
+        )
         trained.append((config.dependence.method, config.training.epochs, config.subset_training.enabled))
         return path
 

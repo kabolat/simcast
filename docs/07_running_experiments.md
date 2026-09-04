@@ -43,7 +43,7 @@ The optional device variable is:
 export SIMCAST_DEVICE=cuda
 ```
 
-## 4. Download one pinned entity-type subset
+## 4. Download the pinned files for one entity type
 
 ```bash
 uv run python -m simcast.cli.download_data \
@@ -52,7 +52,7 @@ uv run python -m simcast.cli.download_data \
 
 Replace the config with `solar_park`, `wind_park`, `mv_feeder`, or
 `station_installation` as required. Each invocation downloads that group's
-minimum file subset into the same snapshot directory.
+minimum required file selection into the same snapshot directory.
 
 ## 5A. Run the complete core experiment
 
@@ -86,7 +86,7 @@ uv run python -m simcast.cli.train_dependence \
 ```
 
 The full config uses every chronological training and validation origin, the
-standard 100-epoch maximum/patience 12, and subset training. It does not retrain
+standard 100-epoch maximum/patience 12, and the complete entity group. It does not retrain
 M0--M3 or rerun Chronos. Evaluation should receive this directory through
 `--method-run conditional_kernel=runs/transformer_m4_full`.
 
@@ -146,8 +146,45 @@ done
 ```
 
 Solar automatically inherits `pit.monotone_repair: isotonic`; the other four
-configs use no repair. Add `--include-kernel-smoke` only if the bounded M4
-diagnostic is desired for every group.
+configs use no repair. Every named config inherits the machine-verified
+PowerTech full-group protocol. Add `--include-kernel-smoke` only if the bounded
+M4 diagnostic is desired for every group.
+
+The tracked corrected baseline was produced from existing compatible caches
+with the following exact commands. The five output directories must not exist
+before execution.
+
+```bash
+uv run python -m simcast.cli.run_experiment \
+  --config configs/liander2024_transformer.yaml \
+  --cache-dir artifacts/cache/liander2024_transformer \
+  --output-dir runs/powertech2027_transformer_m0_m3
+
+uv run python -m simcast.cli.run_experiment \
+  --config configs/liander2024_solar_park.yaml \
+  --cache-dir artifacts/cache/liander2024_solar_park_isotonic \
+  --output-dir runs/powertech2027_solar_park_m0_m3
+
+uv run python -m simcast.cli.run_experiment \
+  --config configs/liander2024_wind_park.yaml \
+  --cache-dir artifacts/cache/liander2024_wind_park \
+  --output-dir runs/powertech2027_wind_park_m0_m3
+
+uv run python -m simcast.cli.run_experiment \
+  --config configs/liander2024_mv_feeder.yaml \
+  --cache-dir artifacts/cache/liander2024_mv_feeder \
+  --output-dir runs/powertech2027_mv_feeder_m0_m3
+
+uv run python -m simcast.cli.run_experiment \
+  --config configs/liander2024_station_installation.yaml \
+  --cache-dir artifacts/cache/liander2024_station_installation \
+  --output-dir runs/powertech2027_station_installation_m0_m3
+
+uv run python scripts/summarize_powertech_results.py
+```
+
+If the compatible caches do not exist, omit `--cache-dir` and allow the runner
+to build the configured cache after setting the data directory and device.
 
 ## Configuration overrides
 
@@ -158,8 +195,7 @@ uv run python -m simcast.cli.run_experiment \
   --config configs/liander2024_transformer.yaml \
   --set seed=7 \
   --set training.epochs=20 \
-  --set sampling.num_samples=2048 \
-  --set evaluation.variable_k_sizes='[3,5,10,15]'
+  --set sampling.num_samples=2048
 ```
 
 Values are parsed as YAML, so quote shell-sensitive lists and strings. Configs
@@ -203,10 +239,10 @@ python -m json.tool artifacts/cache/liander2024_transformer/marginal_diagnostics
 ```
 
 Check crossing rates, dropped vectors, origin counts, reporting-delay masks,
-entity order, revisions, and marginal calibration. After fitting, inspect each
-`training_summary.json` and training curve. After evaluation, use
-`metrics.json`, `metrics_by_lead.csv`, `variable_k.csv`, and figures together;
-do not select a method from one aggregate number alone.
+complete ordered entity set, revisions, and marginal calibration. After
+fitting, inspect each `training_summary.json` and training curve. After
+evaluation, use `metrics.json`, `metrics_by_lead.csv`, and full-group figures
+together; do not select a method from one aggregate number alone.
 
 ## Development and scientific regression checks
 
@@ -217,7 +253,7 @@ uv run pytest
 uv lock --check
 ```
 
-The latest implementation check completed with 121 passing tests. Reported
+The latest implementation check completed with 130 passing tests. Reported
 warnings were xarray/NumPy deprecations, not test failures.
 
 ## Common failure modes
@@ -225,7 +261,7 @@ warnings were xarray/NumPy deprecations, not test failures.
 | Symptom | Likely cause | Action |
 |---|---|---|
 | `forecast_embeds` missing | stock Chronos installed | run `scripts/setup_chronos.sh` |
-| data file not found | wrong `SIMCAST_DATA_DIR` or group subset absent | set the absolute path and run download for that config |
+| data file not found | wrong `SIMCAST_DATA_DIR` or group files absent | set the absolute path and run download for that config |
 | CUDA or dtype load error | device unavailable or unsupported dtype | override `chronos.device=cpu` and usually `chronos.dtype=float32` |
 | cache already exists | overwrite protection | choose another cache or intentionally pass `--overwrite`/`--rebuild-cache` |
 | run/evaluation directory exists | immutable run protection | select a new output directory |

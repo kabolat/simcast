@@ -81,6 +81,17 @@ def _write_run_metadata(run_dir: Path, config: SimcastConfig, cache_path: Path, 
         "packages": packages,
         "cache_path": str(cache_path),
         "entity_ids": entity_ids,
+        "group": {
+            "name": config.data.entity_type,
+            "entity_ids": entity_ids,
+            "entity_count": len(entity_ids),
+        },
+        "experimental_protocol": {
+            "name": config.protocol.name,
+            "full_group_only": config.protocol.full_group_only,
+            "subset_training": config.subset_training.enabled,
+            "entity_selection_augmentation_enabled": config.subset_training.enabled,
+        },
         "seed": config.seed,
     }
     (run_dir / "run_metadata.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
@@ -155,6 +166,10 @@ def _train_conditional(
     builder = _feature_builder(config, library)
     train_features = builder.fit_transform(train_embeddings, train_predictions, levels, locations)
     validation_features = builder.transform(validation_embeddings, validation_predictions, levels, locations)
+    if config.protocol.full_group_only:
+        expected_entities = len(entity_ids)
+        if train_features.shape[1] != expected_entities or validation_features.shape[1] != expected_entities:
+            raise ValueError(f"full-group protocol requires all {expected_entities} entities in every feature case")
     if method == "conditional_low_rank":
         m2_config = config.dependence.conditional_low_rank
         conditional_model = ConditionalLowRankGaussianCopula(
@@ -211,6 +226,7 @@ def _train_conditional(
         jitter=model_jitter,
         seed=config.seed,
         device=device,
+        expected_num_entities=len(entity_ids) if config.protocol.full_group_only else None,
     )
     subset = config.subset_training
     collator = DependenceCollator(

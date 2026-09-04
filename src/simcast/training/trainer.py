@@ -33,7 +33,11 @@ class TrainingResult:
     history: tuple[EpochMetrics, ...]
 
 
-def _forward(model: nn.Module, features: torch.Tensor) -> torch.Tensor:
+def _forward(model: nn.Module, features: torch.Tensor, expected_num_entities: int | None = None) -> torch.Tensor:
+    if expected_num_entities is not None and features.shape[-2] != expected_num_entities:
+        raise ValueError(
+            f"full-group protocol expected {expected_num_entities} entities, received {features.shape[-2]}"
+        )
     correlation = model(features)
     if not isinstance(correlation, torch.Tensor):
         raise TypeError("dependence model must return a torch.Tensor correlation matrix")
@@ -55,6 +59,7 @@ class ConditionalTrainer:
         jitter: float = 1e-6,
         seed: int = 42,
         device: torch.device | str = "cpu",
+        expected_num_entities: int | None = None,
     ) -> None:
         if min(batch_size, epochs, patience) <= 0:
             raise ValueError("batch_size, epochs, and patience must be positive")
@@ -69,6 +74,7 @@ class ConditionalTrainer:
         self.jitter = jitter
         self.seed = seed
         self.device = torch.device(device)
+        self.expected_num_entities = expected_num_entities
 
     @staticmethod
     def _mean_loss(
@@ -76,6 +82,7 @@ class ConditionalTrainer:
         loader: DataLoader[DependenceBatch],
         device: torch.device,
         jitter: float,
+        expected_num_entities: int | None,
     ) -> float:
         model.eval()
         total = 0.0
@@ -84,7 +91,12 @@ class ConditionalTrainer:
             for batch in loader:
                 features = batch.features.to(device)
                 scores = batch.z.to(device)
-                loss = gaussian_copula_pseudo_nll(scores, _forward(model, features), jitter=jitter, reduction="sum")
+                loss = gaussian_copula_pseudo_nll(
+                    scores,
+                    _forward(model, features, expected_num_entities),
+                    jitter=jitter,
+                    reduction="sum",
+                )
                 total += float(loss)
                 count += scores.shape[0]
         if count == 0:
@@ -141,7 +153,7 @@ class ConditionalTrainer:
                 optimizer.zero_grad(set_to_none=True)
                 loss = gaussian_copula_pseudo_nll(
                     scores,
-                    _forward(model, features),
+                    _forward(model, features, self.expected_num_entities),
                     jitter=self.jitter,
                     reduction="mean",
                 )
@@ -150,7 +162,13 @@ class ConditionalTrainer:
                 optimizer.step()
                 total += float(loss.detach()) * scores.shape[0]
                 count += scores.shape[0]
-            validation_loss = self._mean_loss(model, validation_loader, self.device, self.jitter)
+            validation_loss = self._mean_loss(
+                model,
+                validation_loader,
+                self.device,
+                self.jitter,
+                self.expected_num_entities,
+            )
             metrics = EpochMetrics(epoch, total / count, validation_loss)
             history.append(metrics)
             if validation_loss < best_loss:

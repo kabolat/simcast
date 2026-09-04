@@ -1,9 +1,9 @@
-# Frozen Chronos marginals, features, and PIT construction
+# Frozen Chronos forecasts, fixed marginal grids, features, and PIT construction
 
 ## Why Chronos is frozen
 
 The experiment is designed to isolate the contribution of spatial dependence.
-Chronos-2 is therefore an immutable marginal forecaster:
+Chronos-2 is therefore a frozen marginal forecaster:
 
 - source commit: `8589d1988e9676817548e9626738ff06b6ca6370`;
 - model revision: `29ec3766d36d6f73f0696f85560a422f50e8498c`;
@@ -38,12 +38,12 @@ to apply it again.
 
 ## Returned marginal and representation tensors
 
-For every origin, the wrapper returns:
+For every forecast instance $i$ and group $g$, the wrapper returns:
 
 $$
-\widehat q\in\mathbb R^{K\times H\times Q},
+\widehat y^{(i)}\in\mathbb R^{K_g\times H\times Q},
 \qquad
-e\in\mathbb R^{K\times P\times D}.
+e^{(i)}\in\mathbb R^{K_g\times P\times D}.
 $$
 
 In the observed model configuration, $Q=21$, output patch size $S=16$,
@@ -64,21 +64,22 @@ that block.
 ## Conditional-model feature vector
 
 No additional temporal model is learned. For each $(i,k,\tau)$, the
-deterministic vector $v_{i,k,\tau}$ concatenates enabled components in this
+deterministic vector $v_{k,\tau}^{(i)}$ concatenates enabled components in this
 exact order:
 
-1. raw forecast-patch embedding $e_{i,k,p(\tau)}$;
+1. raw forecast-patch embedding $e_{k,p(\tau)}^{(i)}$;
 2. normalized native-quantile shape;
 3. marginal median;
 4. log absolute 80% spread;
 5. normalized within-patch position;
 6. latitude and longitude.
 
-Let $m=\widehat q_{0.5}$ and $s=\widehat q_{0.9}-\widehat q_{0.1}$. Quantile
+Let $m=\hat y_{k,\tau,0.5}^{(i)}$ and
+$s=\hat y_{k,\tau,0.9}^{(i)}-\hat y_{k,\tau,0.1}^{(i)}$. Quantile
 shape component $j$ is
 
 $$
-r_j=\frac{\widehat q_j-m}{|s|+\epsilon_s},
+r_j=\frac{\hat y_{k,\tau,q_j}^{(i)}-m}{|s|+\epsilon_s},
 \qquad \epsilon_s=10^{-6}.
 $$
 
@@ -109,7 +110,7 @@ raises `NotImplementedError`.
 A quantile row crosses when
 
 $$
-\exists j:\widehat q_j>\widehat q_{j+1}.
+\exists j:\hat y_{k,\tau,q_j}^{(i)}>\hat y_{k,\tau,q_{j+1}}^{(i)}.
 $$
 
 Crossing frequency is computed on the **raw** Chronos output overall, by
@@ -121,14 +122,14 @@ With `monotone_repair: isotonic`, each finite row is replaced by the solution
 $$
 \widetilde{\boldsymbol q}
 =\arg\min_{x_1\le\cdots\le x_Q}
-\sum_{j=1}^{Q}(x_j-\widehat q_j)^2.
+\sum_{j=1}^{Q}\left(x_j-\hat y_{k,\tau,q_j}^{(i)}\right)^2.
 $$
 
 The repaired values are used both for PIT construction and scenario
 projection, and they are persisted in the cache. Raw crossing diagnostics are
-still retained. This consistency is essential: fitting dependence with a
-repaired CDF and evaluating against an unrepaired quantile grid would describe
-different marginals.
+still retained. For most groups, the FM-derived grid is the raw Chronos grid;
+for solar it is this deterministic repair. In both cases the resulting grid is
+fixed across M0--M4, and no dependence model can modify it.
 
 Solar is the only supplied configuration that enables repair. Its raw crossing
 rate is 25.290%, mainly at zero-output hours. Without repair, 15,477 of 33,312
@@ -152,13 +153,16 @@ $$
 c_j=\frac{a_j+a_{j+1}}2,\qquad j=0,\ldots,Q.
 $$
 
-For observation $y$, let $J$ be the index of the first predicted quantile
-value greater than or equal to $y$; if none exists, $J=Q$. Then
+For observation $y_{k,\tau}^{(i)}$, let $J$ be the index of the first predicted
+quantile value greater than or equal to the observation; if none exists,
+$J=Q$. Then
 
 $$
-u=c_J,
+u_{k,\tau}^{(i)}=c_J,
 \qquad
-z=\Phi^{-1}\!\left(\min(1-\epsilon,max(\epsilon,u))\right),
+z_{k,\tau}^{(i)}=\Phi^{-1}\!\left(
+\min(1-\epsilon,\max(\epsilon,u_{k,\tau}^{(i)}))
+\right),
 \quad\epsilon=10^{-7}.
 $$
 
@@ -173,15 +177,17 @@ pseudo-likelihood procedure.
 
 ## Complete spatial vectors
 
-An $(i,\tau)$ case is valid only if every entity has finite truth, every native
-forecast value is finite, and every quantile row is noncrossing after the
-configured repair. Formally,
+An $(i,\tau)$ case for group $g$ is valid only if every
+$k\in\mathcal E_g$ has a finite observation, every FM-derived quantile value is
+finite, and every quantile row is noncrossing after the configured repair.
+Formally,
 
 $$
-V_{i,\tau}=\prod_{k=1}^{K}V_{i,k,\tau}.
+V_{g,\tau}^{(i)}=\prod_{k\in\mathcal E_g}V_{k,\tau}^{(i)}.
 $$
 
-When $V_{i,\tau}=0$, all $u_{i,k,\tau}$ and $z_{i,k,\tau}$ are stored as
+When $V_{g,\tau}^{(i)}=0$, all $u_{k,\tau}^{(i)}$ and
+$z_{k,\tau}^{(i)}$ for $k\in\mathcal E_g$ are stored as
 `NaN`. This prevents each model from learning a differently composed group.
 
 ## Marginal invariance during scenario generation
@@ -195,10 +201,11 @@ b_0=0,\quad b_j=\frac{q_j+q_{j+1}}2\ (j=1,\ldots,Q-1),\quad b_Q=1.
 $$
 
 If $U\in[b_j,b_{j+1})$ (with the implemented right-boundary convention), the
-scenario value is exactly $\widehat q_{j+1}$ under one-based indexing. There
+scenario value is exactly $\hat y_{k,\tau,q_{j+1}}^{(i)}$ under one-based indexing. There
 is no interpolation. Since every Gaussian-copula component has a uniform
 marginal, each method assigns the same probability mass $b_{j+1}-b_j$ to the
-same Chronos value. Only the joint indices across entities change.
+same fixed FM-derived quantile value. Only the joint indices across entities
+change.
 
 Consequences include finite scenario support, ties, no values below the lowest
 or above the highest native quantile, and aggregate quantiles that are Monte

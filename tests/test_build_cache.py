@@ -10,6 +10,7 @@ import torch
 import simcast.cli.build_cache as cache_cli
 from simcast.config import SimcastConfig
 from simcast.fm.cache import load_pit_library
+from simcast.sampling.gaussian_copula import generate_scenarios
 from simcast.types import EntityGroup, EntityMetadata
 
 
@@ -140,3 +141,8 @@ def test_isotonic_cache_persists_repaired_quantiles(monkeypatch, tmp_path: Path)
     predictions = library.dataset["quantile_prediction"].values
     assert np.all(np.diff(predictions, axis=-1) >= 0)
     assert library.metadata["pit"]["crossing_frequency"] > 0
+    levels = torch.tensor(library.dataset["quantile"].values)
+    marginal = torch.tensor(predictions[0, :, 0])
+    scenarios = generate_scenarios(torch.eye(3), marginal, levels, num_samples=256)
+    for entity in range(3):
+        assert set(scenarios.entity_samples[:, entity].tolist()).issubset(set(marginal[entity].tolist()))

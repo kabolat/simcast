@@ -1,4 +1,4 @@
-"""Download the revision-pinned Liander2024 subset used by an experiment."""
+"""Download the revision-pinned Liander2024 files used by an experiment."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ def download_data(
     overrides: Sequence[str] = (),
     snapshot_download_fn: Callable[..., str] | None = None,
 ) -> Path:
-    """Load configuration only when invoked, then fetch its pinned dataset subset."""
+    """Load configuration only when invoked, then fetch its pinned dataset files."""
 
     from simcast.config import load_config
 

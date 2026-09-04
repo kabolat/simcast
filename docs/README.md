@@ -7,15 +7,16 @@ reported experiments can be reproduced.
 
 Simcast asks one narrow question:
 
-> If entity-wise probabilistic forecasts from a frozen time-series foundation
-> model are kept unchanged, how much can spatial aggregate forecasts improve by
-> replacing independent sampling with a learned same-lead cross-entity copula?
+> If FM-derived entity-wise marginal quantile grids are fixed across methods,
+> how much can spatial aggregate forecasts improve by replacing independent
+> sampling with a learned same-lead cross-entity copula?
 
 The distinction between *marginal forecasting* and *dependence modelling* is
-fundamental. Chronos-2 supplies one fixed discrete marginal distribution for
-each entity and forecast lead. M0--M4 change only which marginal outcomes occur
-together. They do not fine-tune Chronos, recalibrate its marginal quantiles, or
-model dependence between different forecast leads.
+fundamental. Chronos-2 supplies the native quantile grid; solar receives a
+deterministic isotonic monotonicity repair. The resulting FM-derived grid is
+then fixed across M0--M4. Dependence models change only which marginal outcomes
+occur together. They do not fine-tune Chronos, alter the fixed grid, or model
+dependence between different forecast leads.
 
 ## Suggested reading paths
 
@@ -27,6 +28,9 @@ For a scientific reader, read these in order:
 4. [Dependence models M0--M4](04_dependence_models.md)
 5. [Training, scenario generation, and scores](05_training_sampling_scoring.md)
 6. [Experimental protocol and results](08_experiments_and_results.md)
+
+The generated full-group metric table and exact ordered entity lists are also
+available in [`results/powertech2027_summary.md`](../results/powertech2027_summary.md).
 
 For a researcher running or extending the code:
 
@@ -57,7 +61,7 @@ Liander targets + point-in-time weather + entity metadata
              +--> fixed feature construction <------ embeddings + location
                            |
                            v
-         M0 independent / M1 static / M2--M4 conditional
+       full-group M0 independent / M1 static / M2--M4 conditional
                            |
                            v
           same-lead Gaussian-copula uniforms [M,K]

@@ -8,7 +8,7 @@ reused without reopening the test set or rerunning Chronos.
 
 | Stage | Entry point | Reads | Writes |
 |---|---|---|---|
-| 1. Acquire | `simcast.cli.download_data` | resolved config, Hugging Face snapshot | pinned Parquet/YAML subset |
+| 1. Acquire | `simcast.cli.download_data` | resolved config, Hugging Face snapshot | pinned Parquet/YAML file selection |
 | 2. Cache marginals | `simcast.cli.build_cache` | raw data, patched frozen Chronos | PIT library and tune-only diagnostics |
 | 3. Fit dependence | `simcast.cli.train_dependence` | training-visible PIT library | M0/M1 model or M2--M4 checkpoints |
 | 4. Final evaluate | `simcast.cli.evaluate` | sealed test labels, fitted runs | metrics, predictions, manifests, figures |
@@ -70,8 +70,9 @@ Evaluation explicitly opens the cache with `access="evaluation"`, which merges
 4. creates one common valid-case mask;
 5. generates method scenarios with common base normals;
 6. computes aggregate and joint scores;
-7. repeats aggregate diagnostics for supported entity-prefix sizes;
-8. writes metrics, scenario-derived quantiles, correlations, figures, a
+7. asserts that every correlation has exact full-group shape
+   $K_g\times K_g$;
+8. writes full-group metrics, scenario-derived quantiles, correlations, figures, a
    scientific summary, and an evaluation manifest.
 
 The phrase “single final evaluation” is a protocol, not a cryptographic access
@@ -83,8 +84,8 @@ tuning decisions against the resulting test scores.
 `run_experiment` creates a new experiment directory, reuses an existing cache
 unless `--rebuild-cache` is given, trains M0--M3 sequentially in named
 subdirectories, then evaluates all methods once. With
-`--include-kernel-smoke`, it adds M4 and programmatically caps M4 epochs and
-patience while disabling subset training.
+`--include-kernel-smoke`, it adds optional M4 and programmatically caps M4
+epochs and patience. All PowerTech methods retain the complete entity group.
 
 Cache compatibility is the user's responsibility when reusing a manually
 specified cache path. The cache metadata and run manifests make mismatches
@@ -110,14 +111,14 @@ src/simcast/
     feature_builder.py              deterministic conditional-copula features
     cache.py                        labeled Zarr schema and test-label gate
   dependence/
-    base.py                         common model interface and entity subsetting
+    base.py                         common model interface
     independent.py                  M0
     static_gaussian.py              M1
     conditional_low_rank.py         M2 and low-rank math
     set_aware_low_rank.py           M3
     conditional_kernel.py           M4
   training/
-    dataset.py                      complete cases and subset collator
+    dataset.py                      complete cases and legacy-capable collator
     losses.py                       stable Gaussian-copula pseudo-NLL
     trainer.py                      AdamW, validation, early stopping, histories
     checkpoint.py                   portable conditional checkpoint loader
@@ -145,12 +146,12 @@ For the transformer study, the principal shapes are:
 | conditional features | `[N_split,15,96,794]` | built in float32 |
 | one training case | `[15,794]`, `[15]` | features and PIT score vector |
 | test correlations | `[70,96,15,15]` | method-specific matrices |
-| aggregate samples | `[70,96,4096]` | not persisted directly |
+| aggregate samples | `[70,96,4096]` | complete-group sums; not persisted directly |
 | aggregate quantiles | `[70,96,7]` | persisted in result NPZ |
 
-For the two five-entity groups, replace entity dimension 15 by 5. The feature
-dimension remains 794 because model parameters and feature construction do not
-depend on group cardinality.
+For the two five-entity groups, replace entity dimension 15 by 5. Every case
+retains that full dimension. The feature dimension remains 794 because model
+parameters and feature construction do not depend on group cardinality.
 
 ## Scientific state boundaries
 
