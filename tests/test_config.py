@@ -35,6 +35,7 @@ def test_base_protocol_and_pins() -> None:
         ("method_static_gaussian.yaml", "static_gaussian"),
         ("method_conditional_low_rank.yaml", "conditional_low_rank"),
         ("method_set_aware_low_rank.yaml", "set_aware_low_rank"),
+        ("method_conditional_kernel.yaml", "conditional_kernel"),
         ("method_conditional_kernel_smoke.yaml", "conditional_kernel"),
     ],
 )
@@ -71,6 +72,15 @@ def test_kernel_config_is_bounded_smoke() -> None:
     assert config.dependence.conditional_kernel.smoke_max_origins == 32
     assert config.training.epochs == 5
     assert not config.subset_training.enabled
+
+
+def test_full_kernel_config_uses_core_training_protocol() -> None:
+    config = load_config(CONFIGS / "method_conditional_kernel.yaml")
+
+    assert not config.dependence.conditional_kernel.smoke_only
+    assert config.training.epochs == 100
+    assert config.training.patience == 12
+    assert config.subset_training.enabled
 
 
 def test_recursive_inheritance_environment_and_overrides(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -28,8 +28,10 @@ The core comparison is:
 - M2: conditionally predicted low-rank Gaussian copula;
 - M3: set-aware conditionally predicted low-rank Gaussian copula.
 
-M4, a conditional RBF-kernel copula, is deliberately a bounded smoke test and
-is not a fully trained or tuned competitor.
+The M4 values in the original all-entity study came from a deliberately bounded
+smoke test and are not fully trained or tuned results. The repository now also
+provides a full-training M4 configuration, used for the separate transformer
+result reported in [08_experiments_and_results.md](08_experiments_and_results.md#full-m4-transformer-follow-up).
 
 ## Notation
 

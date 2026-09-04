@@ -198,12 +198,17 @@ pairwise distances do not depend on order. Its correlations are nonnegative
 before numerical normalization, a substantive restriction compared with the
 factor models.
 
-The repository enforces `smoke_only: true`. The high-level runner uses at most
-32 training origins and 32 validation origins that contain at least one
-complete lead, disables subset training, caps optimization at five epochs, and
-uses patience at most two. It still evaluates the resulting checkpoint on the
-full test set. These intentionally unequal training resources mean M4 numbers
-must be read only as a systems/feasibility smoke result.
+M4 has two protocols. `method_conditional_kernel_smoke.yaml` and the high-level
+runner's `--include-kernel-smoke` path use at most 32 training origins and 32
+validation origins that contain at least one complete lead, disable subset
+training, cap optimization at five epochs, and use patience two. The resulting
+original all-entity M4 numbers are systems/feasibility results only.
+
+`method_conditional_kernel.yaml` sets `smoke_only: false`, so training uses the
+complete chronological train and validation partitions, the same 100-epoch
+maximum and patience 12 as M2/M3, and default subset training. This makes M4 a
+fully trained comparison, although it remains untuned unless its
+hyperparameters are selected on validation data.
 
 ## Model comparison
 
@@ -213,7 +218,7 @@ must be read only as a systems/feasibility smoke result.
 | M1 static | yes | no | empirical group estimate | no, matrix grows with $K$ | core baseline |
 | M2 conditional low-rank | yes | yes | no | yes | core method |
 | M3 set-aware low-rank | yes | yes | self-attention | yes | core method |
-| M4 conditional kernel | yes | yes | pairwise embedded distance | yes | bounded smoke only |
+| M4 conditional kernel | yes | yes | pairwise embedded distance | yes | optional full or smoke protocol |
 
 ## Numerical stabilization
 

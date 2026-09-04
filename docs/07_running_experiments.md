@@ -77,6 +77,19 @@ uv run python -m simcast.cli.run_experiment \
 Use `--rebuild-cache` only when intentionally replacing the configured cache.
 The overwrite is scoped to that exact resolved cache directory.
 
+To train only a full M4 model for transformers, reusing the existing cache:
+
+```bash
+uv run python -m simcast.cli.train_dependence \
+  --config configs/method_conditional_kernel.yaml \
+  --output-dir runs/transformer_m4_full
+```
+
+The full config uses every chronological training and validation origin, the
+standard 100-epoch maximum/patience 12, and subset training. It does not retrain
+M0--M3 or rerun Chronos. Evaluation should receive this directory through
+`--method-run conditional_kernel=runs/transformer_m4_full`.
+
 ## 5B. Run stages separately
 
 Separate stages are preferable when inspecting marginal quality before fitting

@@ -113,3 +113,19 @@ def test_train_and_restore_bounded_kernel_smoke(tmp_path: Path) -> None:
     loaded = load_conditional_checkpoint(run / "best.pt")
     assert loaded.method == "conditional_kernel"
     assert torch.isfinite(loaded.model(torch.randn(2, 4, 13))).all()
+
+
+def test_train_and_restore_full_kernel(tmp_path: Path) -> None:
+    cache = _cache(tmp_path / "cache")
+    config = _config(tmp_path, "conditional_kernel")
+    kernel = config.dependence.conditional_kernel.model_copy(update={"smoke_only": False})
+    dependence = config.dependence.model_copy(update={"conditional_kernel": kernel})
+    run = train_from_config(
+        config.model_copy(update={"dependence": dependence}),
+        cache_dir=cache,
+        output_dir=tmp_path / "m4_full",
+    )
+
+    loaded = load_conditional_checkpoint(run / "best.pt")
+    assert loaded.method == "conditional_kernel"
+    assert torch.isfinite(loaded.model(torch.randn(2, 4, 13))).all()

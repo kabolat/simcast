@@ -30,7 +30,8 @@ the attached research specification.
 - Split: first 80% tune, last 20% test; last 20% of tune validates.
 - Default PIT policy: no quantile repair; a crossing invalidates the complete
   spatial vector at that origin and lead.
-- Core comparison: M0 through M3. M4 is a bounded smoke experiment only.
+- Original core comparison: M0 through M3. M4 initially ran as a bounded smoke
+  experiment; a separate full-training configuration is now also available.
 
 ## Milestone status
 
@@ -49,4 +50,5 @@ the attached research specification.
 - [x] M7: one-time final evaluation, joint and aggregate comparisons,
   variable-cardinality diagnostics, paper figures, scientific summary,
   high-level runner, and reproduction command.
-- [x] Optional M4 method: bounded conditional RBF-kernel smoke implementation.
+- [x] Optional M4 method: conditional RBF-kernel implementation with separate
+  bounded-smoke and full-training configurations.

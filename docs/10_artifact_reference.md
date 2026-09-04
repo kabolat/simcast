@@ -150,7 +150,8 @@ scientifically more stable objects.
 The high-level runner adds `experiment_manifest.json` at the root with cache,
 method, evaluation, bounded-M4 status, Git commit, and creation time. Its
 `resolved_config.yaml` is the base experiment config; each method subdirectory
-also records the method-specific resolved config (including M4 caps).
+also records the method-specific resolved config, including smoke-mode M4 caps
+when that path is selected. Standalone full M4 runs record `smoke_only: false`.
 
 Artifact paths are absolute in manifests. Moving a repository or deleting a
 cache/checkpoint breaks replay until paths are updated or explicit inputs are

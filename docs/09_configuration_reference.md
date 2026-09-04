@@ -114,8 +114,8 @@ require native levels 0.1, 0.5, and 0.9.
 | `conditional_kernel.initial_length_scale` | 1.0 | positive initial RBF scale |
 | `conditional_kernel.nugget` | $10^{-3}$ | positive diagonal nugget |
 | `conditional_kernel.jitter` | $10^{-6}$ | stabilization |
-| `conditional_kernel.smoke_only` | `true` | must remain true to train M4 |
-| `conditional_kernel.smoke_max_origins` | 32 | max complete train and validation origins |
+| `conditional_kernel.smoke_only` | `true` | if true, limit origins; full M4 config sets false |
+| `conditional_kernel.smoke_max_origins` | 32 | max complete train and validation origins in smoke mode only |
 
 ## Subsets and optimization
 

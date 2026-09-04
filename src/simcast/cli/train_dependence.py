@@ -143,10 +143,9 @@ def _train_conditional(
     validation_indices = _split_indices(library, "validation")
     if method == "conditional_kernel":
         smoke = config.dependence.conditional_kernel
-        if not smoke.smoke_only:
-            raise ValueError("M4 is intentionally bounded; dependence.conditional_kernel.smoke_only must remain true")
-        train_indices = _complete_origin_indices(library, train_indices, smoke.smoke_max_origins)
-        validation_indices = _complete_origin_indices(library, validation_indices, smoke.smoke_max_origins)
+        if smoke.smoke_only:
+            train_indices = _complete_origin_indices(library, train_indices, smoke.smoke_max_origins)
+            validation_indices = _complete_origin_indices(library, validation_indices, smoke.smoke_max_origins)
     if not train_indices.size or not validation_indices.size:
         raise ValueError("conditional training requires non-empty chronological train and validation partitions")
     train_embeddings, train_predictions, train_z = _arrays(library, train_indices)

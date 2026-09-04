@@ -78,6 +78,53 @@ Bold marks the lowest core mean pinball, not necessarily the lowest value in
 every metric column. M4 is displayed for transparency but excluded from model
 selection because it received at most 32 origins and five epochs.
 
+## Full M4 transformer follow-up
+
+A subsequent transformer-only experiment removed the M4 smoke restriction. It
+used all 222 training origins (18,088 complete origin-lead vectors), all 55
+validation origins (5,206 complete vectors), the same maximum 100 epochs and
+patience 12 as M2/M3, default subset training, and seed 42. Early stopping
+completed after 13 epochs and selected epoch 1 at validation pseudo-NLL
+-1.473613. No Chronos cache was rebuilt.
+
+The test evaluation reused the original M0--M3 checkpoints and evaluated all
+methods together on the same 6,439 valid transformer cases. It was regenerated
+on CPU, so the common Monte Carlo draws produce very small numerical changes in
+the M0--M3 values relative to the earlier GPU-generated table.
+
+| Method | Mean pinball | CRPS | WIS | 90% coverage | 90% width | Energy Score |
+|---|---:|---:|---:|---:|---:|---:|
+| M0 independent | 3,946,312.5 | 9,757,837 | 30,693,540 | 0.9258 | 62,003,436 | 12,782,282 |
+| M1 static | 3,944,830.25 | 9,760,598 | 30,682,010 | 0.9144 | 59,698,028 | 12,714,452 |
+| M2 conditional low-rank | 3,920,756 | 9,727,597 | 30,494,772 | 0.8942 | 55,402,296 | 12,718,841 |
+| **M3 set-aware** | **3,894,989.75** | **9,703,453** | **30,294,368** | 0.8969 | 55,244,292 | **12,701,536** |
+| M4 full conditional kernel | 4,289,735.5 | 10,251,721 | 33,364,610 | 0.9854 | 88,623,736 | 12,754,201 |
+
+Full training improves M4 mean pinball by 2.877% relative to its bounded smoke
+checkpoint, but M4 remains 8.702% worse than M0 and 10.135% worse than M3. Its
+90% coverage of 0.9854 comes with a much larger interval width, indicating
+overdispersion rather than superior calibration/sharpness balance.
+
+The fitted M4 test correlations are nonnegative by construction: their mean
+off-diagonal value is 0.1600, ranging approximately from 0 to 0.9908. By
+comparison, the transformer PIT dependence contains both signs and the core
+models can represent negative correlations. This provides a plausible
+model-based explanation for M4's overly wide full-group aggregate forecast,
+but it is an inference from the fitted matrices rather than a causal diagnosis.
+The best checkpoint's learned RBF length scale is 1.0143, close to its initial
+value of one.
+
+At the exploratory prefix-cardinality diagnostic, M4 mean pinball is 2,847,024
+for $K=3$, 2,993,279 for $K=7$, and 4,289,735.5 for $K=15$. It is best among
+the five methods at $K=7$ in that 1,024-scenario prefix calculation, but the
+diagnostic uses only one deterministic entity prefix and is not evidence of a
+general cardinality advantage.
+
+The full checkpoint is stored in
+`runs/real_liander2024_transformer_m4_full/`; its comparison is in
+`runs/real_liander2024_transformer_m4_full_evaluation/`. These generated paths
+are local experiment artifacts and may be excluded from version control.
+
 ## Interpretation by group
 
 ### Transformer

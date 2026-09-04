@@ -31,8 +31,8 @@ dependence.
   and uniqueness from frozen Chronos features.
 - M3 `set_aware_low_rank`: position-free entity self-attention followed by the
   same low-rank correlation construction.
-- M4 `conditional_kernel`: optional RBF-kernel correlation. This implementation
-  is deliberately restricted to a small real-data smoke run.
+- M4 `conditional_kernel`: optional RBF-kernel correlation with separate full
+  training and bounded smoke configurations.
 
 M2 and M3 have parameter counts independent of entity cardinality. M3 is
 permutation equivariant, and both accept variable-size entity sets. Optional
@@ -104,6 +104,14 @@ uv run python -m simcast.cli.run_experiment \
 
 Add `--include-kernel-smoke` to include bounded M4. An existing compatible
 cache is reused. `--rebuild-cache` explicitly replaces it.
+
+To train only M4 with the full transformer train/validation partitions and the
+same optimizer budget as M2/M3:
+
+```bash
+uv run python -m simcast.cli.train_dependence \
+  --config configs/method_conditional_kernel.yaml
+```
 
 Named configs are also provided for every homogeneous Liander entity type:
 

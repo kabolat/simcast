@@ -180,8 +180,8 @@ noise; scenario-count sensitivity can be evaluated separately.
 - `runtime.num_workers` is not passed to the current trainer DataLoaders.
 - variable-K evaluation uses deterministic metadata prefixes, not random
   subset averaging.
-- M4 uses only the first eligible complete origins within each train/validation
-  partition and remains bounded.
+- M4 smoke mode uses only the first eligible complete origins within each
+  partition; full mode uses the complete train and validation partitions.
 - cache reuse is not automatically validated against a full config hash.
 
 These are documented behavior, not necessarily ideal future APIs. If changed,
