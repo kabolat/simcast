@@ -1,5 +1,10 @@
 # Simcast
 
+> **Detailed research documentation:** start with
+> [`docs/README.md`](docs/README.md) for the mathematical formulation, exact
+> information-set rules, M0--M4 derivations, pipeline operation, experiment
+> protocol/results, artifact schemas, limitations, and reproduction guide.
+
 Simcast is a research proof of concept for learning same-lead, cross-entity
 forecast-error dependence on top of frozen Chronos-2 marginal forecasts. It
 keeps every entity-wise quantile forecast fixed and changes only the copula
