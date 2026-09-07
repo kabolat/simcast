@@ -26,6 +26,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+  "jupyterlab>=4.3,<5",
   "mypy>=1.13,<2",
   "pandas-stubs>=2.2,<3",
   "pytest>=8.3,<9",

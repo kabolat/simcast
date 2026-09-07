@@ -36,9 +36,10 @@ For a researcher running or extending the code:
 
 1. [Software pipeline](06_software_pipeline.md)
 2. [Running and reproducing experiments](07_running_experiments.md)
-3. [Configuration reference](09_configuration_reference.md)
-4. [Artifact schemas and output files](10_artifact_reference.md)
-5. [Validation, limitations, and extension guide](11_validation_and_extension.md)
+3. [Interactive notebook guide](../notebooks/README.md)
+4. [Configuration reference](09_configuration_reference.md)
+5. [Artifact schemas and output files](10_artifact_reference.md)
+6. [Validation, limitations, and extension guide](11_validation_and_extension.md)
 
 ## One-page conceptual map
 

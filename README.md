@@ -203,6 +203,13 @@ CUDA seeds and deterministic-algorithm requests are set. Exact bitwise replay
 can still be affected by GPU kernels, PyTorch/CUDA versions, and device model;
 these versions are stored with each training run.
 
+## Interactive notebooks
+
+[`notebooks/README.md`](notebooks/README.md) introduces executable notebooks
+for configuration, EDA, cache/feature inspection, dependence modelling, and
+evaluation. They call the same configuration loader and stage functions as the
+CLI, rather than maintaining a second implementation of the experiment.
+
 ## Attribution and license
 
 The [Liander2024 Energy Forecasting Benchmark](https://huggingface.co/datasets/OpenSTEF/liander2024-energy-forecasting-benchmark)
