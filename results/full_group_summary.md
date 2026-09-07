@@ -1,4 +1,4 @@
-# PowerTech 2027 full-group result summary
+# Full-group baseline result summary
 
 This file is generated only after validating every experiment and method manifest as
 `full_group_only: true`, `subset_training: false`, with entity-selection augmentation

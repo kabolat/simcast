@@ -133,7 +133,7 @@ class PitConfig(ConfigModel):
 
 
 class ProtocolConfig(ConfigModel):
-    name: Literal["legacy", "powertech2027"] = "legacy"
+    name: Literal["legacy", "full_group"] = "legacy"
     full_group_only: bool = False
 
 
@@ -309,8 +309,8 @@ class SimcastConfig(ConfigModel):
 
     @model_validator(mode="after")
     def validate_full_group_protocol(self) -> Self:
-        if self.protocol.name == "powertech2027" and not self.protocol.full_group_only:
-            raise ValueError("powertech2027 protocol requires full_group_only=true")
+        if self.protocol.name == "full_group" and not self.protocol.full_group_only:
+            raise ValueError("full_group protocol requires full_group_only=true")
         if self.protocol.full_group_only and self.subset_training.enabled:
             raise ValueError("full-group protocol forbids subset training")
         if self.protocol.full_group_only and self.evaluation.variable_k_sizes:

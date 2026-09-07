@@ -30,7 +30,7 @@ For a scientific reader, read these in order:
 6. [Experimental protocol and results](08_experiments_and_results.md)
 
 The generated full-group metric table and exact ordered entity lists are also
-available in [`results/powertech2027_summary.md`](../results/powertech2027_summary.md).
+available in [`results/full_group_summary.md`](../results/full_group_summary.md).
 
 For a researcher running or extending the code:
 

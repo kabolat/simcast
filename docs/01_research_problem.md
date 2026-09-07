@@ -132,7 +132,7 @@ quantile grid, test cases, and base random draws. The core hierarchy is:
   complete group with self-attention.
 
 M4 is an optional conditional kernel diagnostic and is not central to the
-PowerTech comparison.
+full-group comparison.
 
 ## PIT pseudo-observations
 
@@ -204,7 +204,7 @@ Not modeled:
 - causal effects or operational decisions.
 
 M2/M3 remain mathematically capable of accepting other cardinalities, but this
-is an architectural property only and is not evaluated in the PowerTech study.
+is an architectural property only and is not evaluated in the full-group study.
 
 ## Scientific assumptions
 
@@ -221,7 +221,7 @@ is an architectural property only and is not evaluated in the PowerTech study.
 7. Target measurement timestamps and weather vintages correctly represent
    $\mathcal I^{(i)}$ for leakage-safe configurations.
 
-## PowerTech scientific questions
+## Scientific questions
 
 1. How much residual dependence remains after the fixed FM-derived marginal
    forecasts?

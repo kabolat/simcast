@@ -424,7 +424,7 @@ def _scientific_summary(
         "question_4": delta("static_gaussian", "conditional_low_rank"),
         "question_5": delta("conditional_low_rank", "set_aware_low_rank"),
         "question_6": (
-            "Cross-group heterogeneity is assessed in the consolidated PowerTech summary; "
+            "Cross-group heterogeneity is assessed in the consolidated full-group summary; "
             "this evaluation uses the complete static group only."
             if full_group_only
             else (

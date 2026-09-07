@@ -1,7 +1,7 @@
 seed: 42
 
 protocol:
-  name: powertech2027
+  name: full_group
   full_group_only: true
 
 data:

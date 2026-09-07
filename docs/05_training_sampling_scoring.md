@@ -22,7 +22,7 @@ valid `(origin, lead)` cases. Origin and lead indices are metadata rather than
 direct network inputs. Lead information enters through the frozen forecast,
 patch representation, and within-patch position.
 
-The PowerTech protocol rejects subset training at configuration validation and
+The full-group protocol rejects subset training at configuration validation and
 checks the entity dimension again immediately before every M2/M3 model call.
 Every training and validation batch therefore contains exactly the complete
 ordered $\mathcal E_g$. Missing one entity invalidates the case instead of
@@ -34,7 +34,7 @@ validation pseudo-likelihood for checkpoint selection. M4 follows the same
 full-group rule when run as an optional diagnostic.
 
 The generic collator still contains legacy subset functionality so old
-exploratory artifacts can be understood, but no PowerTech config can enable it.
+exploratory artifacts can be understood, but no full-group config can enable it.
 
 ## Gaussian-copula pseudo-likelihood
 
@@ -68,7 +68,7 @@ sums then divides by the number of full-group cases.
 
 ## Optimization and checkpoints
 
-PowerTech defaults are AdamW, batch size 64, learning rate $10^{-3}$, weight
+The baseline defaults are AdamW, batch size 64, learning rate $10^{-3}$, weight
 decay $10^{-4}$, global gradient-norm cap one, at most 100 epochs, and early
 stopping after 12 epochs without a strictly lower validation loss.
 
@@ -176,7 +176,7 @@ $$
 +\frac{2}{\alpha}(a-u)\mathbf1(a>u).
 $$
 
-Coverage is the fraction with $l\le a\le u$; width is $u-l$. PowerTech reports
+Coverage is the fraction with $l\le a\le u$; width is $u-l$. The baseline reports
 central 0.50, 0.80, and 0.90 intervals. Coverage must be read with width and a
 proper score.
 
@@ -203,7 +203,7 @@ subsampling.
 ### Energy Score
 
 For selected ensemble $x_1,\ldots,x_{M_J}\in\mathbb R^{K_g}$ and observed
-vector $\mathbf y$, PowerTech uses the empirical all-pairs estimator
+vector $\mathbf y$, the baseline uses the empirical all-pairs estimator
 
 $$
 \widehat{\operatorname{ES}}
@@ -231,7 +231,7 @@ $$
 Its magnitude depends on scale and the number of entity pairs, so it is not
 comparable across differently scaled groups.
 
-## PowerTech output scope
+## Full-group output scope
 
 The evaluator produces only complete-group metrics, lead tables, correlation
 matrices, and figures. It does not create prefix-$K$ tables,

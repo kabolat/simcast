@@ -85,7 +85,7 @@ tuning decisions against the resulting test scores.
 unless `--rebuild-cache` is given, trains M0--M3 sequentially in named
 subdirectories, then evaluates all methods once. With
 `--include-kernel-smoke`, it adds optional M4 and programmatically caps M4
-epochs and patience. All PowerTech methods retain the complete entity group.
+epochs and patience. All full-group methods retain the complete entity group.
 
 Cache compatibility is the user's responsibility when reusing a manually
 specified cache path. The cache metadata and run manifests make mismatches

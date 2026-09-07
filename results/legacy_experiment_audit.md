@@ -1,7 +1,7 @@
 # Legacy entity-selection audit
 
 This audit records the resolved configuration actually saved with the earlier
-runs. It prevents their neural results from being mistaken for PowerTech 2027
+runs. It prevents their neural results from being mistaken for full-group
 full-group results.
 
 | Legacy run | M2 subset training | M3 subset training | M4 subset training | M4 scope |
@@ -24,4 +24,4 @@ are legacy/exploratory only. The bounded M4 checkpoints did not subset entities
 but remain diagnostics because their training budget was intentionally smaller.
 The later transformer M4 checkpoint used the normal training-origin budget but
 did use subset training; it is also legacy/exploratory. No old M2, M3, or M4
-number is a headline PowerTech 2027 result.
+number is a headline full-group result.

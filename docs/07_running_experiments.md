@@ -147,7 +147,7 @@ done
 
 Solar automatically inherits `pit.monotone_repair: isotonic`; the other four
 configs use no repair. Every named config inherits the machine-verified
-PowerTech full-group protocol. Add `--include-kernel-smoke` only if the bounded
+full-group protocol. Add `--include-kernel-smoke` only if the bounded
 M4 diagnostic is desired for every group.
 
 The tracked corrected baseline was produced from existing compatible caches
@@ -158,29 +158,29 @@ before execution.
 uv run python -m simcast.cli.run_experiment \
   --config configs/liander2024_transformer.yaml \
   --cache-dir artifacts/cache/liander2024_transformer \
-  --output-dir runs/powertech2027_transformer_m0_m3
+  --output-dir runs/full_group_transformer_m0_m3
 
 uv run python -m simcast.cli.run_experiment \
   --config configs/liander2024_solar_park.yaml \
   --cache-dir artifacts/cache/liander2024_solar_park_isotonic \
-  --output-dir runs/powertech2027_solar_park_m0_m3
+  --output-dir runs/full_group_solar_park_m0_m3
 
 uv run python -m simcast.cli.run_experiment \
   --config configs/liander2024_wind_park.yaml \
   --cache-dir artifacts/cache/liander2024_wind_park \
-  --output-dir runs/powertech2027_wind_park_m0_m3
+  --output-dir runs/full_group_wind_park_m0_m3
 
 uv run python -m simcast.cli.run_experiment \
   --config configs/liander2024_mv_feeder.yaml \
   --cache-dir artifacts/cache/liander2024_mv_feeder \
-  --output-dir runs/powertech2027_mv_feeder_m0_m3
+  --output-dir runs/full_group_mv_feeder_m0_m3
 
 uv run python -m simcast.cli.run_experiment \
   --config configs/liander2024_station_installation.yaml \
   --cache-dir artifacts/cache/liander2024_station_installation \
-  --output-dir runs/powertech2027_station_installation_m0_m3
+  --output-dir runs/full_group_station_installation_m0_m3
 
-uv run python scripts/summarize_powertech_results.py
+uv run python scripts/summarize_full_group_results.py
 ```
 
 If the compatible caches do not exist, omit `--cache-dir` and allow the runner

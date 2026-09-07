@@ -16,7 +16,7 @@ size from 16 to 256. The supplied experiments resolve through `base.yaml`.
 | Key | Default | Meaning |
 |---|---|---|
 | `seed` | `42` | nonnegative global seed |
-| `protocol.name` | `legacy` in code; `powertech2027` in `base.yaml` | declared experiment protocol |
+| `protocol.name` | `legacy` in code; `full_group` in `base.yaml` | declared experiment protocol |
 | `protocol.full_group_only` | `false` in code; `true` in `base.yaml` | enforce complete static groups |
 | `data.dataset_id` | OpenSTEF Liander repo | Hugging Face dataset ID |
 | `data.revision` | `dce7fe...b7044` | required exact dataset snapshot |
@@ -124,7 +124,7 @@ require native levels 0.1, 0.5, and 0.9.
 
 | Key | Default | Meaning |
 |---|---:|---|
-| `subset_training.enabled` | `false` | legacy capability; forbidden by PowerTech protocol |
+| `subset_training.enabled` | `false` | legacy capability; forbidden by the full-group protocol |
 | `subset_training.min_entities` | 4 | legacy-only lower bound |
 | `subset_training.full_group_probability` | 0.25 | legacy-only full-group probability |
 | `training.optimizer` | `adamw` | only supported optimizer |
@@ -150,13 +150,13 @@ require native levels 0.1, 0.5, and 0.9.
 | `evaluation.report_by_lead` | `true` | retained config field; lead table is currently always written |
 | `evaluation.scenario_batch_size` | 16 | cases sampled together |
 | `evaluation.joint_score_num_samples` | 512 | cap for entity-level scores |
-| `evaluation.variable_k_sizes` | `[]` | legacy-only diagnostic; nonempty is forbidden by PowerTech |
+| `evaluation.variable_k_sizes` | `[]` | legacy-only diagnostic; nonempty is forbidden by the full-group protocol |
 
 Current code computes both Energy and Variogram Scores when either score flag
 is true; it computes neither only when both are false. The individual flags
 should therefore not be interpreted as independent switches.
 
-For `protocol.name: powertech2027`, validation requires
+For `protocol.name: full_group`, validation requires
 `full_group_only: true`, `subset_training.enabled: false`, and an empty
 `evaluation.variable_k_sizes`. Attempts to override either entity-selection
 setting fail before training or evaluation starts.

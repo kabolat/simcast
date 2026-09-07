@@ -62,7 +62,7 @@ class DependenceBatch:
 class DependenceCollator:
     """Collate complete groups, with subset sampling retained for legacy runs.
 
-    PowerTech configurations disable the legacy option and the trainer asserts
+    Full-group configurations disable the legacy option and the trainer asserts
     the complete group dimension independently of this collator.
     """
 

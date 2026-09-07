@@ -70,7 +70,7 @@ Low-rank factors are rotation-invariant; interpret $R$, not individual factor
 coordinates. Location is standardized as raw latitude/longitude, not projected
 physical distance. The networks may recognize entities indirectly through
 stable location/load-scale features even without ID embeddings. Generalization
-to truly new assets is not tested by the PowerTech experiment.
+to truly new assets is not tested by the full-group experiment.
 
 ### Hyperparameters and selection
 
@@ -178,7 +178,7 @@ noise; scenario-count sensitivity can be evaluated separately.
 - either joint-score flag enables both Energy and Variogram calculations.
 - `evaluation.report_by_lead` does not currently suppress the lead table.
 - `runtime.num_workers` is not passed to the current trainer DataLoaders.
-- PowerTech configurations reject subset training and variable-$K$ evaluation;
+- Full-group configurations reject subset training and variable-$K$ evaluation;
   architecture-level variable-size capability is not an experiment.
 - M4 smoke mode uses only the first eligible complete origins within each
   partition; full mode uses the complete train and validation partitions.

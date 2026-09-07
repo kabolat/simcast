@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate and summarize the five full-group PowerTech 2027 runs."""
+"""Validate and summarize the five full-group baseline runs."""
 
 from __future__ import annotations
 
@@ -44,13 +44,13 @@ def _read_json(path: Path) -> dict[str, Any]:
 def _validate_protocol(metadata: dict[str, Any], path: Path) -> None:
     protocol = metadata.get("experimental_protocol", {})
     expected = {
-        "name": "powertech2027",
+        "name": "full_group",
         "full_group_only": True,
         "subset_training": False,
         "entity_selection_augmentation_enabled": False,
     }
     if protocol != expected:
-        raise ValueError(f"{path} is not a clean full-group PowerTech run: {protocol!r}")
+        raise ValueError(f"{path} is not a clean full-group run: {protocol!r}")
 
 
 def _format(value: float) -> str:
@@ -63,7 +63,7 @@ def summarize(runs_root: Path, output_dir: Path) -> None:
     rows: list[dict[str, Any]] = []
     groups: list[dict[str, Any]] = []
     for group_name in RUN_NAMES:
-        run = runs_root / f"powertech2027_{group_name}_m0_m3"
+        run = runs_root / f"full_group_{group_name}_m0_m3"
         experiment_manifest = _read_json(run / "experiment_manifest.json")
         evaluation_manifest = _read_json(run / "evaluation" / "evaluation_manifest.json")
         _validate_protocol(experiment_manifest, run / "experiment_manifest.json")
@@ -120,14 +120,14 @@ def summarize(runs_root: Path, output_dir: Path) -> None:
         groups.append(group)
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    csv_path = output_dir / "powertech2027_metrics.csv"
+    csv_path = output_dir / "full_group_metrics.csv"
     with csv_path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(rows[0]), lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
 
     markdown = [
-        "# PowerTech 2027 full-group result summary",
+        "# Full-group baseline result summary",
         "",
         "This file is generated only after validating every experiment and method manifest as",
         "`full_group_only: true`, `subset_training: false`, with entity-selection augmentation",
@@ -188,7 +188,7 @@ def summarize(runs_root: Path, output_dir: Path) -> None:
             f"{_format(float(row['interval_width_0.9']))} | "
             f"{_format(float(row['energy_score']))} |"
         )
-    (output_dir / "powertech2027_summary.md").write_text("\n".join(markdown) + "\n", encoding="utf-8")
+    (output_dir / "full_group_summary.md").write_text("\n".join(markdown) + "\n", encoding="utf-8")
 
 
 def main() -> None:

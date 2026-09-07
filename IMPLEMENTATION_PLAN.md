@@ -47,7 +47,7 @@ the attached research specification.
   Cholesky pseudo-likelihood, local trainer, and portable checkpoints.
 - [x] M6: set-aware position-free transformer and permutation
   equivariance. Legacy subset/cardinality experiments are excluded from the
-  PowerTech protocol.
+  full-group protocol.
 - [x] M7: one-time full-group final evaluation, joint and aggregate
   comparisons, paper figures, scientific summary, high-level runner, and
   reproduction command.

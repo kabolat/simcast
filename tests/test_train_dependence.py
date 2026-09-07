@@ -38,7 +38,7 @@ def _cache(path: Path, *, invalid_train_prefix: int = 0) -> Path:
 def _config(tmp_path: Path, method: str) -> SimcastConfig:
     return SimcastConfig.model_validate(
         {
-            "protocol": {"name": "powertech2027", "full_group_only": True},
+            "protocol": {"name": "full_group", "full_group_only": True},
             "chronos": {"device": "cpu"},
             "dependence": {
                 "method": method,
@@ -98,7 +98,7 @@ def test_train_and_restore_conditional_model(tmp_path: Path) -> None:
         "entity_count": 4,
     }
     assert metadata["experimental_protocol"] == {
-        "name": "powertech2027",
+        "name": "full_group",
         "full_group_only": True,
         "subset_training": False,
         "entity_selection_augmentation_enabled": False,

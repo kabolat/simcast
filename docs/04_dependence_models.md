@@ -27,7 +27,7 @@ grid for every method. The grid is the raw Chronos-2 native grid for most
 groups and the deterministically repaired Chronos grid for solar. No dependence
 model changes any marginal quantile value.
 
-Every PowerTech matrix is symmetric, positive definite after stabilization,
+Every correlation matrix is symmetric, positive definite after stabilization,
 has unit diagonal, and covers the complete ordered $\mathcal E_g$.
 
 ## M0: independent Gaussian copula
@@ -72,7 +72,7 @@ treated as independent from other entities before projection. At least two
 complete full-group vectors are required per estimated matrix.
 
 With `share_across_leads: true`, complete vectors are pooled over leads and one
-matrix is repeated across $H$. PowerTech uses the default lead-specific form.
+matrix is repeated across $H$. The baseline uses the default lead-specific form.
 M1 never applies entity selection, regardless of the legacy subset flag that
 appeared in some old resolved configurations.
 
@@ -140,7 +140,7 @@ through $\lambda_a^{\mathsf T}\lambda_b$.
 
 Location and forecast features can indirectly distinguish entities, but no
 trainable entity-ID lookup exists. Although the model can process another
-cardinality as a software property, PowerTech training and evaluation assert
+cardinality as a software property, full-group training and evaluation assert
 that its input contains exactly the complete ordered $\mathcal E_g$.
 
 ## M3: set-aware conditional low-rank Gaussian copula
@@ -171,7 +171,7 @@ at evaluation. Tests verify this numerically. Unlike M2, each entity can use
 all other full-group features through self-attention.
 
 A padding-mask interface remains as a possible future software capability.
-PowerTech never pads, drops, or selects entities; M3 always contextualizes all
+The full-group protocol never pads, drops, or selects entities; M3 always contextualizes all
 $K_g$ members.
 
 ## M4: optional conditional RBF-kernel copula
@@ -200,11 +200,11 @@ epochs, patience two, and no entity selection. The full M4 config uses complete
 partitions and the normal optimizer budget, also without entity selection.
 Legacy smoke results remain diagnostic. The previous full transformer M4 run
 used random subset augmentation and is also legacy; neither is a core
-PowerTech result.
+full-group result.
 
 ## Model hierarchy
 
-| Method | Learns from PIT | Changes by instance | Full-group context before $R$ | Parameters independent of $K_g$ | PowerTech status |
+| Method | Learns from PIT | Changes by instance | Full-group context before $R$ | Parameters independent of $K_g$ | Study status |
 |---|---|---|---|---|---|
 | M0 independent | no | no | no | yes | core baseline |
 | M1 static | yes | no | empirical group estimate | no | core baseline |

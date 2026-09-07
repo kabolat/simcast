@@ -1,6 +1,6 @@
 # Experiments and results
 
-## PowerTech 2027 status
+## Full-group baseline status
 
 ### Input-protocol revision status
 
@@ -13,14 +13,14 @@ not rerun. Their tables therefore remain provenance for the earlier
 full-group/subset-corrected protocol, not headline evidence for the revised
 input protocol.
 
-The PowerTech 2027 experiment uses one complete, ordered, static physical
+The full-group baseline uses one complete, ordered, static physical
 entity group per Liander entity type. Every training, validation, and test case
 for group $g$ has entity dimension $K_g=|\mathcal E_g|$. If any entity is
 invalid at a forecast instance and lead, the complete $(i,\tau)$ case is
 excluded. The entity set is never reduced.
 
 The corrected full-group M0--M3 results are generated in new
-`runs/powertech2027_*_m0_m3/` directories. They must not overwrite the legacy
+`runs/full_group_*_m0_m3/` directories. They must not overwrite the legacy
 artifacts described below. The tracked tables in this chapter are updated only
 from runs whose manifests state all of the following:
 
@@ -34,7 +34,7 @@ from runs whose manifests state all of the following:
 The earlier five-group runs under `runs/real_liander2024_*_m0_m4/` inherited
 `subset_training.enabled: true` from the old base configuration. Consequently:
 
-| Method | Actual earlier training protocol | PowerTech status |
+| Method | Actual earlier training protocol | Study status |
 |---|---|---|
 | M0 independent | no learned entity-selection step; always evaluated on the complete group | scientifically unaffected, but old metadata is not protocol-clean |
 | M1 static | fitted from complete PIT vectors; always evaluated on the complete group | scientifically unaffected, but old metadata is not protocol-clean |
@@ -45,11 +45,11 @@ The earlier five-group runs under `runs/real_liander2024_*_m0_m4/` inherited
 The later transformer-only full-duration M4 run under
 `runs/real_liander2024_transformer_m4_full/` also inherited random subset
 training. It is therefore a legacy exploratory run despite using the full
-training-origin budget. Its prefix-cardinality evaluation is not a PowerTech
+training-origin budget. Its prefix-cardinality evaluation is not a full-group
 result and is not reproduced here.
 
 No numerical table from those neural runs is retained as a headline
-PowerTech result. Their directories may remain available for provenance, but
+full-group result. Their directories may remain available for provenance, but
 their values must not be mixed with the corrected full-group experiment.
 The per-run resolved-configuration evidence is summarized in
 `results/legacy_experiment_audit.md`.
@@ -207,15 +207,15 @@ The central cross-group question is:
 ## Reproducible result source
 
 The machine-readable tracked table is
-`results/powertech2027_metrics.csv`; its generated narrative and complete
-ordered entity lists are in `results/powertech2027_summary.md`. Regenerate both
+`results/full_group_metrics.csv`; its generated narrative and complete
+ordered entity lists are in `results/full_group_summary.md`. Regenerate both
 with:
 
 ```bash
-uv run python scripts/summarize_powertech_results.py
+uv run python scripts/summarize_full_group_results.py
 ```
 
 The summarizer refuses runs with incorrect protocol flags, inconsistent group
 metadata, missing methods, method-specific valid-case counts, or any
 reduced-cardinality output. Full artifacts remain under
-`runs/powertech2027_*_m0_m3/` and are intentionally separate from legacy runs.
+`runs/full_group_*_m0_m3/` and are intentionally separate from legacy runs.

@@ -38,16 +38,16 @@ dependence.
   training and bounded smoke configurations.
 
 M2 and M3 have parameter counts independent of entity cardinality, and M3 is
-permutation equivariant. The PowerTech 2027 protocol nevertheless uses every
+permutation equivariant. The full-group protocol nevertheless uses every
 member of each complete static group in every training, validation, and test
 case. Configuration validation rejects subset training and reduced-cardinality
 evaluation.
 
-The corrected five-group PowerTech headline table and the audit that excludes
+The corrected five-group baseline table and the audit that excludes
 the earlier subset-trained neural runs are in
 [`docs/08_experiments_and_results.md`](docs/08_experiments_and_results.md).
 Machine-readable results are tracked in
-[`results/powertech2027_metrics.csv`](results/powertech2027_metrics.csv).
+[`results/full_group_metrics.csv`](results/full_group_metrics.csv).
 
 ## Reproducible setup with uv
 

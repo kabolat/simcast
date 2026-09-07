@@ -39,7 +39,7 @@ def _cache(path: Path) -> Path:
 def _config(tmp_path: Path) -> SimcastConfig:
     return SimcastConfig.model_validate(
         {
-            "protocol": {"name": "powertech2027", "full_group_only": True},
+            "protocol": {"name": "full_group", "full_group_only": True},
             "chronos": {"device": "cpu"},
             "sampling": {"num_samples": 32},
             "evaluation": {
@@ -53,7 +53,7 @@ def _config(tmp_path: Path) -> SimcastConfig:
     )
 
 
-def test_powertech_evaluation_uses_only_the_complete_group(tmp_path: Path) -> None:
+def test_full_group_evaluation_uses_only_the_complete_group(tmp_path: Path) -> None:
     cache = _cache(tmp_path / "cache")
     config = _config(tmp_path)
     static_config = config.model_copy(
@@ -80,7 +80,7 @@ def test_powertech_evaluation_uses_only_the_complete_group(tmp_path: Path) -> No
     manifest = json.loads((output / "evaluation_manifest.json").read_text(encoding="utf-8"))
     assert manifest["group"]["entity_count"] == 4
     assert manifest["experimental_protocol"] == {
-        "name": "powertech2027",
+        "name": "full_group",
         "full_group_only": True,
         "subset_training": False,
         "entity_selection_augmentation_enabled": False,
