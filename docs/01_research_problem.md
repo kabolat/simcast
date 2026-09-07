@@ -218,8 +218,8 @@ is an architectural property only and is not evaluated in the PowerTech study.
    interpretation; its possible selection effect remains a limitation.
 6. The discrete fixed marginal approximation is acceptable for a controlled
    method comparison.
-7. Reporting delays and weather vintages correctly represent
-   $\mathcal I^{(i)}$.
+7. Target measurement timestamps and weather vintages correctly represent
+   $\mathcal I^{(i)}$ for leakage-safe configurations.
 
 ## PowerTech scientific questions
 

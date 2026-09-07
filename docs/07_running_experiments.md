@@ -253,7 +253,7 @@ uv run pytest
 uv lock --check
 ```
 
-The latest implementation check completed with 130 passing tests. Reported
+The latest implementation check completed with 132 passing tests. Reported
 warnings were xarray/NumPy deprecations, not test failures.
 
 ## Common failure modes

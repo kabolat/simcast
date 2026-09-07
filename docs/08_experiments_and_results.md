@@ -2,6 +2,17 @@
 
 ## PowerTech 2027 status
 
+### Input-protocol revision status
+
+The saved full-group runs in this chapter predate the later target/covariate
+input correction: they used the former solar/wind target-delay rule and
+day-of-year calendar channels. Current code instead treats every target as
+available when measured, replaces day-of-year with `is_weekend`, and offers an
+optional future-weather oracle. At the requested scope, these experiments were
+not rerun. Their tables therefore remain provenance for the earlier
+full-group/subset-corrected protocol, not headline evidence for the revised
+input protocol.
+
 The PowerTech 2027 experiment uses one complete, ordered, static physical
 entity group per Liander entity type. Every training, validation, and test case
 for group $g$ has entity dimension $K_g=|\mathcal E_g|$. If any entity is

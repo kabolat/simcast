@@ -9,21 +9,21 @@ from simcast.data.availability import (
 )
 
 
-def test_two_day_target_delay_and_future_truth_are_masked() -> None:
+def test_target_measurements_are_immediately_available_and_future_truth_is_masked() -> None:
     timestamps = pd.date_range("2024-01-01", periods=4, freq="1D", tz="UTC")
     frame = pd.DataFrame({"timestamp": timestamps, "load": [1.0, 2.0, 3.0, 4.0]})
     origin = pd.Timestamp("2024-01-03", tz="UTC")
 
-    solar = mask_unavailable_targets(frame, origin, entity_type="solar_park")
-    assert solar["load"].tolist()[:1] == [1.0]
-    assert solar["load"].iloc[1:].isna().all()
+    solar = mask_unavailable_targets(frame, origin)
+    assert solar["load"].tolist()[:3] == [1.0, 2.0, 3.0]
+    assert pd.isna(solar["load"].iloc[3])
 
-    transformer = select_available_past_targets(frame, origin, entity_type="transformer")
+    transformer = select_available_past_targets(frame, origin)
     assert transformer.tolist() == [1.0, 2.0, 3.0]
     assert timestamps[-1] not in transformer.index
 
 
-def test_available_at_is_authoritative_and_future_target_never_enters_input() -> None:
+def test_target_available_at_is_ignored_and_future_target_never_enters_input() -> None:
     origin = pd.Timestamp("2024-01-02", tz="UTC")
     frame = pd.DataFrame(
         {
@@ -33,7 +33,7 @@ def test_available_at_is_authoritative_and_future_target_never_enters_input() ->
         }
     )
     masked = mask_unavailable_targets(frame, origin)
-    assert pd.isna(masked["load"].iloc[0])
+    assert masked["load"].iloc[0] == 1.0
     assert masked["load"].iloc[1] == 2.0
     assert pd.isna(masked["load"].iloc[2])
 

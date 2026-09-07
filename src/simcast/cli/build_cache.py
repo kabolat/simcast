@@ -94,7 +94,7 @@ def _covariate_kwargs(config: SimcastConfig) -> dict[str, bool]:
         "calendar": calendar.enabled,
         "include_hour": calendar.include_hour,
         "include_day_of_week": calendar.include_day_of_week,
-        "include_day_of_year": calendar.include_day_of_year,
+        "include_is_weekend": calendar.include_is_weekend,
     }
 
 
@@ -107,7 +107,6 @@ def _prepare_entity(
     history = select_available_past_targets(
         target_window.loc[window.past_timestamps],
         window.origin_timestamp,
-        entity_type=frames.entity.group_name,
         target_column=config.data.target_column,
     ).reindex(window.past_timestamps)
     truth = target_window.loc[window.future_timestamps, config.data.target_column]
@@ -127,6 +126,8 @@ def _prepare_entity(
         window.origin_timestamp,
         window.future_timestamps,
         config.covariates.weather,
+        measurements=frames.measured_weather,
+        future_weather_source=config.covariates.future_weather_source,
         **kwargs,
     )
     if not _finite_covariates(past_covariates) or not _finite_covariates(future_covariates):

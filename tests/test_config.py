@@ -30,6 +30,14 @@ def test_base_protocol_and_pins() -> None:
     assert config.protocol.full_group_only
     assert not config.subset_training.enabled
     assert not config.evaluation.variable_k_sizes
+    assert config.covariates.future_weather_source == "vintage"
+    assert config.covariates.calendar.include_is_weekend
+
+
+def test_oracle_future_weather_source_is_a_supported_explicit_override() -> None:
+    config = load_config(CONFIGS / "base.yaml", ["covariates.future_weather_source=oracle"])
+
+    assert config.covariates.future_weather_source == "oracle"
 
 
 @pytest.mark.parametrize(

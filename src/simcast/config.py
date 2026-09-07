@@ -70,7 +70,7 @@ class CalendarConfig(ConfigModel):
     enabled: bool = True
     include_hour: bool = True
     include_day_of_week: bool = True
-    include_day_of_year: bool = True
+    include_is_weekend: bool = True
 
 
 class OptionalCovariateConfig(ConfigModel):
@@ -87,6 +87,7 @@ class CovariatesConfig(ConfigModel):
             "shortwave_radiation",
         ]
     )
+    future_weather_source: Literal["vintage", "oracle"] = "vintage"
     calendar: CalendarConfig = Field(default_factory=CalendarConfig)
     epex: OptionalCovariateConfig = Field(default_factory=OptionalCovariateConfig)
     profiles: OptionalCovariateConfig = Field(default_factory=OptionalCovariateConfig)

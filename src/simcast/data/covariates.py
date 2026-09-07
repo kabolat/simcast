@@ -1,9 +1,9 @@
-"""Weather selection and deterministic cyclic calendar covariates."""
+"""Weather selection and deterministic calendar covariates."""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import numpy as np
 import pandas as pd
@@ -28,9 +28,9 @@ def calendar_features(
     *,
     include_hour: bool = True,
     include_day_of_week: bool = True,
-    include_day_of_year: bool = True,
+    include_is_weekend: bool = True,
 ) -> pd.DataFrame:
-    """Encode calendar position with continuous sine/cosine pairs."""
+    """Encode UTC calendar position with cyclic pairs and a weekend indicator."""
 
     index = _utc_index(timestamps)
     values: dict[str, np.ndarray] = {}
@@ -43,12 +43,8 @@ def calendar_features(
         angle = 2.0 * np.pi * index.dayofweek.to_numpy() / 7.0
         values["day_of_week_sin"] = np.sin(angle)
         values["day_of_week_cos"] = np.cos(angle)
-    if include_day_of_year:
-        day_fraction = hour / 24.0
-        days_in_year = np.where(index.is_leap_year, 366.0, 365.0)
-        angle = 2.0 * np.pi * (index.dayofyear.to_numpy() - 1.0 + day_fraction) / days_in_year
-        values["day_of_year_sin"] = np.sin(angle)
-        values["day_of_year_cos"] = np.cos(angle)
+    if include_is_weekend:
+        values["is_weekend"] = (index.dayofweek.to_numpy() >= 5).astype(np.float32)
     return pd.DataFrame(values, index=index, dtype="float32")
 
 
@@ -68,7 +64,7 @@ def _with_calendar(
     calendar: bool,
     include_hour: bool,
     include_day_of_week: bool,
-    include_day_of_year: bool,
+    include_is_weekend: bool,
 ) -> pd.DataFrame:
     if not calendar:
         return weather
@@ -77,7 +73,7 @@ def _with_calendar(
             pd.DatetimeIndex(weather.index),
             include_hour=include_hour,
             include_day_of_week=include_day_of_week,
-            include_day_of_year=include_day_of_year,
+            include_is_weekend=include_is_weekend,
         )
     )
 
@@ -91,7 +87,7 @@ def build_past_covariates(
     calendar: bool = True,
     include_hour: bool = True,
     include_day_of_week: bool = True,
-    include_day_of_year: bool = True,
+    include_is_weekend: bool = True,
 ) -> pd.DataFrame:
     """Build aligned past covariates from measured weather."""
 
@@ -104,7 +100,7 @@ def build_past_covariates(
         calendar=calendar,
         include_hour=include_hour,
         include_day_of_week=include_day_of_week,
-        include_day_of_year=include_day_of_year,
+        include_is_weekend=include_is_weekend,
     )
 
 
@@ -114,25 +110,34 @@ def build_future_covariates(
     timestamps: Sequence[object] | pd.DatetimeIndex,
     weather_features: Sequence[str],
     *,
+    measurements: pd.DataFrame | None = None,
+    future_weather_source: Literal["vintage", "oracle"] = "vintage",
     calendar: bool = True,
     include_hour: bool = True,
     include_day_of_week: bool = True,
-    include_day_of_year: bool = True,
+    include_is_weekend: bool = True,
 ) -> pd.DataFrame:
-    """Build aligned future covariates from the newest eligible weather vintage."""
+    """Build future covariates from weather vintages or realized measurements."""
 
     origin = as_utc_timestamp(origin_timestamp)
     requested = _utc_index(timestamps)
     if bool((requested <= origin).any()):
         raise ValueError("future covariate timestamps must be strictly after the origin")
-    forecast = select_latest_weather_forecast(forecasts, origin, requested)
-    weather = select_weather_features(forecast, weather_features)
+    if future_weather_source == "vintage":
+        weather_frame = select_latest_weather_forecast(forecasts, origin, requested)
+    elif future_weather_source == "oracle":
+        if measurements is None:
+            raise ValueError("oracle future weather requires weather measurements")
+        weather_frame = normalize_timestamp_frame(measurements).reindex(requested)
+    else:
+        raise ValueError("future_weather_source must be 'vintage' or 'oracle'")
+    weather = select_weather_features(weather_frame, weather_features)
     return _with_calendar(
         weather,
         calendar=calendar,
         include_hour=include_hour,
         include_day_of_week=include_day_of_week,
-        include_day_of_year=include_day_of_year,
+        include_is_weekend=include_is_weekend,
     )
 
 

@@ -2,12 +2,12 @@
 
 ## What the test suite establishes
 
-The repository's 121 tests cover scientific contracts as well as ordinary
+The repository's 132 tests cover scientific contracts as well as ordinary
 input validation. Major protected invariants include:
 
 - deterministic UTC origin generation and exact past/future window endpoints;
 - chronological split counts and horizon-overlap purging;
-- target reporting delays and latest-available weather vintage selection;
+- target measurement-time availability and latest-available weather vintage selection;
 - canonical group identity/order and static group membership;
 - strict config inheritance, overrides, environment expansion, and validation;
 - Chronos freezing, direct-capacity checks, target-row mapping, group-ID
@@ -124,7 +124,7 @@ Absolute proper scores are scale-dependent.
 - summarize common coverage and source missingness;
 - inspect the exact entity list/order and coordinates;
 - verify origin phase and forecast timestamps manually for boundary cases;
-- audit several target-delay and weather-vintage examples;
+- audit several target-timestamp and weather-vintage examples;
 - record skipped origins and reasons.
 
 ### Before dependence training

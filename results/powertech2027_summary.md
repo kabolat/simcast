@@ -3,6 +3,8 @@
 This file is generated only after validating every experiment and method manifest as
 `full_group_only: true`, `subset_training: false`, with entity-selection augmentation
 disabled. M2 and M3 are newly trained full-group models; no legacy neural checkpoint is used.
+Each table describes the saved resolved configuration of its source run; regenerate after
+any input-protocol change before treating it as a current experimental result.
 
 ## Headline ranking by group
 

@@ -42,10 +42,11 @@ size from 16 to 256. The supplied experiments resolve through `base.yaml`.
 | Key | Default | Meaning |
 |---|---|---|
 | `covariates.weather` | five named weather fields | unique nonempty columns in fixed order |
+| `covariates.future_weather_source` | `vintage` | `vintage` uses latest released forecast; `oracle` uses realized future measurements |
 | `covariates.calendar.enabled` | `true` | append cyclic calendar channels |
 | `...include_hour` | `true` | sine/cosine fractional UTC hour |
 | `...include_day_of_week` | `true` | sine/cosine weekday |
-| `...include_day_of_year` | `true` | sine/cosine fractional day in leap-aware year |
+| `...include_is_weekend` | `true` | binary UTC Saturday/Sunday indicator |
 | `covariates.epex.enabled` | `false` | reserved; currently not consumed |
 | `covariates.profiles.enabled` | `false` | reserved; currently not consumed |
 | `split.tune_fraction` | 0.80 | open interval `(0,1)`; train+validation prefix |

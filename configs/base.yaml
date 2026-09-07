@@ -32,7 +32,8 @@ covariates:
     enabled: true
     include_hour: true
     include_day_of_week: true
-    include_day_of_year: true
+    include_is_weekend: true
+  future_weather_source: vintage
   epex:
     enabled: false
   profiles:

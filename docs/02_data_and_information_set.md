@@ -20,8 +20,8 @@ The code supports five homogeneous groups:
 | Entity type / static group $g$ | Full-group cardinality $K_g$ | Target availability rule |
 |---|---:|---|
 | `transformer` | 15 | available at measurement timestamp |
-| `solar_park` | 5 | two-day delay unless `available_at` is explicit |
-| `wind_park` | 5 | two-day delay unless `available_at` is explicit |
+| `solar_park` | 5 | available at measurement timestamp |
+| `wind_park` | 5 | available at measurement timestamp |
 | `mv_feeder` | 15 | available at measurement timestamp |
 | `station_installation` | 15 | available at measurement timestamp |
 
@@ -37,8 +37,9 @@ shrink for a particular case.
 
 All internal timestamps are timezone-aware UTC. Readers normalize either a
 `timestamp` column or a `DatetimeIndex`, remove the accidental Parquet column
-`__index_level_0__`, normalize `available_at` when present, and stably sort the
-index. Naive forecast-origin timestamps are rejected by the window layer.
+`__index_level_0__`, normalize `available_at` when present for versioned
+weather, and stably sort the index. Naive forecast-origin timestamps are
+rejected by the window layer.
 
 This repository uses UTC calendar features. Consequently daylight-saving
 changes do not alter the 96-step daily grid, although upstream local-time data
@@ -74,27 +75,15 @@ set $\mathcal I^{(i)}$ available at $t^{(i)}$.
 
 ### Historical target values
 
-For a target row at time $s$, availability is
+For a target row measured at time $s$, availability is its measurement time:
 
 $$
-a_k(s)=
-\begin{cases}
-\texttt{available\_at}(s), & \text{if explicitly supplied},\\
-s+2\text{ days}, & k\text{ is solar or wind},\\
-s, & \text{otherwise}.
-\end{cases}
+a_k(s)=s.
 $$
 
-The value is supplied to Chronos only if both $s\le t^{(i)}$ and $a_k(s)\le t^{(i)}$.
-Otherwise it is replaced with `NaN`, allowing Chronos's native missing-value
-handling to operate. The extra condition $s\le t^{(i)}$ protects against a corrupt
-record that claims a future timestamp was available early.
-
-For solar and wind, the two-day reporting delay masks the most recent 192
-quarter-hours of an otherwise full history. Across all 347 origins, each such
-entity has 66,639 missing historical inputs. This diagnostic counts both values
-masked by the availability rule and values already missing in the source, so it
-is slightly larger than $347\times192=66{,}624$.
+The target value is supplied to Chronos if $s\le t^{(i)}$; otherwise it is
+replaced with `NaN`. A target-file `available_at` column is intentionally
+ignored. This makes the target-input rule the same for every entity type.
 
 Future target values are retained solely as labels. They are not passed to the
 Chronos test-mode dataset.
@@ -107,10 +96,16 @@ and reindexes to the exact lookback grid.
 
 ### Future weather
 
-Versioned weather forecasts contain `available_at`. For each requested future
-timestamp $s>t^{(i)}$, the pipeline filters to vintages with
-`available_at <= t^{(i)}`, stably sorts by availability, and takes the newest
-eligible vintage for $s$. It then reindexes to the exact horizon grid.
+The default `covariates.future_weather_source: vintage` uses versioned weather
+forecasts. For each requested future timestamp $s>t^{(i)}$, the pipeline
+filters to vintages with `available_at <= t^{(i)}`, stably sorts by
+availability, and takes the newest eligible vintage for $s$. It then reindexes
+to the exact horizon grid.
+
+`covariates.future_weather_source: oracle` instead takes the realized future
+rows from `weather_measurements` on the horizon grid. This deliberately uses
+information unavailable at the forecast origin and is therefore an oracle
+diagnostic, not a leakage-safe forecasting configuration.
 
 If any configured past or future covariate is non-finite for any entity, the
 entire origin is skipped before Chronos inference. This is stricter than
@@ -126,11 +121,17 @@ The default weather vector, in fixed configured order, is:
 4. `wind_speed_10m`
 5. `shortwave_radiation`
 
-Six deterministic UTC calendar features are appended. For a periodic variable
+Five deterministic UTC calendar features are appended. For a periodic variable
 $x$ with period $P$, the encoding is $(\sin(2\pi x/P),\cos(2\pi x/P))$.
-The implemented variables are fractional hour with $P=24$, zero-based weekday
-with $P=7$, and fractional zero-based day-of-year with $P=365$ or 366. This
-gives 11 past and 11 future covariate channels by default.
+The implemented cyclic variables are fractional hour with $P=24$ and zero-based
+weekday with $P=7$. The additional binary channel is
+
+$$
+\texttt{is\_weekend}=\mathbb 1\{\operatorname{dayofweek}\ge5\}.
+$$
+
+There is no day-of-year covariate. This gives 10 past and 10 future covariate
+channels by default.
 
 The past and future column lists must match exactly. EPEX and profile flags are
 part of the data-download schema but are not incorporated into the implemented
@@ -183,8 +184,9 @@ must be considered in scientific interpretation.
 Before treating a new run as valid, verify that:
 
 - the data and model revisions in `metadata.json` match the intended protocol;
-- all target history obeys its publication delay;
-- every weather vintage has `available_at <= origin_timestamp`;
+- all target history has measurement timestamp at or before the origin;
+- every vintage-weather row has `available_at <= origin_timestamp`, unless an
+  explicitly declared oracle diagnostic is being run;
 - scalar feature statistics were fitted on training origins only;
 - model selection used validation pseudo-NLL, not test results;
 - `test_labels.zarr` was opened only through evaluation access;
