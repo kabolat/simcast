@@ -50,3 +50,13 @@ All notebooks retain the full static group declared in the YAML configuration.
 The Boolean run controls default to `False`: change them deliberately before
 executing an operation that downloads data, performs Chronos inference, trains
 a neural model, or writes a new artifact.
+
+The first five notebooks introduce the scientific pipeline. The method
+notebooks `05_m0_independent_copula.ipynb` through
+`09_m4_conditional_kernel_diagnostic.ipynb` then provide a separate,
+mathematical walk-through for every copula family. They take a YAML
+configuration and locate its cache exactly as the CLI does. In their default
+read-only state they inspect cached arrays, existing checkpoints, and existing
+evaluation files only. See
+[`docs/13_method_notebook_companion.md`](../docs/13_method_notebook_companion.md)
+for the scientific reading guide.
