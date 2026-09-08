@@ -49,6 +49,24 @@ the earlier subset-trained neural runs are in
 Machine-readable results are tracked in
 [`results/full_group_metrics.csv`](results/full_group_metrics.csv).
 
+The frozen multi-seed confirmatory layer and report workflow are documented in
+[`docs/12_powertech2027_confirmatory_protocol.md`](docs/12_powertech2027_confirmatory_protocol.md).
+
+Run one predeclared group/family and then aggregate saved runs without
+retraining:
+
+```bash
+uv run python -m simcast.cli.run_powertech_experiments \
+  --config configs/powertech2027/transformer.yaml \
+  --phase main \
+  --output-dir runs/powertech2027/transformer/main \
+  --rebuild-cache
+
+uv run python -m simcast.cli.build_powertech_report \
+  --input-root runs/powertech2027 \
+  --output-dir reports/powertech2027
+```
+
 ## Reproducible setup with uv
 
 Python dependencies are locked by `uv.lock`. The official Chronos source is
@@ -172,7 +190,7 @@ are stored once per patch in float16 and converted to float32 for adapter
 training.
 
 Each model run contains its resolved configuration, complete ordered entity IDs,
-software and Git metadata, model/checkpoints, training histories, and a training
+software and Git metadata, config/checkpoint hashes, model/checkpoints, training histories, and a training
 curve. Final evaluation writes:
 
 - overall JSON and lead-wise CSV metrics;
@@ -182,6 +200,8 @@ curve. Final evaluation writes:
   only for memory efficiency);
 - marginal, correlation, factor, dynamics, aggregate-fan, and summary figures;
 - a six-question scientific summary.
+- tidy per-origin-lead and per-origin Parquet score tables, including test
+  Gaussian-copula pseudo-NLL.
 
 The test labels are opened only during this final evaluation. To rerun a saved
 training or evaluation artifact:

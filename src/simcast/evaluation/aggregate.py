@@ -23,6 +23,7 @@ class AggregateEvaluation:
     overall: dict[str, float]
     by_lead: pd.DataFrame
     quantile_predictions: torch.Tensor
+    case_metrics: dict[str, torch.Tensor]
 
 
 def sum_marginal_quantiles(quantile_predictions: torch.Tensor) -> torch.Tensor:
@@ -72,6 +73,12 @@ def evaluate_aggregate_ensemble(
         "mean_pinball": float(pinball[valid].mean()),
         "crps": float(crps[valid].mean()),
     }
+    case_metrics: dict[str, torch.Tensor] = {
+        "mean_pinball": pinball.mean(dim=-1),
+        "crps": crps,
+    }
+    for index, level in enumerate(levels):
+        case_metrics[f"pinball_q{float(level):g}"] = pinball[..., index]
     for index, level in enumerate(levels):
         overall[f"pinball_q{float(level):g}"] = float(pinball[..., index][valid].mean())
 
@@ -97,10 +104,14 @@ def evaluate_aggregate_ensemble(
         overall[f"coverage_{suffix}"] = float(covered[valid].float().mean())
         overall[f"interval_width_{suffix}"] = float(width[valid].mean())
         overall[f"interval_score_{suffix}"] = float(score[valid].mean())
+        case_metrics[f"coverage_{suffix}"] = covered.to(samples.dtype)
+        case_metrics[f"interval_width_{suffix}"] = width
+        case_metrics[f"interval_score_{suffix}"] = score
     lowers = torch.stack(lower_columns, dim=-1)
     uppers = torch.stack(upper_columns, dim=-1)
     wis = weighted_interval_score(truth, median, lowers, uppers, coverages)
     overall["weighted_interval_score"] = float(wis[valid].mean())
+    case_metrics["weighted_interval_score"] = wis
 
     rows: list[dict[str, float | int]] = []
     for lead_index in range(samples.shape[1]):
@@ -125,4 +136,5 @@ def evaluate_aggregate_ensemble(
         overall=overall,
         by_lead=pd.DataFrame(rows).set_index("lead"),
         quantile_predictions=quantiles,
+        case_metrics=case_metrics,
     )

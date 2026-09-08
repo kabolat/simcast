@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 import torch
 
+from simcast.cli.train_dependence import _seed_everything
 from simcast.dependence.conditional_low_rank import ConditionalLowRankGaussianCopula
 from simcast.training.dataset import DependenceCollator, DependenceDataset
 from simcast.training.trainer import ConditionalTrainer
@@ -11,6 +12,19 @@ from simcast.training.trainer import ConditionalTrainer
 def _dataset(origins: int = 8, entities: int = 5) -> DependenceDataset:
     torch.manual_seed(origins + entities)
     return DependenceDataset(torch.randn(origins, entities, 2, 6), torch.randn(origins, entities, 2))
+
+
+def test_deterministic_runtime_is_strict() -> None:
+    _seed_everything(7, deterministic=True)
+    try:
+        assert torch.are_deterministic_algorithms_enabled()
+        assert not torch.backends.cuda.flash_sdp_enabled()
+        assert not torch.backends.cuda.mem_efficient_sdp_enabled()
+        assert torch.backends.cuda.math_sdp_enabled()
+    finally:
+        torch.use_deterministic_algorithms(False)
+        torch.backends.cuda.enable_flash_sdp(True)
+        torch.backends.cuda.enable_mem_efficient_sdp(True)
 
 
 def test_dependence_dataset_flattens_only_complete_origin_leads() -> None:

@@ -1,0 +1,14 @@
+extends: [../liander2024_solar_park.yaml, protocol.yaml]
+
+protocol:
+  ordered_entity_ids:
+    - "solar_park::Within 5 kilometers of Leeuwarden_normalized"
+    - "solar_park::Within 15 kilometers of Oosterwolde_normalized"
+    - "solar_park::Within 15 kilometers of Zutphen_normalized"
+    - "solar_park::Within 20 kilometers of Rotterdam_normalized"
+    - "solar_park::Within 10 kilometers of Westwoud_normalized"
+  entity_count: 5
+
+output:
+  cache_name: powertech2027_solar_park_isotonic
+  experiment_name: powertech2027_solar_park

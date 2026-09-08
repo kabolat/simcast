@@ -374,12 +374,23 @@ def build_cache_from_config(
     forecast_embeddings = np.stack([embeddings[idx] for idx in kept_indices]).astype(np.float16)
     history_missing = np.stack([missing_histories[idx] for idx in kept_indices])
 
-    pit = build_group_pit(
+    raw_pit = build_group_pit(
         torch.from_numpy(true_y),
         torch.from_numpy(quantile_predictions),
         torch.from_numpy(quantile_levels),
-        monotone_repair=config.pit.monotone_repair,
+        monotone_repair="none",
         eps=config.pit.eps,
+    )
+    pit = (
+        raw_pit
+        if config.pit.monotone_repair == "none"
+        else build_group_pit(
+            torch.from_numpy(true_y),
+            torch.from_numpy(quantile_predictions),
+            torch.from_numpy(quantile_levels),
+            monotone_repair=config.pit.monotone_repair,
+            eps=config.pit.eps,
+        )
     )
     pit_u = pit.u.cpu().numpy().astype(np.float32, copy=False)
     pit_z = pit.z.cpu().numpy().astype(np.float32, copy=False)
@@ -478,6 +489,8 @@ def build_cache_from_config(
             "crossing_frequency_by_lead": diagnostics.by_lead.tolist(),
             "dropped_complete_vector_count": dropped_vectors,
             "dropped_complete_vector_fraction": dropped_vectors / valid_origin_lead.size,
+            "complete_case_count_without_repair": int(raw_pit.valid_origin_lead.sum()),
+            "complete_case_count_with_configured_repair": int(pit.valid_origin_lead.sum()),
         },
         "missingness": {
             "masked_history_count_by_entity": dict(

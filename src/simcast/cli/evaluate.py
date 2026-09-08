@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import zlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -16,7 +17,7 @@ import torch
 import typer
 import yaml  # type: ignore[import-untyped]
 
-from simcast.cli.train_dependence import _cache_path, _git_commit
+from simcast.cli.train_dependence import _cache_path, _dependence_scores, _git_commit, _validate_confirmatory_cache
 from simcast.config import SimcastConfig, load_config
 from simcast.dependence import IndependentCopula, StaticGaussianCopula
 from simcast.evaluation.aggregate import AggregateEvaluation, evaluate_aggregate_ensemble
@@ -38,8 +39,10 @@ from simcast.evaluation.plots import (
     plot_variable_cardinality,
 )
 from simcast.fm.cache import PITLibrary, load_pit_library
+from simcast.reproducibility import config_sha256, sha256_file
 from simcast.sampling.gaussian_copula import generate_scenarios
 from simcast.training.checkpoint import LoadedConditionalModel, load_conditional_checkpoint
+from simcast.training.losses import gaussian_copula_pseudo_nll
 
 LOGGER = logging.getLogger(__name__)
 CORE_METHODS = ("independent", "static_gaussian", "conditional_low_rank", "set_aware_low_rank")
@@ -63,6 +66,7 @@ class MethodEvaluation:
     aggregate: AggregateEvaluation
     energy_score: torch.Tensor
     variogram_score: torch.Tensor
+    pseudo_nll: torch.Tensor
     correlations: torch.Tensor
 
 
@@ -186,6 +190,23 @@ def _joint_scores(samples: torch.Tensor, truth: torch.Tensor, power: float) -> t
     return energy, variogram
 
 
+def _base_normal_draws(
+    positions: torch.Tensor,
+    num_samples: int,
+    num_entities: int,
+    *,
+    seed: int,
+    device: torch.device,
+) -> torch.Tensor:
+    """Generate draws keyed only by evaluation seed and flattened case index."""
+
+    batches: list[torch.Tensor] = []
+    for position in positions.tolist():
+        generator = torch.Generator(device=device).manual_seed(seed + int(position))
+        batches.append(torch.randn((num_samples, num_entities), generator=generator, device=device))
+    return torch.stack(batches)
+
+
 def _sample_and_evaluate(
     prepared: PreparedMethod,
     truth: torch.Tensor,
@@ -194,6 +215,7 @@ def _sample_and_evaluate(
     valid: torch.Tensor,
     config: SimcastConfig,
     *,
+    dependence_z: torch.Tensor | None = None,
     num_samples: int | None = None,
     compute_joint: bool = True,
 ) -> MethodEvaluation:
@@ -207,16 +229,25 @@ def _sample_and_evaluate(
     aggregate = torch.full((n_origin * horizon, sample_count), torch.nan)
     energy = torch.full((n_origin * horizon,), torch.nan)
     variogram = torch.full((n_origin * horizon,), torch.nan)
+    pseudo_nll = torch.full((n_origin * horizon,), torch.nan)
     correlations = prepared.correlations.reshape(-1, n_entity, n_entity)
     marginal = predictions.permute(0, 2, 1, 3).reshape(-1, n_entity, predictions.shape[-1])
     realized = truth.permute(0, 2, 1).reshape(-1, n_entity)
+    flattened_z = None if dependence_z is None else dependence_z.permute(0, 2, 1).reshape(-1, n_entity)
     case_indices = valid.reshape(-1).nonzero(as_tuple=False).flatten()
     device = torch.device(config.chronos.device if torch.cuda.is_available() else "cpu")
     for offset in range(0, case_indices.numel(), config.evaluation.scenario_batch_size):
         positions = case_indices[offset : offset + config.evaluation.scenario_batch_size]
-        batch_size = positions.numel()
-        generator = torch.Generator(device=device).manual_seed(config.seed + offset)
-        base_normals = torch.randn((batch_size, sample_count, n_entity), generator=generator, device=device)
+        evaluation_seed = config.sampling.evaluation_seed
+        if not config.sampling.common_random_numbers:
+            evaluation_seed += zlib.crc32(prepared.name.encode())
+        base_normals = _base_normal_draws(
+            positions,
+            sample_count,
+            n_entity,
+            seed=evaluation_seed,
+            device=device,
+        )
         scenarios = generate_scenarios(
             correlations.index_select(0, positions).to(device),
             marginal.index_select(0, positions).to(device),
@@ -235,9 +266,16 @@ def _sample_and_evaluate(
             )
             energy[positions] = batch_energy.cpu()
             variogram[positions] = batch_variogram.cpu()
+        if flattened_z is not None:
+            pseudo_nll[positions] = gaussian_copula_pseudo_nll(
+                flattened_z.index_select(0, positions).to(device),
+                correlations.index_select(0, positions).to(device),
+                reduction="none",
+            ).cpu()
     aggregate = aggregate.reshape(n_origin, horizon, sample_count)
     energy = energy.reshape(n_origin, horizon)
     variogram = variogram.reshape(n_origin, horizon)
+    pseudo_nll = pseudo_nll.reshape(n_origin, horizon)
     aggregate_truth = truth.sum(dim=1)
     report = evaluate_aggregate_ensemble(
         aggregate,
@@ -246,7 +284,7 @@ def _sample_and_evaluate(
         interval_coverages=tuple(config.evaluation.interval_levels),
         valid_mask=valid,
     )
-    return MethodEvaluation(prepared.name, report, energy, variogram, prepared.correlations)
+    return MethodEvaluation(prepared.name, report, energy, variogram, pseudo_nll, prepared.correlations)
 
 
 def _serializable_metrics(result: MethodEvaluation, valid: torch.Tensor) -> dict[str, float | int]:
@@ -256,6 +294,8 @@ def _serializable_metrics(result: MethodEvaluation, valid: torch.Tensor) -> dict
     if torch.isfinite(result.energy_score).any():
         metrics["energy_score"] = float(result.energy_score[torch.isfinite(result.energy_score)].mean())
         metrics["variogram_score"] = float(result.variogram_score[torch.isfinite(result.variogram_score)].mean())
+    if torch.isfinite(result.pseudo_nll).any():
+        metrics["test_pseudo_nll"] = float(result.pseudo_nll[torch.isfinite(result.pseudo_nll)].mean())
     return metrics
 
 
@@ -267,6 +307,7 @@ def _save_method_result(run_dir: Path, result: MethodEvaluation, valid: torch.Te
         correlations=result.correlations.numpy(),
         energy_score=result.energy_score.numpy(),
         variogram_score=result.variogram_score.numpy(),
+        pseudo_nll=result.pseudo_nll.numpy(),
         valid=valid.numpy(),
     )
     return metrics
@@ -274,7 +315,11 @@ def _save_method_result(run_dir: Path, result: MethodEvaluation, valid: torch.Te
 
 def _lead_table(result: MethodEvaluation) -> pd.DataFrame:
     table = result.aggregate.by_lead.copy()
-    for name, values in (("energy_score", result.energy_score), ("variogram_score", result.variogram_score)):
+    for name, values in (
+        ("energy_score", result.energy_score),
+        ("variogram_score", result.variogram_score),
+        ("test_pseudo_nll", result.pseudo_nll),
+    ):
         table[name] = [
             float(column[torch.isfinite(column)].mean()) if torch.isfinite(column).any() else np.nan
             for lead in table.index
@@ -282,6 +327,98 @@ def _lead_table(result: MethodEvaluation) -> pd.DataFrame:
         ]
     table.insert(0, "method", result.name)
     return table.reset_index()
+
+
+def _method_seed(name: str, run_paths: Mapping[str, Path]) -> int | None:
+    if name not in {"conditional_low_rank", "set_aware_low_rank", "conditional_kernel"}:
+        return None
+    metadata = json.loads((run_paths[name] / "run_metadata.json").read_text(encoding="utf-8"))
+    return int(metadata["seed"])
+
+
+def _case_tables(
+    config: SimcastConfig,
+    library: PITLibrary,
+    results: Mapping[str, MethodEvaluation],
+    run_paths: Mapping[str, Path],
+    valid: torch.Tensor,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    test = library.test_data()
+    origins = pd.to_datetime(test["origin_timestamp"].values, utc=True)
+    origin_indices = np.asarray(test["origin"].values, dtype=np.int64)
+    observed_aggregate = np.asarray(test["true_y"].values).sum(axis=1)
+    n_origin, horizon = valid.shape
+    rows: list[pd.DataFrame] = []
+    for name, result in results.items():
+        table = pd.DataFrame(
+            {
+                "group": config.data.entity_type,
+                "method": name,
+                "neural_seed": _method_seed(name, run_paths),
+                "origin_index": np.repeat(origin_indices, horizon),
+                "origin": np.repeat(origins, horizon),
+                "lead": np.tile(np.arange(1, horizon + 1), n_origin),
+                "K": result.correlations.shape[-1],
+                "valid": valid.numpy().reshape(-1),
+                "observed_aggregate": observed_aggregate.reshape(-1),
+            }
+        )
+        for quantile_index, level in enumerate(config.evaluation.quantile_levels):
+            values = result.aggregate.quantile_predictions[..., quantile_index].numpy().reshape(-1)
+            table[f"aggregate_q{level:g}"] = values
+        metrics = {
+            **result.aggregate.case_metrics,
+            "energy_score": result.energy_score,
+            "variogram_score": result.variogram_score,
+            "test_pseudo_nll": result.pseudo_nll,
+        }
+        for metric, metric_values in metrics.items():
+            array = metric_values.detach().cpu().numpy().reshape(-1)
+            table[metric] = np.where(table["valid"], array, np.nan)
+        rows.append(table)
+    per_case = pd.concat(rows, ignore_index=True)
+    metric_columns = [
+        column
+        for column in per_case.columns
+        if column
+        not in {
+            "group",
+            "method",
+            "neural_seed",
+            "origin_index",
+            "origin",
+            "lead",
+            "K",
+            "valid",
+            "observed_aggregate",
+            *(f"aggregate_q{level:g}" for level in config.evaluation.quantile_levels),
+        }
+    ]
+    valid_rows = per_case[per_case["valid"]]
+    per_origin = (
+        valid_rows.groupby(
+            ["group", "method", "neural_seed", "origin_index", "origin", "K"],
+            dropna=False,
+            sort=False,
+        )[metric_columns]
+        .mean()
+        .reset_index()
+    )
+    valid_counts = (
+        valid_rows.groupby(
+            ["group", "method", "neural_seed", "origin_index", "origin", "K"],
+            dropna=False,
+            sort=False,
+        )
+        .size()
+        .rename("valid_leads")
+        .reset_index()
+    )
+    return per_case, per_origin.merge(
+        valid_counts,
+        on=["group", "method", "neural_seed", "origin_index", "origin", "K"],
+        validate="one_to_one",
+    )
 
 
 def _training_correlations(library: PITLibrary) -> tuple[np.ndarray, np.ndarray]:
@@ -453,12 +590,20 @@ def evaluate_from_config(
         raise ValueError("methods must be non-empty and unique")
     cache_path = _cache_path(config, cache_dir)
     library = load_pit_library(cache_path, access="evaluation")
+    _validate_confirmatory_cache(library, config)
     runs = _resolve_runs(config, methods, method_runs)
     output = _evaluation_directory(config, output_dir)
     all_entities = list(range(library.dataset.sizes["entity"]))
-    _, truth, predictions, _ = _test_arrays(library, all_entities)
+    entity_ids = _entity_ids(library)
+    if config.protocol.ordered_entity_ids and entity_ids != config.protocol.ordered_entity_ids:
+        raise ValueError("configured ordered entity IDs do not match the complete cached group")
+    if config.protocol.entity_count is not None and len(entity_ids) != config.protocol.entity_count:
+        raise ValueError("configured entity_count does not match the complete cached group")
+    test_origin_indices, truth, predictions, _ = _test_arrays(library, all_entities)
     levels = torch.tensor(library.dataset["quantile"].values, dtype=torch.float32)
-    valid = _valid_pairs(truth, predictions)
+    dependence_z, frequency_mapping = _dependence_scores(library, config)
+    test_z = torch.tensor(dependence_z[test_origin_indices], dtype=torch.float32)
+    valid = _valid_pairs(truth, predictions) & torch.isfinite(test_z).all(dim=1)
     prepared = {name: _prepare_method(name, runs, library, config, all_entities) for name in methods}
     results = {
         name: _sample_and_evaluate(
@@ -468,6 +613,7 @@ def evaluate_from_config(
             levels,
             valid,
             config,
+            dependence_z=test_z,
             compute_joint=config.evaluation.energy_score or config.evaluation.variogram_score,
         )
         for name, item in prepared.items()
@@ -477,6 +623,11 @@ def evaluate_from_config(
     pd.concat([_lead_table(result) for result in results.values()], ignore_index=True).to_csv(
         output / "metrics_by_lead.csv", index=False
     )
+    per_case, per_origin = _case_tables(config, library, results, runs, valid)
+    per_case.to_parquet(output / "per_origin_lead_metrics.parquet", index=False)
+    per_origin.to_parquet(output / "per_origin_metrics.parquet", index=False)
+    if frequency_mapping is not None:
+        np.savez_compressed(output / "pit_training_frequency_map.npz", midpoints=frequency_mapping)
 
     variable_k_path: Path | None = None
     if not config.protocol.full_group_only:
@@ -550,10 +701,10 @@ def evaluate_from_config(
         "methods": list(methods),
         "test_origin_count": int(truth.shape[0]),
         "valid_origin_lead_count": int(valid.sum()),
-        "entity_ids": _entity_ids(library),
+        "entity_ids": entity_ids,
         "group": {
             "name": config.data.entity_type,
-            "entity_ids": _entity_ids(library),
+            "entity_ids": entity_ids,
             "entity_count": len(all_entities),
         },
         "experimental_protocol": {
@@ -563,6 +714,27 @@ def evaluate_from_config(
             "entity_selection_augmentation_enabled": bool(config.evaluation.variable_k_sizes),
         },
         "joint_score_estimator": "empirical all-pairs estimator on the selected joint ensemble",
+        "joint_score_num_samples": config.evaluation.joint_score_num_samples,
+        "scenario_num_samples": config.sampling.num_samples,
+        "common_random_numbers": config.sampling.common_random_numbers,
+        "evaluation_seed": config.sampling.evaluation_seed,
+        "config_sha256": config_sha256(config),
+        "dataset_revision": config.data.revision,
+        "chronos_source_revision": config.chronos.source_revision,
+        "chronos_model_revision": config.chronos.model_revision,
+        "dependence_pit_transform": config.pit.dependence_transform,
+        "confirmatory": config.confirmatory.model_dump(mode="json"),
+        "model_sha256": {
+            name: sha256_file(
+                path
+                / (
+                    "best.pt"
+                    if name in {"conditional_low_rank", "set_aware_low_rank", "conditional_kernel"}
+                    else "model.npz"
+                )
+            )
+            for name, path in runs.items()
+        },
         "git_commit": _git_commit(),
         "created_at": datetime.now(UTC).isoformat(),
     }

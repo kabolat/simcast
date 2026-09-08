@@ -57,6 +57,7 @@ chronos:
 pit:
   mode: discretized
   monotone_repair: none
+  dependence_transform: nominal_cells
   eps: 1.0e-7
 
 features:
@@ -120,8 +121,20 @@ training:
 
 sampling:
   num_samples: 4096
+  evaluation_seed: 2027
   empirical_quantile_method: nearest
   common_random_numbers: true
+
+confirmatory:
+  enabled: false
+  neural_seeds: [11, 23, 37, 42, 59, 71, 83, 97, 101, 131]
+  bootstrap_replicates: 10000
+  primary_block_length: 7
+  sensitivity_block_lengths: [3, 14]
+  checkpoint_selection: validation_pseudo_nll
+  feature_set: full
+  experiment_family: main
+  test_set_previously_inspected: true
 
 evaluation:
   quantile_levels: [0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95]

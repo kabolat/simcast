@@ -1,0 +1,24 @@
+extends: [../liander2024_transformer.yaml, protocol.yaml]
+
+protocol:
+  ordered_entity_ids:
+    - "transformer::OS Apeldoorn"
+    - "transformer::OS Middenmeer"
+    - "transformer::RS Grouw (Grou)"
+    - "transformer::RS Wieringerwerf"
+    - "transformer::OS Lelystad"
+    - "transformer::RS Poederoijen"
+    - "transformer::OS Tiel"
+    - "transformer::OS Doetinchem"
+    - "transformer::OS Oterleek"
+    - "transformer::OS Nijmegen"
+    - "transformer::OS Amsterdam Hemweg"
+    - "transformer::RS Surhuisterveen"
+    - "transformer::OS Ede"
+    - "transformer::RS Roodwilligen (Duiven)"
+    - "transformer::RS Minnertsga"
+  entity_count: 15
+
+output:
+  cache_name: powertech2027_transformer
+  experiment_name: powertech2027_transformer

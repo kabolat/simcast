@@ -1,0 +1,24 @@
+extends: [../liander2024_mv_feeder.yaml, protocol.yaml]
+
+protocol:
+  ordered_entity_ids:
+    - "mv_feeder::OS Naarden"
+    - "mv_feeder::OS Leiden Noord"
+    - "mv_feeder::SS Harlingen"
+    - "mv_feeder::OS Eibergen"
+    - "mv_feeder::OS Sneek"
+    - "mv_feeder::OS Weesp"
+    - "mv_feeder::SS Ureterp"
+    - "mv_feeder::OS Gorredijk"
+    - "mv_feeder::OS Sassenheim"
+    - "mv_feeder::OS Waarderpolder"
+    - "mv_feeder::OS Edam"
+    - "mv_feeder::OS Watergraafsmeer"
+    - "mv_feeder::RS Angerlo"
+    - "mv_feeder::SS Heerenveen Pim Mulier"
+    - "mv_feeder::RS Roodwilligen (Duiven)"
+  entity_count: 15
+
+output:
+  cache_name: powertech2027_mv_feeder
+  experiment_name: powertech2027_mv_feeder

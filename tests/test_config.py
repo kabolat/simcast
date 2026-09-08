@@ -77,6 +77,33 @@ def test_entity_type_configs_resolve(filename: str, entity_type: str, repair: st
     assert config.output.cache_name is not None
 
 
+@pytest.mark.parametrize(
+    ("filename", "entity_type", "entity_count"),
+    [
+        ("transformer.yaml", "transformer", 15),
+        ("solar_park.yaml", "solar_park", 5),
+        ("wind_park.yaml", "wind_park", 5),
+        ("mv_feeder.yaml", "mv_feeder", 15),
+        ("station_installation.yaml", "station_installation", 15),
+    ],
+)
+def test_powertech_protocols_predeclare_complete_ordered_groups(
+    filename: str, entity_type: str, entity_count: int
+) -> None:
+    config = load_config(CONFIGS / "powertech2027" / filename)
+
+    assert config.protocol.name == "powertech2027"
+    assert config.protocol.full_group_only
+    assert config.confirmatory.enabled
+    assert config.confirmatory.neural_seeds == [11, 23, 37, 42, 59, 71, 83, 97, 101, 131]
+    assert config.data.entity_type == entity_type
+    assert config.protocol.entity_count == entity_count
+    assert len(config.protocol.ordered_entity_ids) == entity_count
+    assert all(entity_id.startswith(f"{entity_type}::") for entity_id in config.protocol.ordered_entity_ids)
+    assert not config.subset_training.enabled
+    assert not config.evaluation.variable_k_sizes
+
+
 def test_kernel_config_is_bounded_smoke() -> None:
     config = load_config(CONFIGS / "method_conditional_kernel_smoke.yaml")
 

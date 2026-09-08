@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 import torch
 
-from simcast.cli.evaluate import PreparedMethod, _sample_and_evaluate, evaluate_from_config
+from simcast.cli.evaluate import PreparedMethod, _base_normal_draws, _sample_and_evaluate, evaluate_from_config
 from simcast.cli.train_dependence import train_from_config
 from simcast.config import SimcastConfig
 from simcast.fm.cache import build_cache_dataset, save_pit_library
@@ -71,6 +71,8 @@ def test_full_group_evaluation_uses_only_the_complete_group(tmp_path: Path) -> N
 
     assert (output / "metrics.json").is_file()
     assert (output / "metrics_by_lead.csv").is_file()
+    assert (output / "per_origin_lead_metrics.parquet").is_file()
+    assert (output / "per_origin_metrics.parquet").is_file()
     assert not (output / "variable_k.csv").exists()
     assert (output / "scientific_summary.json").is_file()
     assert (output / "evaluation_manifest.json").is_file()
@@ -103,3 +105,14 @@ def test_evaluation_rejects_a_shrunken_correlation_matrix(tmp_path: Path) -> Non
             torch.ones(2, 3, dtype=torch.bool),
             config,
         )
+
+
+def test_common_random_normals_are_keyed_by_evaluation_seed_and_case() -> None:
+    positions = torch.tensor([2, 9])
+    first = _base_normal_draws(positions, 16, 4, seed=2027, device=torch.device("cpu"))
+    second = _base_normal_draws(positions, 16, 4, seed=2027, device=torch.device("cpu"))
+    reversed_draws = _base_normal_draws(positions.flip(0), 16, 4, seed=2027, device=torch.device("cpu"))
+
+    torch.testing.assert_close(first, second)
+    torch.testing.assert_close(first, reversed_draws.flip(0))
+    assert not torch.equal(first[0], first[1])

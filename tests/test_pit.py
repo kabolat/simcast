@@ -3,9 +3,12 @@ import pytest
 import torch
 
 from simcast.fm.pit import (
+    apply_training_frequency_midpoints,
     build_group_pit,
     crossing_diagnostics,
+    dependence_pit_scores,
     discretized_pit,
+    fit_training_frequency_midpoints,
     gaussianize_pit,
     quantile_crossings,
 )
@@ -72,3 +75,24 @@ def test_rejects_invalid_levels_and_shapes() -> None:
         discretized_pit(torch.ones(2), torch.ones(2, 3), torch.tensor([0.5, 0.1, 0.9]))
     with pytest.raises(ValueError):
         discretized_pit(torch.ones(3), torch.ones(2, 3), torch.tensor([0.1, 0.5, 0.9]))
+
+
+def test_training_frequency_normalization_uses_training_origins_only() -> None:
+    levels = torch.tensor([0.5])
+    training_u = torch.tensor([[[0.25]], [[0.25]], [[0.75]]])
+    mapping = fit_training_frequency_midpoints(training_u, levels)
+    torch.testing.assert_close(mapping, torch.tensor([[[1 / 3, 5 / 6]]]))
+    mapped = apply_training_frequency_midpoints(torch.tensor([[[0.25]], [[0.75]]]), levels, mapping)
+    torch.testing.assert_close(mapped, torch.tensor([[[1 / 3]], [[5 / 6]]]))
+
+    all_u = torch.cat((training_u, torch.full((10, 1, 1), 0.75)))
+    nominal_z = gaussianize_pit(all_u)
+    _, fitted = dependence_pit_scores(
+        all_u,
+        nominal_z,
+        torch.tensor([True, True, True] + [False] * 10),
+        levels,
+        mode="training_frequency",
+    )
+    assert fitted is not None
+    torch.testing.assert_close(fitted, mapping)

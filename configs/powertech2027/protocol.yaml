@@ -1,0 +1,27 @@
+protocol:
+  name: powertech2027
+  full_group_only: true
+
+confirmatory:
+  enabled: true
+  neural_seeds: [11, 23, 37, 42, 59, 71, 83, 97, 101, 131]
+  bootstrap_replicates: 10000
+  primary_block_length: 7
+  sensitivity_block_lengths: [3, 14]
+  checkpoint_selection: validation_pseudo_nll
+  feature_set: full
+  experiment_family: main
+  test_set_previously_inspected: true
+
+sampling:
+  num_samples: 4096
+  evaluation_seed: 2027
+  common_random_numbers: true
+
+evaluation:
+  interval_levels: [0.50, 0.60, 0.70, 0.80, 0.90]
+  joint_score_num_samples: 512
+  variable_k_sizes: []
+
+subset_training:
+  enabled: false

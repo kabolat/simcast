@@ -160,6 +160,90 @@ def gaussianize_pit(u: torch.Tensor, *, eps: float = 1e-7) -> torch.Tensor:
     return torch.as_tensor(torch.special.ndtri(values.clamp(min=eps, max=1.0 - eps)))
 
 
+def nominal_cell_midpoints(quantile_levels: torch.Tensor) -> torch.Tensor:
+    """Return the deterministic ``Q + 1`` nominal PIT-cell midpoints."""
+
+    levels = _validate_levels(quantile_levels)
+    edges = torch.cat((levels.new_tensor([0.0]), levels, levels.new_tensor([1.0])))
+    return 0.5 * (edges[:-1] + edges[1:])
+
+
+def fit_training_frequency_midpoints(
+    training_u: torch.Tensor,
+    quantile_levels: torch.Tensor,
+) -> torch.Tensor:
+    """Fit empirical PIT-cell midpoints using training origins only.
+
+    ``training_u`` has shape ``[origin, entity, lead]``.  The returned table
+    has shape ``[entity, lead, Q + 1]`` and contains cumulative empirical-mass
+    midpoints. Missing complete vectors are ignored; each entity/lead must
+    retain at least one training observation.
+    """
+
+    values = torch.as_tensor(training_u)
+    if values.ndim != 3:
+        raise ValueError("training_u must have shape [origin, entity, lead]")
+    nominal = nominal_cell_midpoints(torch.as_tensor(quantile_levels, device=values.device)).to(values.dtype)
+    distances = torch.abs(values.unsqueeze(-1) - nominal)
+    cells = distances.nan_to_num(float("inf")).argmin(dim=-1)
+    finite = torch.isfinite(values)
+    counts = torch.stack(
+        [((cells == cell) & finite).sum(dim=0) for cell in range(nominal.numel())],
+        dim=-1,
+    ).to(torch.float64)
+    totals = counts.sum(dim=-1, keepdim=True)
+    if bool((totals == 0).any()):
+        raise ValueError("every entity/lead needs at least one finite training PIT cell")
+    probabilities = counts / totals
+    return (probabilities.cumsum(dim=-1) - 0.5 * probabilities).to(values.dtype)
+
+
+def apply_training_frequency_midpoints(
+    u: torch.Tensor,
+    quantile_levels: torch.Tensor,
+    empirical_midpoints: torch.Tensor,
+) -> torch.Tensor:
+    """Map nominal finite-cell PITs through a frozen training-frequency table."""
+
+    values = torch.as_tensor(u)
+    if values.ndim != 3:
+        raise ValueError("u must have shape [origin, entity, lead]")
+    nominal = nominal_cell_midpoints(torch.as_tensor(quantile_levels, device=values.device)).to(values.dtype)
+    mapping = torch.as_tensor(empirical_midpoints, device=values.device, dtype=values.dtype)
+    expected = (*values.shape[1:], nominal.numel())
+    if mapping.shape != expected:
+        raise ValueError(f"empirical_midpoints must have shape {expected}")
+    cells = torch.abs(values.unsqueeze(-1) - nominal).nan_to_num(float("inf")).argmin(dim=-1)
+    expanded = mapping.unsqueeze(0).expand(values.shape[0], -1, -1, -1)
+    calibrated = expanded.gather(dim=-1, index=cells.unsqueeze(-1)).squeeze(-1)
+    return torch.where(torch.isfinite(values), calibrated, torch.full_like(calibrated, torch.nan))
+
+
+def dependence_pit_scores(
+    pit_u: torch.Tensor,
+    nominal_z: torch.Tensor,
+    split_is_training: torch.Tensor,
+    quantile_levels: torch.Tensor,
+    *,
+    mode: Literal["nominal_cells", "training_frequency"] = "nominal_cells",
+    eps: float = 1.0e-7,
+) -> tuple[torch.Tensor, torch.Tensor | None]:
+    """Return dependence scores and the optional train-only calibration map."""
+
+    u = torch.as_tensor(pit_u)
+    z = torch.as_tensor(nominal_z, device=u.device, dtype=u.dtype)
+    training = torch.as_tensor(split_is_training, device=u.device, dtype=torch.bool)
+    if u.shape != z.shape or u.ndim != 3 or training.shape != (u.shape[0],):
+        raise ValueError("PIT arrays must be [origin, entity, lead] with one training flag per origin")
+    if mode == "nominal_cells":
+        return z, None
+    if mode != "training_frequency":
+        raise ValueError(f"unknown dependence PIT transform: {mode}")
+    mapping = fit_training_frequency_midpoints(u[training], quantile_levels)
+    calibrated_u = apply_training_frequency_midpoints(u, quantile_levels, mapping)
+    return gaussianize_pit(calibrated_u, eps=eps), mapping
+
+
 def build_group_pit(
     true_y: torch.Tensor,
     quantile_predictions: torch.Tensor,

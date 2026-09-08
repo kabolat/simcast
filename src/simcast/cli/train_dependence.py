@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import platform
 import random
 import subprocess
@@ -26,6 +27,8 @@ from simcast.dependence.set_aware_low_rank import SetAwareLowRankGaussianCopula
 from simcast.evaluation.plots import plot_training_history
 from simcast.fm.cache import PITLibrary, load_pit_library
 from simcast.fm.feature_builder import FeatureBuilder
+from simcast.fm.pit import dependence_pit_scores
+from simcast.reproducibility import config_sha256, sha256_file
 from simcast.training import ConditionalTrainer, DependenceCollator, DependenceDataset
 
 LOGGER = logging.getLogger(__name__)
@@ -49,13 +52,18 @@ def _run_directory(config: SimcastConfig, method: str, override: str | Path | No
 
 
 def _seed_everything(seed: int, deterministic: bool) -> None:
+    if deterministic:
+        os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
     if deterministic:
-        torch.use_deterministic_algorithms(True, warn_only=True)
+        torch.use_deterministic_algorithms(True)
+        torch.backends.cuda.enable_flash_sdp(False)
+        torch.backends.cuda.enable_mem_efficient_sdp(False)
+        torch.backends.cuda.enable_math_sdp(True)
 
 
 def _git_commit() -> str | None:
@@ -77,9 +85,13 @@ def _write_run_metadata(run_dir: Path, config: SimcastConfig, cache_path: Path, 
     metadata = {
         "created_at": datetime.now(UTC).isoformat(),
         "git_commit": _git_commit(),
+        "config_sha256": config_sha256(config),
         "python": platform.python_version(),
         "packages": packages,
         "cache_path": str(cache_path),
+        "dataset_revision": config.data.revision,
+        "chronos_source_revision": config.chronos.source_revision,
+        "chronos_model_revision": config.chronos.model_revision,
         "entity_ids": entity_ids,
         "group": {
             "name": config.data.entity_type,
@@ -93,12 +105,44 @@ def _write_run_metadata(run_dir: Path, config: SimcastConfig, cache_path: Path, 
             "entity_selection_augmentation_enabled": config.subset_training.enabled,
         },
         "seed": config.seed,
+        "evaluation_seed": config.sampling.evaluation_seed,
+        "checkpoint_selection": config.confirmatory.checkpoint_selection,
+        "dependence_pit_transform": config.pit.dependence_transform,
     }
     (run_dir / "run_metadata.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
 
 
 def _split_indices(library: PITLibrary, label: str) -> np.ndarray:
     return np.flatnonzero(np.asarray(library.dataset["split"].values) == label)
+
+
+def _validate_confirmatory_cache(library: PITLibrary, config: SimcastConfig) -> None:
+    if not config.confirmatory.enabled:
+        return
+    cached = library.metadata.get("resolved_config")
+    if not isinstance(cached, dict):
+        raise ValueError("confirmatory runs require cache metadata with a resolved configuration")
+    expected = config.model_dump(mode="json")
+    exact_sections = ("forecast", "covariates")
+    for section in exact_sections:
+        if cached.get(section) != expected[section]:
+            raise ValueError(f"confirmatory cache {section} configuration does not match the requested protocol")
+    checked_keys = {
+        "data": ("dataset_id", "revision", "entity_type", "target_column", "include_epex", "include_profiles"),
+        "chronos": ("source_revision", "model_id", "model_revision", "dtype", "cross_learning"),
+    }
+    for section, keys in checked_keys.items():
+        cached_section = cached.get(section)
+        mismatch = not isinstance(cached_section, dict) or any(
+            cached_section.get(key) != expected[section][key] for key in keys
+        )
+        if mismatch:
+            raise ValueError(f"confirmatory cache {section} configuration does not match the requested protocol")
+    cached_pit = cached.get("pit")
+    if not isinstance(cached_pit, dict) or any(
+        cached_pit.get(key) != expected["pit"][key] for key in ("mode", "monotone_repair", "eps")
+    ):
+        raise ValueError("confirmatory cache PIT construction does not match the requested protocol")
 
 
 def _complete_origin_indices(library: PITLibrary, indices: np.ndarray, limit: int) -> np.ndarray:
@@ -134,12 +178,29 @@ def _feature_builder(config: SimcastConfig, library: PITLibrary) -> FeatureBuild
     )
 
 
-def _arrays(library: PITLibrary, indices: np.ndarray) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+def _dependence_scores(library: PITLibrary, config: SimcastConfig) -> tuple[np.ndarray, np.ndarray | None]:
+    dataset = library.dataset
+    scores, mapping = dependence_pit_scores(
+        torch.tensor(dataset["pit_u"].values, dtype=torch.float32),
+        torch.tensor(dataset["pit_z"].values, dtype=torch.float32),
+        torch.tensor(np.asarray(dataset["split"].values) == "train"),
+        torch.tensor(dataset["quantile"].values, dtype=torch.float32),
+        mode=config.pit.dependence_transform,
+        eps=config.pit.eps,
+    )
+    return scores.numpy(), None if mapping is None else mapping.numpy()
+
+
+def _arrays(
+    library: PITLibrary,
+    indices: np.ndarray,
+    dependence_z: np.ndarray,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     dataset = library.dataset.isel(origin=indices)
     return (
         torch.tensor(dataset["forecast_embedding"].values, dtype=torch.float32),
         torch.tensor(dataset["quantile_prediction"].values, dtype=torch.float32),
-        torch.tensor(dataset["pit_z"].values, dtype=torch.float32),
+        torch.tensor(dependence_z[indices], dtype=torch.float32),
     )
 
 
@@ -149,6 +210,7 @@ def _train_conditional(
     run_dir: Path,
     entity_ids: list[str],
     method: str,
+    dependence_z: np.ndarray,
 ) -> None:
     train_indices = _split_indices(library, "train")
     validation_indices = _split_indices(library, "validation")
@@ -159,8 +221,8 @@ def _train_conditional(
             validation_indices = _complete_origin_indices(library, validation_indices, smoke.smoke_max_origins)
     if not train_indices.size or not validation_indices.size:
         raise ValueError("conditional training requires non-empty chronological train and validation partitions")
-    train_embeddings, train_predictions, train_z = _arrays(library, train_indices)
-    validation_embeddings, validation_predictions, validation_z = _arrays(library, validation_indices)
+    train_embeddings, train_predictions, train_z = _arrays(library, train_indices, dependence_z)
+    validation_embeddings, validation_predictions, validation_z = _arrays(library, validation_indices, dependence_z)
     levels = torch.tensor(library.dataset["quantile"].values, dtype=torch.float32)
     locations = _locations(library)
     builder = _feature_builder(config, library)
@@ -278,12 +340,20 @@ def train_from_config(
     _seed_everything(config.seed, config.runtime.deterministic)
     cache_path = _cache_path(config, cache_dir)
     library = load_pit_library(cache_path, access="training")
+    _validate_confirmatory_cache(library, config)
     entity_ids = [str(value) for value in library.dataset["entity_id"].values]
+    if config.protocol.ordered_entity_ids and entity_ids != config.protocol.ordered_entity_ids:
+        raise ValueError("configured ordered entity IDs do not match the complete cached group")
+    if config.protocol.entity_count is not None and len(entity_ids) != config.protocol.entity_count:
+        raise ValueError("configured entity_count does not match the complete cached group")
     method = config.dependence.method
     run_dir = _run_directory(config, method, output_dir)
     _write_run_metadata(run_dir, config, cache_path, entity_ids)
+    dependence_z, frequency_mapping = _dependence_scores(library, config)
+    if frequency_mapping is not None:
+        np.savez_compressed(run_dir / "pit_training_frequency_map.npz", midpoints=frequency_mapping)
     train_indices = _split_indices(library, "train")
-    train_z = np.asarray(library.dataset["pit_z"].isel(origin=train_indices).values)
+    train_z = dependence_z[train_indices]
     if method == "independent":
         IndependentCopula().fit(train_z, entity_ids).save(run_dir / "model.npz")
     elif method == "static_gaussian":
@@ -295,9 +365,15 @@ def train_from_config(
         ).fit(train_z, entity_ids)
         model.save(run_dir / "model.npz")
     elif method in {"conditional_low_rank", "set_aware_low_rank", "conditional_kernel"}:
-        _train_conditional(config, library, run_dir, entity_ids, method)
+        _train_conditional(config, library, run_dir, entity_ids, method, dependence_z)
     else:
         raise ValueError(f"unknown dependence method: {method}")
+    checkpoint_methods = {"conditional_low_rank", "set_aware_low_rank", "conditional_kernel"}
+    model_path = run_dir / ("best.pt" if method in checkpoint_methods else "model.npz")
+    metadata_path = run_dir / "run_metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata["model_sha256"] = sha256_file(model_path)
+    metadata_path.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
     return run_dir
 
 

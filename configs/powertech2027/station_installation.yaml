@@ -1,0 +1,24 @@
+extends: [../liander2024_station_installation.yaml, protocol.yaml]
+
+protocol:
+  ordered_entity_ids:
+    - "station_installation::OS Apeldoorn"
+    - "station_installation::RS Hallum"
+    - "station_installation::OS Almere"
+    - "station_installation::SS Stiens"
+    - "station_installation::OS Herbayum"
+    - "station_installation::OS Westhaven"
+    - "station_installation::OS Zevenhuizen"
+    - "station_installation::RS Anklaar"
+    - "station_installation::SS Noordwolde"
+    - "station_installation::OS Zevenaar"
+    - "station_installation::OS Bergum"
+    - "station_installation::OS Texel"
+    - "station_installation::RS Waskemeer"
+    - "station_installation::RS Wamel"
+    - "station_installation::OS Drachten"
+  entity_count: 15
+
+output:
+  cache_name: powertech2027_station_installation
+  experiment_name: powertech2027_station_installation

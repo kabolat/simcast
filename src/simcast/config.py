@@ -129,12 +129,22 @@ class ChronosConfig(ConfigModel):
 class PitConfig(ConfigModel):
     mode: Literal["discretized"] = "discretized"
     monotone_repair: Literal["none", "isotonic"] = "none"
+    dependence_transform: Literal["nominal_cells", "training_frequency"] = "nominal_cells"
     eps: Annotated[float, Field(gt=0.0, lt=0.5)] = 1.0e-7
 
 
 class ProtocolConfig(ConfigModel):
-    name: Literal["legacy", "full_group"] = "legacy"
+    name: Literal["legacy", "full_group", "powertech2027"] = "legacy"
     full_group_only: bool = False
+    ordered_entity_ids: list[str] = Field(default_factory=list)
+    entity_count: PositiveInt | None = None
+
+    @field_validator("ordered_entity_ids")
+    @classmethod
+    def unique_entity_ids(cls, value: list[str]) -> list[str]:
+        if any(not entity_id.strip() for entity_id in value) or len(value) != len(set(value)):
+            raise ValueError("protocol.ordered_entity_ids must be non-empty unique strings when supplied")
+        return value
 
 
 class FeaturesConfig(ConfigModel):
@@ -241,8 +251,34 @@ class TrainingConfig(ConfigModel):
 
 class SamplingConfig(ConfigModel):
     num_samples: PositiveInt = 4096
+    evaluation_seed: NonNegativeInt = 2027
     empirical_quantile_method: Literal["nearest"] = "nearest"
     common_random_numbers: bool = True
+
+
+class ConfirmatoryConfig(ConfigModel):
+    enabled: bool = False
+    neural_seeds: list[NonNegativeInt] = Field(
+        default_factory=lambda: [11, 23, 37, 42, 59, 71, 83, 97, 101, 131], min_length=1
+    )
+    bootstrap_replicates: PositiveInt = 10_000
+    primary_block_length: PositiveInt = 7
+    sensitivity_block_lengths: list[PositiveInt] = Field(default_factory=lambda: [3, 14])
+    checkpoint_selection: Literal["validation_pseudo_nll"] = "validation_pseudo_nll"
+    feature_set: Literal[
+        "embedding_dynamic_only", "quantile_dynamic_only", "combined_dynamic", "full"
+    ] = "full"
+    experiment_family: Literal["main", "ablation", "pit_sensitivity", "rank_sensitivity", "static_sensitivity"] = (
+        "main"
+    )
+    test_set_previously_inspected: Literal[True] = True
+
+    @field_validator("neural_seeds", "sensitivity_block_lengths")
+    @classmethod
+    def unique_values(cls, value: list[int]) -> list[int]:
+        if len(value) != len(set(value)):
+            raise ValueError("confirmatory seed and block-length lists must contain unique values")
+        return value
 
 
 class EvaluationConfig(ConfigModel):
@@ -303,6 +339,7 @@ class SimcastConfig(ConfigModel):
     subset_training: SubsetTrainingConfig = Field(default_factory=SubsetTrainingConfig)
     training: TrainingConfig = Field(default_factory=TrainingConfig)
     sampling: SamplingConfig = Field(default_factory=SamplingConfig)
+    confirmatory: ConfirmatoryConfig = Field(default_factory=ConfirmatoryConfig)
     evaluation: EvaluationConfig = Field(default_factory=EvaluationConfig)
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
@@ -315,6 +352,34 @@ class SimcastConfig(ConfigModel):
             raise ValueError("full-group protocol forbids subset training")
         if self.protocol.full_group_only and self.evaluation.variable_k_sizes:
             raise ValueError("full-group protocol forbids variable-cardinality evaluation")
+        if (
+            self.protocol.entity_count is not None
+            and self.protocol.entity_count != len(self.protocol.ordered_entity_ids)
+        ):
+            raise ValueError("protocol.entity_count must equal the ordered entity-ID count")
+        if self.protocol.name == "powertech2027":
+            if not self.protocol.full_group_only:
+                raise ValueError("powertech2027 protocol requires full_group_only=true")
+            if not self.protocol.ordered_entity_ids or self.protocol.entity_count is None:
+                raise ValueError("powertech2027 protocol requires ordered entity IDs and entity_count")
+            if not self.confirmatory.enabled:
+                raise ValueError("powertech2027 protocol requires confirmatory.enabled=true")
+            expected_features = {
+                "embedding_dynamic_only": (True, False, False, False, True, False),
+                "quantile_dynamic_only": (False, True, True, True, True, False),
+                "combined_dynamic": (True, True, True, True, True, False),
+                "full": (True, True, True, True, True, True),
+            }[self.confirmatory.feature_set]
+            actual_features = (
+                self.features.use_forecast_embedding,
+                self.features.use_quantile_shape,
+                self.features.use_median,
+                self.features.use_log_spread,
+                self.features.use_within_patch_position,
+                self.features.use_location,
+            )
+            if actual_features != expected_features:
+                raise ValueError("confirmatory.feature_set does not match the enabled feature components")
         return self
 
 

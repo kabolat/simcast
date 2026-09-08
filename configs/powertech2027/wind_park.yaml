@@ -1,0 +1,14 @@
+extends: [../liander2024_wind_park.yaml, protocol.yaml]
+
+protocol:
+  ordered_entity_ids:
+    - "wind_park::Within Stadsregio Arnhem Nijmegen_normalized"
+    - "wind_park::Within 15 kilometers of Opmeer_normalized"
+    - "wind_park::Within 20 kilometers of Leeuwarden_normalized"
+    - "wind_park::Within 15 kilometers of Alphen aan den Rijn_normalized"
+    - "wind_park::Within 15 kilometers of Dronten_normalized"
+  entity_count: 5
+
+output:
+  cache_name: powertech2027_wind_park
+  experiment_name: powertech2027_wind_park

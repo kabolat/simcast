@@ -3,6 +3,7 @@ import math
 import pytest
 import torch
 
+from simcast.cli.run_powertech_experiments import FEATURE_SETS
 from simcast.fm.feature_builder import FeatureBuilder, ScalarStandardizer, lead_to_patch_indices
 
 
@@ -94,3 +95,24 @@ def test_scalar_standardizer_handles_constant_features_without_nan() -> None:
 
     assert torch.isfinite(transformed).all()
     torch.testing.assert_close(transformed[:, 0], torch.zeros(2))
+
+
+@pytest.mark.parametrize(
+    ("feature_set", "expected_dimension"),
+    [
+        ("embedding_dynamic_only", 5),
+        ("quantile_dynamic_only", 6),
+        ("combined_dynamic", 10),
+        ("full", 12),
+    ],
+)
+def test_confirmatory_ablation_feature_dimensions(feature_set: str, expected_dimension: int) -> None:
+    settings = FEATURE_SETS[feature_set]
+    builder = FeatureBuilder(output_patch_size=2, standardize_scalar_features=False, **settings)
+    embeddings = torch.zeros(1, 2, 1, 4)
+    predictions = _quantiles(torch.ones(1, 2, 2))
+    locations = torch.tensor([[52.0, 5.0], [53.0, 6.0]]) if settings["use_location"] else None
+
+    features = builder.transform(embeddings, predictions, [0.1, 0.5, 0.9], locations)
+
+    assert features.shape == (1, 2, 2, expected_dimension)
