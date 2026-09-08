@@ -51,3 +51,14 @@ def test_notebook_helper_makes_the_local_source_package_importable() -> None:
         assert Path(config.data.local_dir).resolve() == REPOSITORY_ROOT / "data" / "notebook-check"
     finally:
         os.chdir(original_directory)
+
+
+def test_notebook_cache_path_matches_cli_fallback() -> None:
+    sys.path.insert(0, str(NOTEBOOKS))
+    from _helpers import REPOSITORY_ROOT, cache_path, resolve_config
+
+    config = resolve_config("configs/base.yaml", ("data.entity_type=transformer",))
+    assert cache_path(config) == REPOSITORY_ROOT / "artifacts/cache/liander2024_transformer"
+
+    named = resolve_config("configs/base.yaml", ("output.cache_name=custom_cache",))
+    assert cache_path(named) == REPOSITORY_ROOT / "artifacts/cache/custom_cache"

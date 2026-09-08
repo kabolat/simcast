@@ -25,5 +25,5 @@ def resolve_config(config_file: str, overrides: Sequence[str] = ()) -> SimcastCo
 def cache_path(config: SimcastConfig) -> Path:
     """Return the same default cache location used by the training and evaluation CLI."""
 
-    name = config.output.cache_name or config.data.entity_type
+    name = config.output.cache_name or f"liander2024_{config.data.entity_type}"
     return (Path(config.output.cache_dir).expanduser() / name).resolve()
