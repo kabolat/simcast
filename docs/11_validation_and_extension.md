@@ -153,14 +153,15 @@ Absolute proper scores are scale-dependent.
 - preserve unfavorable and failed models, including bounded smoke results;
 - distinguish exploratory interpretation from confirmatory conclusions.
 
-## Suggested statistical uncertainty analysis
+## Confirmatory statistical uncertainty analysis
 
 Define a per-origin score by averaging lead-level loss over valid leads, then a
 paired difference $d_i=S_i^{(A)}-S_i^{(B)}$. Because consecutive daily origins
 may remain serially dependent, use a moving-block or stationary bootstrap over
-origins rather than treating all 6,000+ origin-lead cases as IID. Select block
-length from an autocorrelation analysis or a predeclared sensitivity grid.
-Report mean difference, relative difference, and a confidence interval.
+origins rather than treating all 6,000+ origin-lead cases as IID. The frozen
+study uses a predeclared seven-daily-origin block and sensitivity lengths three
+and fourteen, with 10,000 replicates for final numbers. Report mean difference,
+relative difference, and a confidence interval.
 
 For M2/M3, separate two sources of uncertainty:
 
@@ -173,8 +174,8 @@ noise; scenario-count sensitivity can be evaluated separately.
 
 ## Known implementation semantics to preserve or revise explicitly
 
-- `sampling.common_random_numbers` is currently descriptive; sampling is
-  always common across methods.
+- `sampling.common_random_numbers` controls whether case-keyed base draws are
+  shared across methods; confirmatory configs set it to `true`.
 - either joint-score flag enables both Energy and Variogram calculations.
 - `evaluation.report_by_lead` does not currently suppress the lead table.
 - `runtime.num_workers` is not passed to the current trainer DataLoaders.
@@ -182,7 +183,9 @@ noise; scenario-count sensitivity can be evaluated separately.
   architecture-level variable-size capability is not an experiment.
 - M4 smoke mode uses only the first eligible complete origins within each
   partition; full mode uses the complete train and validation partitions.
-- cache reuse is not automatically validated against a full config hash.
+- confirmatory cache reuse is validated against data, forecast, covariate,
+  Chronos, and marginal-PIT construction settings; ordinary exploratory cache
+  reuse remains less strict.
 
 These are documented behavior, not necessarily ideal future APIs. If changed,
 add regression tests, bump artifact schema where compatibility changes, and

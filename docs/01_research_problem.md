@@ -184,6 +184,41 @@ where notation suppresses the shared fixed marginals. Mean aggregate pinball
 loss is the headline descriptive score; CRPS, interval scores, WIS, coverage,
 Energy Score, and Variogram Score provide complementary evidence.
 
+## Scientific comparison and hypotheses
+
+The experiment holds the marginal laws fixed and changes only the copula. Thus
+the estimand is not the accuracy of Chronos-2 in isolation, nor an intervention
+on electricity demand. It is the held-out difference between two *joint
+predictive distributions* having the same finite marginal support. For methods
+$a$ and $b$, write the per-origin aggregate score (after averaging valid leads)
+as $S_{a,g}^{(i)}$ and define
+
+$$
+d_{a,b,g}^{(i)}=S_{a,g}^{(i)}-S_{b,g}^{(i)}.
+$$
+
+For scores to be minimized, $d_{a,b,g}^{(i)}<0$ favours $a$. The reported mean
+contrast and its moving-block-bootstrap interval describe the expected change
+in score over the observed chronological test-origin process. They do not
+establish a causal effect, a universal ordering of copula families, or external
+validity beyond these entity groups, this year, and this information set.
+
+The principal scientific hypotheses are deliberately directional only at the
+level of mechanism:
+
+$$
+\begin{aligned}
+\mathrm{H}_{\mathrm{dep}}&:\quad C_{g,\tau}^{(i)}\ne\prod_{k\in\mathcal E_g}F_{k,\tau}^{(i)}
+&&\text{for some full-group cases},\\
+\mathrm{H}_{\mathrm{ctx}}&:\quad R_{g,\tau}^{(i)}\text{ varies with the frozen forecast context}.
+\end{aligned}
+$$
+
+M0 versus M1 addresses the first mechanism. M2/M3 versus M1 address the
+second. A non-improving conditional model is therefore scientifically
+informative: the present conditional parameterization did not improve the
+stated predictive target over a static dependence estimate.
+
 ## What is and is not modeled
 
 Modeled:

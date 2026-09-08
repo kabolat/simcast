@@ -71,7 +71,9 @@ training_curve.png              M2/M3/M4 only
 `run_metadata.json` records creation time, Git commit, Python and key package
 versions, absolute cache path, seed, group name, complete ordered entity IDs,
 $K_g$, `full_group_only`, subset-training status, and whether entity-selection
-augmentation was enabled. M0's NPZ stores IDs and
+augmentation was enabled. It also records resolved-config and model SHA-256
+hashes, pinned data/FM revisions, optimization and evaluation seeds, checkpoint
+criterion, and PIT dependence transform. M0's NPZ stores IDs and
 lead count. M1's stores all correlation matrices plus estimator settings.
 
 Conditional PyTorch checkpoints contain `schema_version`, method, model
@@ -84,6 +86,8 @@ used in evaluation; `final.pt` is retained to diagnose optimization.
 ```text
 metrics.json
 metrics_by_lead.csv
+per_origin_lead_metrics.parquet
+per_origin_metrics.parquet
 <method>_aggregate_predictions.npz
 scientific_summary.json
 evaluation_manifest.json
@@ -97,6 +101,16 @@ Top-level keys are method names. Each method includes mean pinball, pinball by
 evaluation quantile, CRPS, coverage/width/interval score by central interval,
 WIS, valid and dropped case counts, and—when enabled—mean Energy and Variogram
 Scores. Values pool all valid test origins and leads.
+The method payload also includes mean test Gaussian-copula pseudo-NLL.
+
+### Tidy per-case tables
+
+`per_origin_lead_metrics.parquet` has one row per complete declared group,
+method, neural seed, origin, and lead. It records $K_g$, validity, observed and
+forecast aggregate quantiles, aggregate proper scores, joint scores, and test
+pseudo-NLL. Invalid rows remain present with `valid: false`; the group never
+shrinks. `per_origin_metrics.parquet` averages metrics across valid leads within
+each origin and is the input to temporal block resampling.
 
 ### `metrics_by_lead.csv`
 
@@ -113,6 +127,7 @@ the current evaluator always writes this table.
 | `correlations` | `[N_test,H,K,K]` | evaluated copula correlations |
 | `energy_score` | `[N_test,H]` | empirical all-pairs score on the selected joint ensemble, or NaN |
 | `variogram_score` | `[N_test,H]` | score or NaN |
+| `pseudo_nll` | `[N_test,H]` | finite-cell Gaussian-copula pseudo-NLL or NaN |
 | `valid` | `[N_test,H]` | common evaluation mask |
 
 Entity-level and aggregate Monte Carlo samples are not persisted, which keeps
@@ -123,7 +138,9 @@ must regenerate them.
 
 `evaluation_manifest.json` records cache path, method-run paths, methods,
 test-origin/case counts, the complete ordered group and $K_g$, full-group
-protocol flags, joint-score estimator name, Git commit, and time.
+protocol flags, scenario and selected joint ensemble sizes, common-random-number
+status, evaluation seed, revisions, config/model hashes, PIT transform,
+confirmatory labels, Git commit, and time.
 `scientific_summary.json` gives six
 machine-readable descriptive answers; it is not a substitute for inspecting
 proper scores and uncertainty.
@@ -151,5 +168,13 @@ when that path is selected. Standalone full M4 runs record `smoke_only: false`.
 
 Artifact paths are absolute in manifests. Moving a repository or deleting a
 cache/checkpoint breaks replay until paths are updated or explicit inputs are
-provided. Checksums are not currently stored, so archival research releases
-should checksum or package the full cache/run tree externally.
+provided. Model and config hashes detect changed contents, but archival research
+releases should still package the full cache/run tree or provide stable paths.
+
+## Confirmatory report directory
+
+`build_powertech_report` reads saved evaluation directories only. It produces a
+`results/` directory with the tidy merged Parquet files and seed, group,
+bootstrap, ablation, PIT, and rank summaries; compact CSV/LaTeX tables; PDF/SVG
+figures with PNG previews; diagnostics; `scientific_summary.md`; `protocol.json`;
+and exact reproduction commands. The builder has no training call path.

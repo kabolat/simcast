@@ -63,6 +63,13 @@ that block.
 
 ## Conditional-model feature vector
 
+The feature vector is evidence available at $t^{(i)}$, not a new target model.
+It parameterizes a candidate conditional copula $C_{g,\tau}^{(i)}$ while
+leaving $F_{k,\tau}^{(i)}$ unchanged. Thus an M2/M3 improvement is evidence
+that frozen forecast context is associated with residual spatial rank
+dependence; it is not evidence that a dependence model improved an entity
+marginal.
+
 No additional temporal model is learned. For each $(i,k,\tau)$, the
 deterministic vector $v_{k,\tau}^{(i)}$ concatenates enabled components in this
 exact order:
@@ -174,6 +181,32 @@ This is a pseudo-PIT, not a randomized PIT. Even under a perfectly calibrated
 forecast it is supported only on $Q+1$ locations and its Gaussianized scores
 are correspondingly discrete. Gaussian-copula fitting is therefore a
 pseudo-likelihood procedure.
+
+The two maps in the study answer different questions and must not be
+conflated. The historical map $y\mapsto u$ allocates an observation to a finite
+PIT cell so that dependence can be learned from realized outcomes. The forward
+map $U\mapsto\hat y$ allocates a simulated uniform to a finite native-quantile
+value so that scenarios retain the frozen marginal law. Neither is a continuous
+CDF reconstruction.
+
+### Training-frequency PIT sensitivity
+
+The confirmatory primary analysis retains the nominal finite-cell midpoint
+above. A separate sensitivity fits empirical cell probabilities using training
+origins only for every entity and lead. Cell $c$ is mapped to the midpoint of
+its frozen empirical mass,
+
+$$
+\tilde u_{k,\tau,c}
+=\sum_{r<c}\hat p_{k,\tau,r}+\tfrac12\hat p_{k,\tau,c},
+\qquad
+\tilde z_{k,\tau,c}=\Phi^{-1}(\tilde u_{k,\tau,c}).
+$$
+
+Validation and test frequencies never enter this map. The sensitivity changes
+only dependence scores used for fitting and pseudo-NLL diagnosis. It does not
+interpolate the CDF or alter persisted/repaired Chronos quantiles and scenario
+projection.
 
 ## Complete spatial vectors
 

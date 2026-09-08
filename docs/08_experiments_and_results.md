@@ -1,5 +1,11 @@
 # Experiments and results
 
+> The numerical tables in this chapter are archived full-group, single-seed
+> exploratory results. They are not the new PowerTech confirmatory results.
+> New manuscript tables are generated only from artifacts accepted by
+> `build_powertech_report`; see
+> [the frozen confirmatory protocol](12_powertech2027_confirmatory_protocol.md).
+
 ## Full-group baseline status
 
 ### Input-protocol revision status
@@ -78,9 +84,9 @@ Energy Score is evaluated with the empirical all-pairs estimator on the
 selected 512-member joint ensemble. Selecting those 512 members is ensemble
 subsampling; chunked `torch.cdist` changes only memory use, not the estimator.
 
-## Corrected full-group results
+## Archived pre-confirmatory full-group results
 
-All five M0--M3 experiments completed under the protocol above. The primary
+All five M0--M3 experiments completed under the earlier full-group protocol. The primary
 ranking uses mean aggregate pinball loss; lower is better. `Change vs M0` is
 
 $$
@@ -88,7 +94,7 @@ $$
 $$
 
 so a negative value is an improvement. These are descriptive, single-seed
-results.
+results and are not confirmatory evidence.
 
 | Entity group | $K_g$ | Mean absolute off-diagonal training PIT correlation | Valid test cases | Best method | Change vs M0 | Best-method 90% coverage |
 |---|---:|---:|---:|---|---:|---:|

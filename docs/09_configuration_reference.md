@@ -140,8 +140,9 @@ require native levels 0.1, 0.5, and 0.9.
 | Key | Default | Meaning/current behavior |
 |---|---:|---|
 | `sampling.num_samples` | 4096 | aggregate scenarios per valid case |
+| `sampling.evaluation_seed` | 2027 | scenario seed, separate from neural optimization seed |
 | `sampling.empirical_quantile_method` | `nearest` | only accepted method |
-| `sampling.common_random_numbers` | `true` | documented intent; evaluator currently always uses common normals |
+| `sampling.common_random_numbers` | `true` | share case-keyed base normals across dependence methods |
 | `evaluation.quantile_levels` | `[.05,.10,.25,.50,.75,.90,.95]` | sorted unique report levels |
 | `evaluation.interval_levels` | `[.50,.80,.90]` | sorted unique central coverages |
 | `evaluation.energy_score` | `true` | jointly controls whether both joint scores are computed |
@@ -160,6 +161,17 @@ For `protocol.name: full_group`, validation requires
 `full_group_only: true`, `subset_training.enabled: false`, and an empty
 `evaluation.variable_k_sizes`. Attempts to override either entity-selection
 setting fail before training or evaluation starts.
+
+`protocol.name: powertech2027` additionally requires a complete ordered entity
+ID list, its matching `entity_count`, and `confirmatory.enabled: true`.
+Confirmatory fields declare the ten neural seeds, bootstrap replicate/block
+settings, validation-only checkpoint criterion, feature-set label, experiment
+family, and the acknowledged prior inspection of the test period. The selected
+feature-set label is validated against the individual feature switches.
+
+`pit.dependence_transform` is `nominal_cells` for the primary analysis or
+`training_frequency` for the train-only empirical-cell sensitivity. It never
+changes the scenario marginal quantile grid.
 
 ## Runtime and output
 

@@ -78,9 +78,14 @@ curve. Evaluation loads `best.pt`. Conditional checkpoints include constructor
 arguments, the feature-builder configuration and training-only
 standardization, complete ordered entity IDs, method, epoch, and state dict.
 
-Python, NumPy, PyTorch, and CUDA generators are seeded. Deterministic PyTorch
-algorithms are requested with warnings. Bitwise equality is not guaranteed
-across hardware, CUDA/PyTorch versions, or kernels.
+Python, NumPy, PyTorch, and CUDA generators are seeded. When
+`runtime.deterministic: true`, PyTorch deterministic algorithms are enforced
+strictly and CUDA flash/memory-efficient attention kernels are disabled in
+favour of the deterministic mathematical attention backend. The CUDA BLAS
+workspace is fixed before training begins. A same-seed M3 check on the study
+host reproduced every learned tensor exactly. Reproducibility is still scoped
+to the recorded software and hardware environment; it is not asserted across
+different PyTorch, CUDA, or GPU versions.
 
 ## Full-group scenario generation
 
@@ -101,10 +106,21 @@ $$
 =\sum_{k\in\mathcal E_g}\widetilde Y_{k,\tau}^{(i,m)}.
 $$
 
-Cases are processed in batches of 16. Each method recreates its generator with
-seed `config.seed + batch_offset`, so all methods receive the same base normals
-for the same cases. The current evaluator always uses these common random
-numbers; the recorded configuration flag is not an independent-draw switch.
+Cases are processed in batches of 16. Base normals are keyed by the separately
+recorded evaluation seed and flattened `(origin, lead)` index. They therefore
+remain identical for the same case across methods, method order, and batch
+layout. `sampling.common_random_numbers: false` is an explicit diagnostic mode
+that adds a stable method-specific seed offset.
+
+The test Gaussian-copula pseudo-NLL is also evaluated case by case under each
+predicted correlation. It is a direct dependence diagnostic, not an aggregate
+forecast score, and remains a pseudo-likelihood because PITs occupy finitely
+many deterministic cells.
+
+Confirmatory uncertainty is computed after averaging valid leads within each
+origin. Neural seeds are averaged within method/origin before the primary
+non-circular moving-block bootstrap. Daily block length seven is primary;
+lengths three and fourteen are sensitivity analyses.
 
 ## Finite marginal projection
 
@@ -152,6 +168,11 @@ $$
 `mean_pinball` averages over evaluation levels
 $0.05,0.10,0.25,0.50,0.75,0.90,0.95$ and all cases. It is the headline
 descriptive ranking score.
+
+The score is proper for an individual aggregate quantile. Averaging over the
+declared levels approximates an integral quantile score. It rewards sharp
+quantiles only when they are calibrated under the realized aggregate, which is
+why a narrower interval alone is not evidence of improvement.
 
 ### Ensemble CRPS
 

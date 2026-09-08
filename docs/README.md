@@ -28,6 +28,8 @@ For a scientific reader, read these in order:
 4. [Dependence models M0--M4](04_dependence_models.md)
 5. [Training, scenario generation, and scores](05_training_sampling_scoring.md)
 6. [Experimental protocol and results](08_experiments_and_results.md)
+7. [PowerTech 2027 confirmatory protocol](12_powertech2027_confirmatory_protocol.md)
+8. [Method-notebook scientific companion](13_method_notebook_companion.md)
 
 The generated full-group metric table and exact ordered entity lists are also
 available in [`results/full_group_summary.md`](../results/full_group_summary.md).
@@ -80,9 +82,10 @@ This is a research proof of concept, not a production forecasting service. Its
 strongest safeguards are scientific: exact upstream revision pins, chronological
 splits, point-in-time availability, physically sealed test labels, fixed
 marginals across methods, saved resolved configurations, and explicit model and
-evaluation artifacts. The present results are single-seed experiments on one
-calendar year and do not establish statistical significance or external
-validity.
+evaluation artifacts. The archived results are single-seed exploratory
+experiments. The separately declared confirmatory phase adds multi-seed
+reporting and origin-block uncertainty, but it still cannot establish external
+validity from one year.
 
 All notation used across the documentation is defined in
 [01_research_problem.md](01_research_problem.md#notation).
