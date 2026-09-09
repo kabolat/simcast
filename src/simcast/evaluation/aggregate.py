@@ -26,19 +26,6 @@ class AggregateEvaluation:
     case_metrics: dict[str, torch.Tensor]
 
 
-def sum_marginal_quantiles(quantile_predictions: torch.Tensor) -> torch.Tensor:
-    """Naive comonotonic-style baseline: sum equally labelled marginal quantiles.
-
-    This is deliberately *not* presented as a generally valid aggregate
-    quantile. It is retained only as an intuitive strong-dependence baseline.
-    """
-
-    predictions = torch.as_tensor(quantile_predictions)
-    if predictions.ndim < 2:
-        raise ValueError("quantile_predictions must have shape [..., entity, quantile]")
-    return predictions.sum(dim=-2)
-
-
 def evaluate_aggregate_ensemble(
     aggregate_samples: torch.Tensor,
     true_aggregate: torch.Tensor,

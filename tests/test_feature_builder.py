@@ -3,8 +3,42 @@ import math
 import pytest
 import torch
 
-from simcast.cli.run_powertech_experiments import FEATURE_SETS
 from simcast.fm.feature_builder import FeatureBuilder, ScalarStandardizer, lead_to_patch_indices
+
+FEATURE_PROFILES = {
+    "embedding_dynamic_only": {
+        "use_forecast_embedding": True,
+        "use_quantile_shape": False,
+        "use_median": False,
+        "use_log_spread": False,
+        "use_within_patch_position": True,
+        "use_location": False,
+    },
+    "quantile_dynamic_only": {
+        "use_forecast_embedding": False,
+        "use_quantile_shape": True,
+        "use_median": True,
+        "use_log_spread": True,
+        "use_within_patch_position": True,
+        "use_location": False,
+    },
+    "combined_dynamic": {
+        "use_forecast_embedding": True,
+        "use_quantile_shape": True,
+        "use_median": True,
+        "use_log_spread": True,
+        "use_within_patch_position": True,
+        "use_location": False,
+    },
+    "full": {
+        "use_forecast_embedding": True,
+        "use_quantile_shape": True,
+        "use_median": True,
+        "use_log_spread": True,
+        "use_within_patch_position": True,
+        "use_location": True,
+    },
+}
 
 
 def _quantiles(median: torch.Tensor) -> torch.Tensor:
@@ -106,8 +140,8 @@ def test_scalar_standardizer_handles_constant_features_without_nan() -> None:
         ("full", 12),
     ],
 )
-def test_confirmatory_ablation_feature_dimensions(feature_set: str, expected_dimension: int) -> None:
-    settings = FEATURE_SETS[feature_set]
+def test_explicit_ablation_feature_dimensions(feature_set: str, expected_dimension: int) -> None:
+    settings = FEATURE_PROFILES[feature_set]
     builder = FeatureBuilder(output_patch_size=2, standardize_scalar_features=False, **settings)
     embeddings = torch.zeros(1, 2, 1, 4)
     predictions = _quantiles(torch.ones(1, 2, 2))

@@ -1,6 +1,10 @@
-extends: [../liander2024_transformer.yaml, protocol.yaml]
-
+extends: common.yaml
+kind: base
+id: liander2024_transformer
+data:
+  entity_type: transformer
 protocol:
+  entity_count: 15
   ordered_entity_ids:
     - "transformer::OS Apeldoorn"
     - "transformer::OS Middenmeer"
@@ -17,8 +21,3 @@ protocol:
     - "transformer::OS Ede"
     - "transformer::RS Roodwilligen (Duiven)"
     - "transformer::RS Minnertsga"
-  entity_count: 15
-
-output:
-  cache_name: powertech2027_transformer
-  experiment_name: powertech2027_transformer

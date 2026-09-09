@@ -1,6 +1,5 @@
-"""Machine-readable and publication-facing report generation."""
+"""Read-only access to evaluation artifacts."""
 
-from simcast.reporting.powertech import build_powertech_report
+from simcast.reporting.artifacts import EvaluationArtifact, read_evaluation_artifacts
 
-__all__ = ["build_powertech_report"]
-
+__all__ = ["EvaluationArtifact", "read_evaluation_artifacts"]

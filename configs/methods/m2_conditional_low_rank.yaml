@@ -1,0 +1,30 @@
+kind: method
+id: m2
+family: conditional_low_rank
+features:
+  use_forecast_embedding: true
+  layer_normalize_embedding: true
+  use_quantile_shape: true
+  use_median: true
+  use_log_spread: true
+  use_within_patch_position: true
+  use_location: true
+  use_entity_id_embedding: false
+  shape_eps: 1.0e-6
+  standardize_scalar_features: true
+model:
+  latent_rank: 4
+  hidden_dims: [256, 128]
+  activation: gelu
+  dropout: 0.1
+  sigma_floor: 1.0e-3
+  jitter: 1.0e-6
+optimization:
+  seed: 42
+  optimizer: adamw
+  batch_size: 64
+  epochs: 100
+  learning_rate: 1.0e-3
+  weight_decay: 1.0e-4
+  gradient_clip_norm: 1.0
+  patience: 12

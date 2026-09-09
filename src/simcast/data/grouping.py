@@ -114,9 +114,3 @@ def build_entity_group(
         ", ".join(entity.name for entity in selected),
     )
     return group
-
-
-def build_entity_groups(targets_yaml: str | Path, entity_type: str = "transformer") -> list[EntityGroup]:
-    """Return the single group as a list, leaving room for later group builders."""
-
-    return [build_entity_group(targets_yaml, entity_type)]

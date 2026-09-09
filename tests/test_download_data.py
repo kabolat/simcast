@@ -16,8 +16,7 @@ def test_download_patterns_are_selective_and_versioned() -> None:
 
 
 def test_download_uses_validated_config_revision_and_local_dir(tmp_path: Path) -> None:
-    config = tmp_path / "config.yaml"
-    config.write_text("{}\n", encoding="utf-8")
+    config = Path(__file__).parents[1] / "configs/bases/liander2024/transformer.yaml"
     destination = tmp_path / "dataset"
     call: dict[str, Any] = {}
 

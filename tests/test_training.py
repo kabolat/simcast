@@ -36,20 +36,15 @@ def test_dependence_dataset_flattens_only_complete_origin_leads() -> None:
     assert all(dataset[index].lead in {1, 2} for index in range(len(dataset)))
 
 
-def test_subset_collator_uses_variable_but_batch_consistent_cardinality() -> None:
+def test_collator_always_preserves_the_complete_group() -> None:
     dataset = _dataset(3, 7)
-    collator = DependenceCollator(
-        subset_enabled=True,
-        min_entities=3,
-        full_group_probability=0.0,
-        generator=torch.Generator().manual_seed(3),
-    )
+    collator = DependenceCollator()
     batch = collator([dataset[0], dataset[1], dataset[2]])
-    assert 3 <= batch.features.shape[1] < 7
-    assert batch.z.shape[:2] == batch.features.shape[:2]
+    assert batch.features.shape[1] == 7
+    assert batch.z.shape[:2] == (3, 7)
 
 
-def test_full_group_trainer_rejects_legacy_subset_batches(tmp_path: Path) -> None:
+def test_full_group_trainer_rejects_a_shrunken_batch(tmp_path: Path) -> None:
     dataset = _dataset(3, 7)
     model = ConditionalLowRankGaussianCopula(input_dim=6, latent_rank=2, hidden_dims=(8,), dropout=0.0)
     trainer = ConditionalTrainer(
@@ -59,15 +54,17 @@ def test_full_group_trainer_rejects_legacy_subset_batches(tmp_path: Path) -> Non
         seed=5,
         expected_num_entities=7,
     )
-    collator = DependenceCollator(
-        subset_enabled=True,
-        min_entities=3,
-        full_group_probability=0.0,
-        generator=torch.Generator().manual_seed(3),
-    )
+    def shrink(samples):
+        complete = DependenceCollator()(samples)
+        return type(complete)(
+            features=complete.features[:, :-1],
+            z=complete.z[:, :-1],
+            origin_indices=complete.origin_indices,
+            leads=complete.leads,
+        )
 
     with pytest.raises(ValueError, match="expected 7 entities"):
-        trainer.fit(model, dataset, dataset, output_dir=tmp_path, training_collator=collator)
+        trainer.fit(model, dataset, dataset, output_dir=tmp_path, training_collator=shrink)
 
 
 def test_small_trainer_saves_best_final_and_curves(tmp_path: Path) -> None:

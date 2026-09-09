@@ -8,7 +8,7 @@ import pandas as pd
 import torch
 
 import simcast.cli.build_cache as cache_cli
-from simcast.config import SimcastConfig
+from simcast.config import ResolvedExperimentConfig
 from simcast.fm.cache import load_pit_library
 from simcast.sampling.gaussian_copula import generate_scenarios
 from simcast.types import EntityGroup, EntityMetadata
@@ -53,8 +53,8 @@ class _MockForecaster:
         )
 
 
-def _config(tmp_path: Path, *, monotone_repair: str = "none") -> SimcastConfig:
-    return SimcastConfig.model_validate(
+def _config(tmp_path: Path, *, monotone_repair: str = "none") -> ResolvedExperimentConfig:
+    return ResolvedExperimentConfig.model_validate(
         {
             "data": {"local_dir": str(tmp_path), "entity_type": "transformer"},
             "forecast": {

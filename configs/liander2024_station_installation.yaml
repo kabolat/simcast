@@ -1,8 +1,0 @@
-extends: liander2024_transformer.yaml
-
-data:
-  entity_type: station_installation
-
-output:
-  cache_name: liander2024_station_installation
-  experiment_name: liander2024_station_installation

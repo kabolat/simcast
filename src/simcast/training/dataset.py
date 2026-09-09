@@ -60,28 +60,7 @@ class DependenceBatch:
 
 
 class DependenceCollator:
-    """Collate complete groups, with subset sampling retained for legacy runs.
-
-    Full-group configurations disable the legacy option and the trainer asserts
-    the complete group dimension independently of this collator.
-    """
-
-    def __init__(
-        self,
-        *,
-        subset_enabled: bool = False,
-        min_entities: int = 4,
-        full_group_probability: float = 0.25,
-        generator: torch.Generator | None = None,
-    ) -> None:
-        if min_entities < 2:
-            raise ValueError("min_entities must be at least two")
-        if not 0 <= full_group_probability <= 1:
-            raise ValueError("full_group_probability must lie in [0, 1]")
-        self.subset_enabled = subset_enabled
-        self.min_entities = min_entities
-        self.full_group_probability = full_group_probability
-        self.generator = generator
+    """Collate complete static groups without entity selection."""
 
     def __call__(self, samples: list[DependenceSample]) -> DependenceBatch:
         if not samples:
@@ -89,20 +68,11 @@ class DependenceCollator:
         num_entities = samples[0].z.numel()
         if any(sample.z.numel() != num_entities for sample in samples):
             raise ValueError("all samples in a batch must share the physical group")
-        subset_size = num_entities
-        if self.subset_enabled and self.min_entities < num_entities:
-            use_full = float(torch.rand((), generator=self.generator)) < self.full_group_probability
-            if not use_full:
-                subset_size = int(torch.randint(self.min_entities, num_entities, (), generator=self.generator).item())
         feature_rows: list[torch.Tensor] = []
         score_rows: list[torch.Tensor] = []
         for sample in samples:
-            if subset_size == num_entities:
-                indices = torch.arange(num_entities)
-            else:
-                indices = torch.randperm(num_entities, generator=self.generator)[:subset_size]
-            feature_rows.append(sample.features.index_select(0, indices))
-            score_rows.append(sample.z.index_select(0, indices))
+            feature_rows.append(sample.features)
+            score_rows.append(sample.z)
         return DependenceBatch(
             features=torch.stack(feature_rows),
             z=torch.stack(score_rows),

@@ -9,10 +9,10 @@ from typing import Self
 import numpy as np
 import torch
 
-from simcast.dependence.base import ArrayLike, BaseDependenceModel, entity_indices, validate_training_data
+from simcast.dependence.base import ArrayLike, entity_indices, validate_training_data
 
 
-class IndependentCopula(BaseDependenceModel):
+class IndependentCopula:
     """M0: identity correlation for any requested entity group."""
 
     def __init__(self, entity_ids: Sequence[str] | None = None, n_leads: int | None = None) -> None:
@@ -85,6 +85,3 @@ class IndependentCopula(BaseDependenceModel):
             ids = tuple(str(item) for item in saved["entity_ids"].tolist())
             saved_n_leads = int(saved["n_leads"])
         return cls(ids, None if saved_n_leads < 0 else saved_n_leads)
-
-
-IndependentDependenceModel = IndependentCopula

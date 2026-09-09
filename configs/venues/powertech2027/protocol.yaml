@@ -1,0 +1,6 @@
+venue: powertech2027
+analysis:
+  reference: m0
+  bootstrap_replicates: 10000
+  primary_block_length: 7
+  sensitivity_block_lengths: [3, 14]

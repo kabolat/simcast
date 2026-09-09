@@ -15,7 +15,12 @@ import pandas as pd
 import torch
 import typer
 
-from simcast.config import SimcastConfig, load_config
+from simcast.config import (
+    IndependentMethodConfig,
+    ResolvedExperimentConfig,
+    load_base_config,
+    resolve_run_config,
+)
 from simcast.data.availability import select_available_past_targets
 from simcast.data.covariates import build_future_covariates, build_past_covariates
 from simcast.data.grouping import build_entity_group
@@ -88,7 +93,7 @@ def _finite_covariates(frame: pd.DataFrame) -> bool:
     return bool(np.isfinite(frame.to_numpy(dtype=np.float64, copy=False)).all())
 
 
-def _covariate_kwargs(config: SimcastConfig) -> dict[str, bool]:
+def _covariate_kwargs(config: ResolvedExperimentConfig) -> dict[str, bool]:
     calendar = config.covariates.calendar
     return {
         "calendar": calendar.enabled,
@@ -101,7 +106,7 @@ def _covariate_kwargs(config: SimcastConfig) -> dict[str, bool]:
 def _prepare_entity(
     frames: _EntityFrames,
     window: ForecastWindow,
-    config: SimcastConfig,
+    config: ResolvedExperimentConfig,
 ) -> tuple[dict[str, object], np.ndarray, int]:
     target_window = frames.target.reindex(window.past_timestamps.union(window.future_timestamps))
     history = select_available_past_targets(
@@ -156,7 +161,7 @@ def _prepare_entity(
 def _prepare_window(
     frames: Sequence[_EntityFrames],
     window: ForecastWindow,
-    config: SimcastConfig,
+    config: ResolvedExperimentConfig,
 ) -> _PreparedWindow:
     inputs: list[dict[str, object]] = []
     truth: list[np.ndarray] = []
@@ -185,7 +190,7 @@ def _load_frames(root: Path, group: EntityGroup) -> list[_EntityFrames]:
     ]
 
 
-def _unpurged_split(origins: Sequence[pd.Timestamp], config: SimcastConfig) -> ChronologicalSplit:
+def _unpurged_split(origins: Sequence[pd.Timestamp], config: ResolvedExperimentConfig) -> ChronologicalSplit:
     tune_count = floor(len(origins) * config.split.tune_fraction)
     validation_count = floor(tune_count * config.split.validation_fraction_within_tune)
     train_count = tune_count - validation_count
@@ -197,7 +202,7 @@ def _unpurged_split(origins: Sequence[pd.Timestamp], config: SimcastConfig) -> C
     )
 
 
-def _split_origins(origins: Sequence[pd.Timestamp], config: SimcastConfig) -> ChronologicalSplit:
+def _split_origins(origins: Sequence[pd.Timestamp], config: ResolvedExperimentConfig) -> ChronologicalSplit:
     if not config.split.purge_overlapping_horizons:
         return _unpurged_split(origins, config)
     return chronological_split(
@@ -217,7 +222,7 @@ def _split_lookup(split: ChronologicalSplit) -> dict[pd.Timestamp, str]:
     }
 
 
-def _default_forecaster(config: SimcastConfig) -> FrozenForecaster:
+def _default_forecaster(config: ResolvedExperimentConfig) -> FrozenForecaster:
     from chronos import Chronos2Pipeline  # type: ignore[import-untyped]
 
     from simcast.fm.chronos2_features import Chronos2FeatureExtractor
@@ -236,7 +241,7 @@ def _default_forecaster(config: SimcastConfig) -> FrozenForecaster:
     return cast(FrozenForecaster, Chronos2FeatureExtractor(pipeline))
 
 
-def _cache_destination(config: SimcastConfig, output_dir: str | Path | None) -> Path:
+def _cache_destination(config: ResolvedExperimentConfig, output_dir: str | Path | None) -> Path:
     if output_dir is not None:
         return Path(output_dir).expanduser().resolve()
     name = config.output.cache_name or f"liander2024_{config.data.entity_type}"
@@ -286,7 +291,7 @@ def _validate_forecast(
 
 
 def build_cache_from_config(
-    config: SimcastConfig,
+    config: ResolvedExperimentConfig,
     *,
     forecaster: FrozenForecaster | None = None,
     output_dir: str | Path | None = None,
@@ -541,17 +546,18 @@ def build_cache_from_config(
 
 
 def build_cache(
-    config_path: str | Path,
+    base_path: str | Path,
     *,
     overrides: Sequence[str] = (),
     forecaster: FrozenForecaster | None = None,
     output_dir: str | Path | None = None,
     overwrite: bool = False,
 ) -> Path:
-    """Load a YAML configuration and build its historical FM/PIT cache."""
+    """Load a base configuration and build its historical FM/PIT cache."""
 
+    base = load_base_config(base_path, overrides=overrides)
     return build_cache_from_config(
-        load_config(config_path, overrides=overrides),
+        resolve_run_config(base, IndependentMethodConfig(kind="method", id="m0", family="independent")),
         forecaster=forecaster,
         output_dir=output_dir,
         overwrite=overwrite,
@@ -559,7 +565,7 @@ def build_cache(
 
 
 def main(
-    config: Annotated[Path, typer.Option("--config", exists=True, dir_okay=False, readable=True)],
+    base: Annotated[Path, typer.Option("--base", exists=True, dir_okay=False, readable=True)],
     override: Annotated[
         list[str] | None,
         typer.Option("--set", help="Configuration override as dotted.path=value"),
@@ -569,12 +575,12 @@ def main(
 ) -> None:
     """Build frozen Chronos forecasts, embeddings, and discretized PIT scores."""
 
-    resolved = load_config(config, overrides=override or ())
+    base_config = load_base_config(base, overrides=override or ())
     logging.basicConfig(
-        level=getattr(logging, resolved.runtime.log_level),
+        level=getattr(logging, base_config.runtime.log_level),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
-    path = build_cache_from_config(resolved, output_dir=output_dir, overwrite=overwrite)
+    path = build_cache(base, overrides=override or (), output_dir=output_dir, overwrite=overwrite)
     typer.echo(path)
 
 

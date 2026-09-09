@@ -1,0 +1,7 @@
+kind: method
+id: m1
+family: static_gaussian
+model:
+  shrinkage: ledoit_wolf
+  share_across_leads: false
+  jitter: 1.0e-6

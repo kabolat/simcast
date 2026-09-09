@@ -1,6 +1,9 @@
-extends: [../liander2024_mv_feeder.yaml, protocol.yaml]
-
+extends: common.yaml
+kind: base
+id: liander2024_mv_feeder
+data: {entity_type: mv_feeder}
 protocol:
+  entity_count: 15
   ordered_entity_ids:
     - "mv_feeder::OS Naarden"
     - "mv_feeder::OS Leiden Noord"
@@ -17,8 +20,3 @@ protocol:
     - "mv_feeder::RS Angerlo"
     - "mv_feeder::SS Heerenveen Pim Mulier"
     - "mv_feeder::RS Roodwilligen (Duiven)"
-  entity_count: 15
-
-output:
-  cache_name: powertech2027_mv_feeder
-  experiment_name: powertech2027_mv_feeder

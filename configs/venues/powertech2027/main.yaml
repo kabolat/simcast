@@ -1,0 +1,21 @@
+extends: protocol.yaml
+kind: composite
+name: main
+bases:
+  - {id: transformer, config: ../../bases/liander2024/transformer.yaml}
+  - {id: solar_park, config: ../../bases/liander2024/solar_park.yaml}
+  - {id: wind_park, config: ../../bases/liander2024/wind_park.yaml}
+  - {id: mv_feeder, config: ../../bases/liander2024/mv_feeder.yaml}
+  - {id: station_installation, config: ../../bases/liander2024/station_installation.yaml}
+experiments:
+  - {id: m0, method: ../../methods/m0_independent.yaml}
+  - {id: m1, method: ../../methods/m1_static_gaussian.yaml}
+  - id: m2
+    method: ../../methods/m2_conditional_low_rank.yaml
+    seeds: [11, 23, 37, 42, 59, 71, 83, 97, 101, 131]
+  - id: m3
+    method: ../../methods/m3_set_aware_low_rank.yaml
+    seeds: [11, 23, 37, 42, 59, 71, 83, 97, 101, 131]
+  - id: m4
+    method: ../../methods/m4_conditional_kernel.yaml
+    seeds: [11, 23, 37, 42, 59, 71, 83, 97, 101, 131]

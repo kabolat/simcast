@@ -8,7 +8,7 @@ import torch
 
 from simcast.cli.evaluate import PreparedMethod, _base_normal_draws, _sample_and_evaluate, evaluate_from_config
 from simcast.cli.train_dependence import train_from_config
-from simcast.config import SimcastConfig
+from simcast.config import DependenceConfig, ResolvedExperimentConfig, StaticGaussianConfig
 from simcast.fm.cache import build_cache_dataset, save_pit_library
 
 
@@ -36,8 +36,8 @@ def _cache(path: Path) -> Path:
     return save_pit_library(path, dataset, {"fixture": True})
 
 
-def _config(tmp_path: Path) -> SimcastConfig:
-    return SimcastConfig.model_validate(
+def _config(tmp_path: Path) -> ResolvedExperimentConfig:
+    return ResolvedExperimentConfig.model_validate(
         {
             "protocol": {"name": "full_group", "full_group_only": True},
             "chronos": {"device": "cpu"},
@@ -57,7 +57,7 @@ def test_full_group_evaluation_uses_only_the_complete_group(tmp_path: Path) -> N
     cache = _cache(tmp_path / "cache")
     config = _config(tmp_path)
     static_config = config.model_copy(
-        update={"dependence": config.dependence.model_copy(update={"method": "static_gaussian"})}
+        update={"dependence": DependenceConfig(method="static_gaussian", model=StaticGaussianConfig())}
     )
     static_run = train_from_config(static_config, cache_dir=cache, output_dir=tmp_path / "static")
 

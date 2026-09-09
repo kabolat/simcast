@@ -118,7 +118,7 @@ class ConditionalTrainer:
         output = Path(output_dir)
         output.mkdir(parents=True, exist_ok=True)
         generator = torch.Generator().manual_seed(self.seed)
-        collator = training_collator or DependenceCollator(generator=generator)
+        collator = training_collator or DependenceCollator()
         training_loader = DataLoader(
             training_data,
             batch_size=self.batch_size,
@@ -187,7 +187,13 @@ class ConditionalTrainer:
         model.load_state_dict(best_state)
         self._write_history(output, history)
         result = TrainingResult(best_epoch, best_loss, len(history), tuple(history))
-        summary = {"best_epoch": best_epoch, "best_validation_nll": best_loss, "epochs_completed": len(history)}
+        summary = {
+            "best_epoch": best_epoch,
+            "best_validation_nll": best_loss,
+            "epochs_completed": len(history),
+            "training_case_count": len(training_data),
+            "validation_case_count": len(validation_data),
+        }
         (output / "training_summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
         return result
 

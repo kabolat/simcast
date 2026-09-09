@@ -33,9 +33,9 @@ def download_data(
 ) -> Path:
     """Load configuration only when invoked, then fetch its pinned dataset files."""
 
-    from simcast.config import load_config
+    from simcast.config import load_base_config
 
-    config = load_config(Path(config_path), overrides=overrides)
+    config = load_base_config(Path(config_path), overrides=overrides)
     if snapshot_download_fn is None:
         from huggingface_hub import snapshot_download
 
@@ -60,7 +60,7 @@ def download_data(
 
 
 def main(
-    config: Annotated[Path, typer.Option("--config", exists=True, dir_okay=False, readable=True)],
+    base: Annotated[Path, typer.Option("--base", exists=True, dir_okay=False, readable=True)],
     override: Annotated[
         list[str] | None,
         typer.Option("--set", help="Configuration override as dotted.path=value"),
@@ -68,7 +68,7 @@ def main(
 ) -> None:
     """Download data selected by a Simcast YAML configuration."""
 
-    path = download_data(config, overrides=override or ())
+    path = download_data(base, overrides=override or ())
     typer.echo(path)
 
 

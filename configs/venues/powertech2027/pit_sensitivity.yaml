@@ -1,0 +1,20 @@
+extends: protocol.yaml
+kind: composite
+name: pit_sensitivity
+bases:
+  - {id: transformer_nominal, config: ../../bases/liander2024/transformer.yaml}
+  - {id: transformer_frequency, config: ../../bases/liander2024/transformer.yaml, overrides: {pit: {dependence_transform: training_frequency}}}
+  - {id: solar_park_nominal, config: ../../bases/liander2024/solar_park.yaml}
+  - {id: solar_park_frequency, config: ../../bases/liander2024/solar_park.yaml, overrides: {pit: {dependence_transform: training_frequency}}}
+  - {id: wind_park_nominal, config: ../../bases/liander2024/wind_park.yaml}
+  - {id: wind_park_frequency, config: ../../bases/liander2024/wind_park.yaml, overrides: {pit: {dependence_transform: training_frequency}}}
+  - {id: mv_feeder_nominal, config: ../../bases/liander2024/mv_feeder.yaml}
+  - {id: mv_feeder_frequency, config: ../../bases/liander2024/mv_feeder.yaml, overrides: {pit: {dependence_transform: training_frequency}}}
+  - {id: station_installation_nominal, config: ../../bases/liander2024/station_installation.yaml}
+  - {id: station_installation_frequency, config: ../../bases/liander2024/station_installation.yaml, overrides: {pit: {dependence_transform: training_frequency}}}
+experiments:
+  - {id: m0, method: ../../methods/m0_independent.yaml}
+  - {id: m1, method: ../../methods/m1_static_gaussian.yaml}
+  - {id: m2, method: ../../methods/m2_conditional_low_rank.yaml, seeds: [11, 23, 37, 42, 59, 71, 83, 97, 101, 131]}
+  - {id: m3, method: ../../methods/m3_set_aware_low_rank.yaml, seeds: [11, 23, 37, 42, 59, 71, 83, 97, 101, 131]}
+  - {id: m4, method: ../../methods/m4_conditional_kernel.yaml, seeds: [11, 23, 37, 42, 59, 71, 83, 97, 101, 131]}

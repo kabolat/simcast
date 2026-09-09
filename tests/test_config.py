@@ -7,211 +7,209 @@ from simcast.config import (
     CHRONOS_MODEL_REVISION,
     CHRONOS_SOURCE_REVISION,
     LIANDER2024_REVISION,
-    SimcastConfig,
+    ConditionalKernelMethodConfig,
+    ConditionalLowRankMethodConfig,
+    IndependentMethodConfig,
+    SetAwareLowRankMethodConfig,
+    StaticGaussianMethodConfig,
+    base_fingerprint,
     deep_merge,
-    load_config,
+    load_base_config,
+    load_composite_config,
+    load_method_config,
     parse_overrides,
+    resolve_run_config,
 )
 
 CONFIGS = Path(__file__).parents[1] / "configs"
+BASES = CONFIGS / "bases" / "liander2024"
+METHODS = CONFIGS / "methods"
 
 
-def test_base_protocol_and_pins() -> None:
-    config = load_config(CONFIGS / "base.yaml")
+def test_base_contains_only_the_common_scientific_design() -> None:
+    base = load_base_config(BASES / "transformer.yaml")
 
-    assert config.data.revision == LIANDER2024_REVISION
-    assert config.chronos.source_revision == CHRONOS_SOURCE_REVISION
-    assert config.chronos.model_revision == CHRONOS_MODEL_REVISION
-    assert (config.forecast.lookback_steps, config.forecast.horizon_steps) == (672, 96)
-    assert config.forecast.origin_time.isoformat(timespec="minutes") == "23:45"
-    assert config.features.use_entity_id_embedding is False
-    assert config.sampling.num_samples == 4096
-    assert config.protocol.name == "full_group"
-    assert config.protocol.full_group_only
-    assert not config.subset_training.enabled
-    assert not config.evaluation.variable_k_sizes
-    assert config.covariates.future_weather_source == "vintage"
-    assert config.covariates.calendar.include_is_weekend
-
-
-def test_oracle_future_weather_source_is_a_supported_explicit_override() -> None:
-    config = load_config(CONFIGS / "base.yaml", ["covariates.future_weather_source=oracle"])
-
-    assert config.covariates.future_weather_source == "oracle"
+    assert base.data.revision == LIANDER2024_REVISION
+    assert base.chronos.source_revision == CHRONOS_SOURCE_REVISION
+    assert base.chronos.model_revision == CHRONOS_MODEL_REVISION
+    assert (base.forecast.lookback_steps, base.forecast.horizon_steps) == (672, 96)
+    assert base.protocol.full_group_only
+    assert base.protocol.entity_count == len(base.protocol.ordered_entity_ids) == 15
+    assert base.covariates.future_weather_source == "vintage"
+    assert base.covariates.calendar.include_is_weekend
+    assert not hasattr(base, "features")
+    assert not hasattr(base, "training")
+    assert not hasattr(base, "dependence")
 
 
 @pytest.mark.parametrize(
-    ("filename", "method"),
+    ("filename", "expected_type", "allowed_fields"),
     [
-        ("method_independent.yaml", "independent"),
-        ("method_static_gaussian.yaml", "static_gaussian"),
-        ("method_conditional_low_rank.yaml", "conditional_low_rank"),
-        ("method_set_aware_low_rank.yaml", "set_aware_low_rank"),
-        ("method_conditional_kernel.yaml", "conditional_kernel"),
-        ("method_conditional_kernel_smoke.yaml", "conditional_kernel"),
+        ("m0_independent.yaml", IndependentMethodConfig, {"kind", "id", "family"}),
+        ("m1_static_gaussian.yaml", StaticGaussianMethodConfig, {"kind", "id", "family", "model"}),
+        (
+            "m2_conditional_low_rank.yaml",
+            ConditionalLowRankMethodConfig,
+            {"kind", "id", "family", "features", "model", "optimization"},
+        ),
+        (
+            "m3_set_aware_low_rank.yaml",
+            SetAwareLowRankMethodConfig,
+            {"kind", "id", "family", "features", "model", "optimization"},
+        ),
+        (
+            "m4_conditional_kernel.yaml",
+            ConditionalKernelMethodConfig,
+            {"kind", "id", "family", "features", "model", "optimization"},
+        ),
     ],
 )
-def test_method_configs_resolve(filename: str, method: str) -> None:
-    config = load_config(CONFIGS / filename)
-
-    assert config.dependence.method == method
-    assert config.data.entity_type == "transformer"
-    assert config.covariates.weather[0] == "temperature_2m"
-
-
-@pytest.mark.parametrize(
-    ("filename", "entity_type", "repair"),
-    [
-        ("liander2024_transformer.yaml", "transformer", "none"),
-        ("liander2024_solar_park.yaml", "solar_park", "isotonic"),
-        ("liander2024_wind_park.yaml", "wind_park", "none"),
-        ("liander2024_mv_feeder.yaml", "mv_feeder", "none"),
-        ("liander2024_station_installation.yaml", "station_installation", "none"),
-    ],
-)
-def test_entity_type_configs_resolve(filename: str, entity_type: str, repair: str) -> None:
-    config = load_config(CONFIGS / filename)
-
-    assert config.data.entity_type == entity_type
-    assert config.pit.monotone_repair == repair
-    assert config.output.cache_name is not None
-
-
-@pytest.mark.parametrize(
-    ("filename", "entity_type", "entity_count"),
-    [
-        ("transformer.yaml", "transformer", 15),
-        ("solar_park.yaml", "solar_park", 5),
-        ("wind_park.yaml", "wind_park", 5),
-        ("mv_feeder.yaml", "mv_feeder", 15),
-        ("station_installation.yaml", "station_installation", 15),
-    ],
-)
-def test_powertech_protocols_predeclare_complete_ordered_groups(
-    filename: str, entity_type: str, entity_count: int
+def test_method_files_are_strictly_role_specific(
+    filename: str, expected_type: type, allowed_fields: set[str]
 ) -> None:
-    config = load_config(CONFIGS / "powertech2027" / filename)
-
-    assert config.protocol.name == "powertech2027"
-    assert config.protocol.full_group_only
-    assert config.confirmatory.enabled
-    assert config.confirmatory.neural_seeds == [11, 23, 37, 42, 59, 71, 83, 97, 101, 131]
-    assert config.data.entity_type == entity_type
-    assert config.protocol.entity_count == entity_count
-    assert len(config.protocol.ordered_entity_ids) == entity_count
-    assert all(entity_id.startswith(f"{entity_type}::") for entity_id in config.protocol.ordered_entity_ids)
-    assert not config.subset_training.enabled
-    assert not config.evaluation.variable_k_sizes
-
-
-def test_kernel_config_is_bounded_smoke() -> None:
-    config = load_config(CONFIGS / "method_conditional_kernel_smoke.yaml")
-
-    assert config.dependence.conditional_kernel.smoke_only
-    assert config.dependence.conditional_kernel.smoke_max_origins == 32
-    assert config.training.epochs == 5
-    assert not config.subset_training.enabled
-
-
-def test_full_kernel_config_uses_core_training_protocol() -> None:
-    config = load_config(CONFIGS / "method_conditional_kernel.yaml")
-
-    assert not config.dependence.conditional_kernel.smoke_only
-    assert config.training.epochs == 100
-    assert config.training.patience == 12
-    assert not config.subset_training.enabled
+    method = load_method_config(METHODS / filename)
+    assert isinstance(method, expected_type)
+    assert set(method.model_fields_set | {"kind"}) == allowed_fields
 
 
 @pytest.mark.parametrize(
-    "override",
+    ("filename", "entity_type", "entity_count", "repair"),
     [
-        "protocol.full_group_only=false",
-        "subset_training.enabled=true",
-        "evaluation.variable_k_sizes=[3]",
+        ("transformer.yaml", "transformer", 15, "none"),
+        ("solar_park.yaml", "solar_park", 5, "isotonic"),
+        ("wind_park.yaml", "wind_park", 5, "none"),
+        ("mv_feeder.yaml", "mv_feeder", 15, "none"),
+        ("station_installation.yaml", "station_installation", 15, "none"),
     ],
 )
-def test_full_group_protocol_rejects_entity_selection_augmentation(override: str) -> None:
-    with pytest.raises(ValidationError, match="full_group_only|full-group protocol forbids"):
-        load_config(CONFIGS / "base.yaml", [override])
+def test_bases_predeclare_complete_ordered_groups(
+    filename: str, entity_type: str, entity_count: int, repair: str
+) -> None:
+    base = load_base_config(BASES / filename)
+    assert base.data.entity_type == entity_type
+    assert base.protocol.entity_count == entity_count
+    assert len(base.protocol.ordered_entity_ids) == entity_count
+    assert all(value.startswith(f"{entity_type}::") for value in base.protocol.ordered_entity_ids)
+    assert base.pit.monotone_repair == repair
 
 
-def test_recursive_inheritance_environment_and_overrides(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    base = tmp_path / "base.yaml"
-    child = tmp_path / "child.yaml"
-    base.write_text(
-        "data:\n  local_dir: ${TEST_SIMCAST_DATA:-fallback}\n"
-        "forecast:\n  lookback_steps: 100\n"
-        "covariates:\n  weather: [old]\n",
+def test_method_validation_rejects_cross_family_fields(tmp_path: Path) -> None:
+    invalid = tmp_path / "m0.yaml"
+    invalid.write_text("kind: method\nid: m0\nfamily: independent\nfeatures: {}\n", encoding="utf-8")
+    with pytest.raises(ValidationError, match="features"):
+        load_method_config(invalid)
+
+    invalid.write_text(
+        "kind: method\nid: m4\nfamily: conditional_kernel\nfeatures: {}\n"
+        "model: {latent_rank: 4}\noptimization: {}\n",
         encoding="utf-8",
     )
-    child.write_text(
-        "extends: base.yaml\nforecast:\n  horizon_steps: 12\ncovariates:\n  weather: [new]\n",
-        encoding="utf-8",
-    )
-    monkeypatch.setenv("TEST_SIMCAST_DATA", "/tmp/simcast-data")
-
-    config = load_config(child, ["forecast.origin_stride_steps=4", "chronos.device=cpu"])
-
-    assert config.data.local_dir == Path("/tmp/simcast-data")
-    assert config.forecast.lookback_steps == 100
-    assert config.forecast.horizon_steps == 12
-    assert config.forecast.origin_stride_steps == 4
-    assert config.covariates.weather == ["new"]
-    assert config.chronos.device == "cpu"
+    with pytest.raises(ValidationError, match="latent_rank"):
+        load_method_config(invalid)
 
 
-def test_multiple_parents_merge_left_to_right(tmp_path: Path) -> None:
-    (tmp_path / "one.yaml").write_text("training:\n  epochs: 20\n  patience: 5\n", encoding="utf-8")
-    (tmp_path / "two.yaml").write_text("training:\n  epochs: 10\n", encoding="utf-8")
+def test_conditional_methods_require_features_model_and_optimization(tmp_path: Path) -> None:
+    invalid = tmp_path / "m2.yaml"
+    invalid.write_text("kind: method\nid: m2\nfamily: conditional_low_rank\n", encoding="utf-8")
+    with pytest.raises(ValidationError, match="features|model|optimization"):
+        load_method_config(invalid)
+
+
+def test_method_inheritance_and_cycle_detection(tmp_path: Path) -> None:
+    parent = tmp_path / "parent.yaml"
     child = tmp_path / "child.yaml"
-    child.write_text("extends: [one.yaml, two.yaml]\ntraining:\n  patience: 3\n", encoding="utf-8")
+    parent.write_text((METHODS / "m4_conditional_kernel.yaml").read_text(encoding="utf-8"), encoding="utf-8")
+    child.write_text("extends: parent.yaml\noptimization:\n  epochs: 3\n  patience: 2\n", encoding="utf-8")
+    method = load_method_config(child)
+    assert isinstance(method, ConditionalKernelMethodConfig)
+    assert method.optimization.epochs == 3
+    assert method.optimization.patience == 2
 
-    config = load_config(child)
-
-    assert config.training.epochs == 10
-    assert config.training.patience == 3
-
-
-def test_cycle_detection(tmp_path: Path) -> None:
     first = tmp_path / "first.yaml"
     second = tmp_path / "second.yaml"
     first.write_text("extends: second.yaml\n", encoding="utf-8")
     second.write_text("extends: first.yaml\n", encoding="utf-8")
-
     with pytest.raises(ValueError, match="inheritance cycle"):
-        load_config(first)
+        load_method_config(first)
+
+
+def test_multiple_method_parents_merge_deterministically_left_to_right(tmp_path: Path) -> None:
+    first = tmp_path / "first.yaml"
+    second = tmp_path / "second.yaml"
+    child = tmp_path / "child.yaml"
+    first.write_text(
+        (METHODS / "m4_conditional_kernel.yaml").read_text(encoding="utf-8").replace(
+            "epochs: 100", "epochs: 20"
+        ),
+        encoding="utf-8",
+    )
+    second.write_text("optimization:\n  epochs: 10\n", encoding="utf-8")
+    child.write_text(
+        "extends: [first.yaml, second.yaml]\noptimization:\n  patience: 3\n",
+        encoding="utf-8",
+    )
+
+    method = load_method_config(child)
+
+    assert isinstance(method, ConditionalKernelMethodConfig)
+    assert method.optimization.epochs == 10
+    assert method.optimization.patience == 3
+
+
+def test_composite_venue_must_match_its_directory(tmp_path: Path) -> None:
+    venue_dir = tmp_path / "configs" / "venues" / "lab"
+    venue_dir.mkdir(parents=True)
+    path = venue_dir / "bad.yaml"
+    path.write_text(
+        "kind: composite\nname: x\nvenue: paper\n"
+        "bases: [{id: x, config: x.yaml}]\n"
+        "experiments: [{id: m0, method: m0.yaml}]\n"
+        "analysis: {reference: m0}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="does not match"):
+        load_composite_config(path)
+
+
+def test_runtime_adapter_is_full_group_and_m4_has_full_budget() -> None:
+    base = load_base_config(BASES / "transformer.yaml")
+    method = load_method_config(METHODS / "m4_conditional_kernel.yaml")
+    runtime = resolve_run_config(base, method)
+    assert runtime.protocol.full_group_only
+    assert runtime.training.epochs == 100
+    assert runtime.training.patience == 12
+    assert runtime.dependence.method == "conditional_kernel"
+    assert runtime.dependence.model is not None
+    assert set(runtime.dependence.model.model_dump()) == {
+        "hidden_dims",
+        "embedding_dim",
+        "activation",
+        "dropout",
+        "initial_length_scale",
+        "nugget",
+        "jitter",
+    }
+
+
+def test_cache_fingerprint_ignores_runtime_and_evaluation_but_not_marginal_design() -> None:
+    base = load_base_config(BASES / "transformer.yaml")
+    operational = base.model_copy(
+        update={
+            "runtime": base.runtime.model_copy(update={"num_workers": 7}),
+            "evaluation": base.evaluation.model_copy(update={"joint_score_num_samples": 64}),
+        }
+    )
+    changed_pit = base.model_copy(update={"pit": base.pit.model_copy(update={"eps": 1.0e-6})})
+    assert base_fingerprint(base) == base_fingerprint(operational)
+    assert base_fingerprint(base) != base_fingerprint(changed_pit)
 
 
 def test_override_parser_and_deep_merge() -> None:
-    overrides = parse_overrides(
-        ["training.epochs=7", "covariates.weather=[temperature_2m]", "runtime.deterministic=false"]
-    )
-
-    assert overrides == {
-        "training": {"epochs": 7},
-        "covariates": {"weather": ["temperature_2m"]},
-        "runtime": {"deterministic": False},
-    }
+    overrides = parse_overrides(["optimization.epochs=7", "features.use_location=false"])
+    assert overrides == {"optimization": {"epochs": 7}, "features": {"use_location": False}}
     assert deep_merge({"a": {"b": 1, "c": 2}}, {"a": {"b": 3}}) == {"a": {"b": 3, "c": 2}}
-
-
-@pytest.mark.parametrize(
-    "values",
-    [
-        {"split": {"tune_fraction": 1.0}},
-        {"data": {"entity_type": "mixed"}},
-        {"forecast": {"lookback_steps": 0}},
-        {"dependence": {"conditional_low_rank": {"latent_rank": 0}}},
-        {"dependence": {"set_aware_low_rank": {"model_dim": 127, "num_heads": 4}}},
-        {"evaluation": {"quantile_levels": [0.5, 0.1]}},
-        {"chronos": {"cross_learning": True}},
-    ],
-)
-def test_invalid_config_is_rejected(values: dict[str, object]) -> None:
-    with pytest.raises(ValidationError):
-        SimcastConfig.model_validate(values)
 
 
 def test_invalid_override_is_rejected() -> None:
     with pytest.raises(ValueError, match="dotted.key=value"):
-        parse_overrides(["training.epochs"])
+        parse_overrides(["optimization.epochs"])

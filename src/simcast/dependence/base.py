@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from pathlib import Path
-from typing import Self, cast
 
 import numpy as np
 import torch
@@ -60,71 +57,3 @@ def entity_indices(stored: Sequence[str], requested: Sequence[str] | None) -> tu
     if unknown:
         raise ValueError(f"unknown entity_ids: {unknown}")
     return tuple(positions[entity_id] for entity_id in selected)
-
-
-class BaseDependenceModel(ABC):
-    """Interface for same-lead cross-entity copula models.
-
-    Public lead values are one based, matching mathematical ``tau in [H]``.
-    Implementations that estimate parameters must
-    receive an already selected training slice; this interface deliberately has
-    no access to validation or test labels.
-    """
-
-    @abstractmethod
-    def fit(
-        self,
-        train_z: ArrayLike,
-        entity_ids: Sequence[str],
-        valid_mask: ArrayLike | None = None,
-        **training_data: object,
-    ) -> Self:
-        """Fit from training-only Gaussianized PIT vectors."""
-
-    @abstractmethod
-    def correlation_matrix(
-        self,
-        lead: int,
-        *,
-        entity_ids: Sequence[str] | None = None,
-        **condition: object,
-    ) -> torch.Tensor:
-        """Return a correlation matrix in the requested entity order."""
-
-    def sample_uniforms(
-        self,
-        num_samples: int,
-        lead: int,
-        *,
-        entity_ids: Sequence[str] | None = None,
-        generator: torch.Generator | None = None,
-        device: torch.device | str | None = None,
-        dtype: torch.dtype = torch.float32,
-        **condition: object,
-    ) -> torch.Tensor:
-        """Draw Gaussian-copula uniforms shaped ``[sample, entity]``."""
-
-        if num_samples <= 0:
-            raise ValueError("num_samples must be positive")
-        correlation = self.correlation_matrix(lead, entity_ids=entity_ids, **condition)
-        if correlation.ndim != 2 or correlation.shape[0] != correlation.shape[1]:
-            raise ValueError("correlation_matrix must return shape [entity, entity]")
-        target_device = correlation.device if device is None else torch.device(device)
-        correlation = correlation.to(device=target_device, dtype=dtype)
-        factor = torch.linalg.cholesky(correlation)
-        noise = torch.randn(
-            (num_samples, correlation.shape[0]),
-            generator=generator,
-            device=target_device,
-            dtype=dtype,
-        )
-        return cast(torch.Tensor, torch.special.ndtr(noise @ factor.mT))
-
-    @abstractmethod
-    def save(self, path: str | Path) -> Path:
-        """Persist the fitted model."""
-
-    @classmethod
-    @abstractmethod
-    def load(cls, path: str | Path) -> Self:
-        """Restore a model saved by :meth:`save`."""

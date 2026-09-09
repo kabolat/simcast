@@ -18,9 +18,12 @@ from pydantic import (
     NonNegativeInt,
     PositiveFloat,
     PositiveInt,
+    TypeAdapter,
     field_validator,
     model_validator,
 )
+
+from simcast.reproducibility import canonical_json_hash
 
 EntityType: TypeAlias = Literal["transformer", "solar_park", "wind_park", "mv_feeder", "station_installation"]
 Fraction = Annotated[float, Field(gt=0.0, lt=1.0)]
@@ -134,8 +137,8 @@ class PitConfig(ConfigModel):
 
 
 class ProtocolConfig(ConfigModel):
-    name: Literal["legacy", "full_group", "powertech2027"] = "legacy"
-    full_group_only: bool = False
+    name: Literal["full_group"] = "full_group"
+    full_group_only: Literal[True] = True
     ordered_entity_ids: list[str] = Field(default_factory=list)
     entity_count: PositiveInt | None = None
 
@@ -158,10 +161,6 @@ class FeaturesConfig(ConfigModel):
     use_entity_id_embedding: bool = False
     shape_eps: PositiveFloat = 1.0e-6
     standardize_scalar_features: bool = True
-
-
-class IndependentConfig(ConfigModel):
-    pass
 
 
 class StaticGaussianConfig(ConfigModel):
@@ -203,8 +202,6 @@ class ConditionalKernelConfig(ConfigModel):
     initial_length_scale: PositiveFloat = 1.0
     nugget: PositiveFloat = 1.0e-3
     jitter: PositiveFloat = 1.0e-6
-    smoke_only: bool = True
-    smoke_max_origins: PositiveInt = 32
 
 
 DependenceMethod: TypeAlias = Literal[
@@ -214,22 +211,27 @@ DependenceMethod: TypeAlias = Literal[
 
 class DependenceConfig(ConfigModel):
     method: DependenceMethod = "independent"
-    independent: IndependentConfig = Field(default_factory=IndependentConfig)
-    static_gaussian: StaticGaussianConfig = Field(default_factory=StaticGaussianConfig)
-    conditional_low_rank: ConditionalLowRankConfig = Field(default_factory=ConditionalLowRankConfig)
-    set_aware_low_rank: SetAwareLowRankConfig = Field(default_factory=SetAwareLowRankConfig)
-    conditional_kernel: ConditionalKernelConfig = Field(default_factory=ConditionalKernelConfig)
-
-
-class SubsetTrainingConfig(ConfigModel):
-    enabled: bool = False
-    min_entities: Annotated[int, Field(ge=2)] = 4
-    full_group_probability: Probability = 0.25
+    model: (
+        StaticGaussianConfig
+        | ConditionalLowRankConfig
+        | SetAwareLowRankConfig
+        | ConditionalKernelConfig
+        | None
+    ) = None
 
     @model_validator(mode="after")
-    def require_full_group_samples(self) -> Self:
-        if self.enabled and self.full_group_probability <= 0:
-            raise ValueError("subset_training.full_group_probability must be positive when enabled")
+    def model_matches_method(self) -> Self:
+        expected = {
+            "static_gaussian": StaticGaussianConfig,
+            "conditional_low_rank": ConditionalLowRankConfig,
+            "set_aware_low_rank": SetAwareLowRankConfig,
+            "conditional_kernel": ConditionalKernelConfig,
+        }.get(self.method)
+        if expected is None:
+            if self.model is not None:
+                raise ValueError("independent dependence must not define model parameters")
+        elif not isinstance(self.model, expected):
+            raise ValueError(f"{self.method} dependence requires {expected.__name__}")
         return self
 
 
@@ -256,31 +258,6 @@ class SamplingConfig(ConfigModel):
     common_random_numbers: bool = True
 
 
-class ConfirmatoryConfig(ConfigModel):
-    enabled: bool = False
-    neural_seeds: list[NonNegativeInt] = Field(
-        default_factory=lambda: [11, 23, 37, 42, 59, 71, 83, 97, 101, 131], min_length=1
-    )
-    bootstrap_replicates: PositiveInt = 10_000
-    primary_block_length: PositiveInt = 7
-    sensitivity_block_lengths: list[PositiveInt] = Field(default_factory=lambda: [3, 14])
-    checkpoint_selection: Literal["validation_pseudo_nll"] = "validation_pseudo_nll"
-    feature_set: Literal[
-        "embedding_dynamic_only", "quantile_dynamic_only", "combined_dynamic", "full"
-    ] = "full"
-    experiment_family: Literal["main", "ablation", "pit_sensitivity", "rank_sensitivity", "static_sensitivity"] = (
-        "main"
-    )
-    test_set_previously_inspected: Literal[True] = True
-
-    @field_validator("neural_seeds", "sensitivity_block_lengths")
-    @classmethod
-    def unique_values(cls, value: list[int]) -> list[int]:
-        if len(value) != len(set(value)):
-            raise ValueError("confirmatory seed and block-length lists must contain unique values")
-        return value
-
-
 class EvaluationConfig(ConfigModel):
     quantile_levels: list[float] = Field(default_factory=lambda: [0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95])
     interval_levels: list[float] = Field(default_factory=lambda: [0.50, 0.80, 0.90])
@@ -290,7 +267,6 @@ class EvaluationConfig(ConfigModel):
     report_by_lead: bool = True
     scenario_batch_size: PositiveInt = 16
     joint_score_num_samples: PositiveInt = 512
-    variable_k_sizes: list[PositiveInt] = Field(default_factory=list)
 
     @field_validator("quantile_levels", "interval_levels")
     @classmethod
@@ -302,14 +278,6 @@ class EvaluationConfig(ConfigModel):
         if value != sorted(set(value)):
             raise ValueError("probability levels must be sorted and unique")
         return value
-
-    @field_validator("variable_k_sizes")
-    @classmethod
-    def ordered_unique_cardinalities(cls, value: list[int]) -> list[int]:
-        if value != sorted(set(value)):
-            raise ValueError("evaluation.variable_k_sizes must be sorted and unique")
-        return value
-
 
 class RuntimeConfig(ConfigModel):
     deterministic: bool = True
@@ -325,7 +293,7 @@ class OutputConfig(ConfigModel):
     save_resolved_config: bool = True
 
 
-class SimcastConfig(ConfigModel):
+class ResolvedExperimentConfig(ConfigModel):
     seed: NonNegativeInt = 42
     protocol: ProtocolConfig = Field(default_factory=ProtocolConfig)
     data: DataConfig = Field(default_factory=DataConfig)
@@ -334,52 +302,187 @@ class SimcastConfig(ConfigModel):
     split: SplitConfig = Field(default_factory=SplitConfig)
     chronos: ChronosConfig = Field(default_factory=ChronosConfig)
     pit: PitConfig = Field(default_factory=PitConfig)
-    features: FeaturesConfig = Field(default_factory=FeaturesConfig)
+    features: FeaturesConfig | None = None
     dependence: DependenceConfig = Field(default_factory=DependenceConfig)
-    subset_training: SubsetTrainingConfig = Field(default_factory=SubsetTrainingConfig)
-    training: TrainingConfig = Field(default_factory=TrainingConfig)
+    training: TrainingConfig | None = None
     sampling: SamplingConfig = Field(default_factory=SamplingConfig)
-    confirmatory: ConfirmatoryConfig = Field(default_factory=ConfirmatoryConfig)
     evaluation: EvaluationConfig = Field(default_factory=EvaluationConfig)
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
 
     @model_validator(mode="after")
     def validate_full_group_protocol(self) -> Self:
-        if self.protocol.name == "full_group" and not self.protocol.full_group_only:
-            raise ValueError("full_group protocol requires full_group_only=true")
-        if self.protocol.full_group_only and self.subset_training.enabled:
-            raise ValueError("full-group protocol forbids subset training")
-        if self.protocol.full_group_only and self.evaluation.variable_k_sizes:
-            raise ValueError("full-group protocol forbids variable-cardinality evaluation")
         if (
             self.protocol.entity_count is not None
             and self.protocol.entity_count != len(self.protocol.ordered_entity_ids)
         ):
             raise ValueError("protocol.entity_count must equal the ordered entity-ID count")
-        if self.protocol.name == "powertech2027":
-            if not self.protocol.full_group_only:
-                raise ValueError("powertech2027 protocol requires full_group_only=true")
-            if not self.protocol.ordered_entity_ids or self.protocol.entity_count is None:
-                raise ValueError("powertech2027 protocol requires ordered entity IDs and entity_count")
-            if not self.confirmatory.enabled:
-                raise ValueError("powertech2027 protocol requires confirmatory.enabled=true")
-            expected_features = {
-                "embedding_dynamic_only": (True, False, False, False, True, False),
-                "quantile_dynamic_only": (False, True, True, True, True, False),
-                "combined_dynamic": (True, True, True, True, True, False),
-                "full": (True, True, True, True, True, True),
-            }[self.confirmatory.feature_set]
-            actual_features = (
-                self.features.use_forecast_embedding,
-                self.features.use_quantile_shape,
-                self.features.use_median,
-                self.features.use_log_spread,
-                self.features.use_within_patch_position,
-                self.features.use_location,
-            )
-            if actual_features != expected_features:
-                raise ValueError("confirmatory.feature_set does not match the enabled feature components")
+        optimized = self.dependence.method in {
+            "conditional_low_rank",
+            "set_aware_low_rank",
+            "conditional_kernel",
+        }
+        if optimized and (self.features is None or self.training is None):
+            raise ValueError("conditional dependence requires features and optimization parameters")
+        if not optimized and (self.features is not None or self.training is not None):
+            raise ValueError("independent and static dependence must not define features or optimization parameters")
+        return self
+
+
+# Human-authored files are validated through the role-specific scientific
+# models below. ResolvedExperimentConfig is only their selected numerical view.
+
+Slug = Annotated[str, Field(pattern=r"^[a-z0-9]+(?:[a-z0-9_-]*[a-z0-9])?$")]
+
+
+class BaseOutputConfig(ConfigModel):
+    cache_dir: Path = Path("artifacts/cache")
+    save_resolved_config: bool = True
+
+
+BaseEvaluationConfig: TypeAlias = EvaluationConfig
+
+
+class BaseExperimentConfig(ConfigModel):
+    kind: Literal["base"]
+    id: Slug
+    protocol: ProtocolConfig
+    data: DataConfig
+    forecast: ForecastConfig = Field(default_factory=ForecastConfig)
+    covariates: CovariatesConfig = Field(default_factory=CovariatesConfig)
+    split: SplitConfig = Field(default_factory=SplitConfig)
+    chronos: ChronosConfig = Field(default_factory=ChronosConfig)
+    pit: PitConfig = Field(default_factory=PitConfig)
+    sampling: SamplingConfig = Field(default_factory=SamplingConfig)
+    evaluation: BaseEvaluationConfig = Field(default_factory=BaseEvaluationConfig)
+    runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
+    output: BaseOutputConfig = Field(default_factory=BaseOutputConfig)
+
+    @model_validator(mode="after")
+    def require_complete_static_group(self) -> Self:
+        if not self.protocol.ordered_entity_ids or self.protocol.entity_count is None:
+            raise ValueError("base configurations require ordered entity IDs and entity_count")
+        if self.protocol.entity_count != len(self.protocol.ordered_entity_ids):
+            raise ValueError("entity_count must equal the ordered entity-ID count")
+        prefix = f"{self.data.entity_type}::"
+        if any(not entity_id.startswith(prefix) for entity_id in self.protocol.ordered_entity_ids):
+            raise ValueError("ordered entity IDs must belong to data.entity_type")
+        return self
+
+
+class OptimizationConfig(TrainingConfig):
+    seed: NonNegativeInt = 42
+
+
+class IndependentMethodConfig(ConfigModel):
+    kind: Literal["method"]
+    id: Slug
+    family: Literal["independent"]
+
+
+class StaticGaussianMethodConfig(ConfigModel):
+    kind: Literal["method"]
+    id: Slug
+    family: Literal["static_gaussian"]
+    model: StaticGaussianConfig = Field(default_factory=StaticGaussianConfig)
+
+
+class ConditionalLowRankMethodConfig(ConfigModel):
+    kind: Literal["method"]
+    id: Slug
+    family: Literal["conditional_low_rank"]
+    features: FeaturesConfig
+    model: ConditionalLowRankConfig
+    optimization: OptimizationConfig
+
+
+class SetAwareLowRankMethodConfig(ConfigModel):
+    kind: Literal["method"]
+    id: Slug
+    family: Literal["set_aware_low_rank"]
+    features: FeaturesConfig
+    model: SetAwareLowRankConfig
+    optimization: OptimizationConfig
+
+
+KernelModelConfig: TypeAlias = ConditionalKernelConfig
+
+
+class ConditionalKernelMethodConfig(ConfigModel):
+    kind: Literal["method"]
+    id: Slug
+    family: Literal["conditional_kernel"]
+    features: FeaturesConfig
+    model: KernelModelConfig
+    optimization: OptimizationConfig
+
+
+MethodConfig: TypeAlias = Annotated[
+    IndependentMethodConfig
+    | StaticGaussianMethodConfig
+    | ConditionalLowRankMethodConfig
+    | SetAwareLowRankMethodConfig
+    | ConditionalKernelMethodConfig,
+    Field(discriminator="family"),
+]
+
+
+class CompositeBaseEntry(ConfigModel):
+    id: Slug
+    config: Path
+    overrides: dict[str, Any] = Field(default_factory=dict)
+
+
+class CompositeExperimentEntry(ConfigModel):
+    id: Slug
+    method: Path
+    seeds: list[NonNegativeInt] = Field(default_factory=list)
+    base_ids: list[Slug] = Field(default_factory=list)
+    overrides: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("seeds", "base_ids")
+    @classmethod
+    def unique_entry_values(cls, value: list[Any]) -> list[Any]:
+        if len(value) != len(set(value)):
+            raise ValueError("composite entry values must be unique")
+        return value
+
+
+class CompositeAnalysisConfig(ConfigModel):
+    reference: Slug
+    bootstrap_replicates: PositiveInt = 10_000
+    primary_block_length: PositiveInt = 7
+    sensitivity_block_lengths: list[PositiveInt] = Field(default_factory=lambda: [3, 14])
+
+    @field_validator("sensitivity_block_lengths")
+    @classmethod
+    def unique_block_lengths(cls, value: list[int]) -> list[int]:
+        if len(value) != len(set(value)):
+            raise ValueError("sensitivity block lengths must be unique")
+        return value
+
+
+class CompositeExperimentConfig(ConfigModel):
+    kind: Literal["composite"]
+    name: Slug
+    venue: Slug
+    bases: list[CompositeBaseEntry] = Field(min_length=1)
+    experiments: list[CompositeExperimentEntry] = Field(min_length=1)
+    analysis: CompositeAnalysisConfig
+
+    @model_validator(mode="after")
+    def validate_references(self) -> Self:
+        base_ids = [entry.id for entry in self.bases]
+        experiment_ids = [entry.id for entry in self.experiments]
+        if len(base_ids) != len(set(base_ids)) or len(experiment_ids) != len(set(experiment_ids)):
+            raise ValueError("composite base and experiment IDs must be unique")
+        if self.analysis.reference not in experiment_ids:
+            raise ValueError("analysis.reference must name an experiment entry")
+        known = set(base_ids)
+        for experiment in self.experiments:
+            unknown = set(experiment.base_ids) - known
+            if unknown:
+                raise ValueError(f"experiment {experiment.id!r} references unknown bases: {sorted(unknown)}")
         return self
 
 
@@ -477,10 +580,108 @@ def _read_yaml(path: Path, stack: tuple[Path, ...]) -> dict[str, Any]:
     return deep_merge(merged, document)
 
 
-def load_config(path: str | Path, overrides: Sequence[str] = ()) -> SimcastConfig:
-    """Load, compose, override, and validate a Simcast YAML configuration."""
-
+def _load_role_values(path: str | Path, overrides: Sequence[str]) -> dict[str, Any]:
     values = _read_yaml(Path(path), ())
-    if overrides:
-        values = deep_merge(values, parse_overrides(overrides))
-    return SimcastConfig.model_validate(values)
+    return deep_merge(values, parse_overrides(overrides)) if overrides else values
+
+
+def load_base_config(path: str | Path, overrides: Sequence[str] = ()) -> BaseExperimentConfig:
+    """Load one complete frozen-marginal experiment base."""
+
+    return BaseExperimentConfig.model_validate(_load_role_values(path, overrides))
+
+
+def load_method_config(path: str | Path, overrides: Sequence[str] = ()) -> MethodConfig:
+    """Load exactly one strictly typed dependence-method configuration."""
+
+    return TypeAdapter(MethodConfig).validate_python(_load_role_values(path, overrides))
+
+
+def load_composite_config(path: str | Path, overrides: Sequence[str] = ()) -> CompositeExperimentConfig:
+    """Load a venue-scoped explicit composite experiment declaration."""
+
+    source = Path(path).expanduser().resolve()
+    config = CompositeExperimentConfig.model_validate(_load_role_values(source, overrides))
+    if source.parent.parent.name != "venues" or source.parent.parent.parent.name != "configs":
+        raise ValueError("composite configurations must be stored directly under configs/venues/<venue>")
+    directory_venue = source.parent.name
+    if config.venue != directory_venue:
+        raise ValueError(
+            f"composite venue {config.venue!r} does not match its directory {directory_venue!r}"
+        )
+    return config
+
+
+def marginal_fingerprint(values: Mapping[str, Any]) -> str:
+    """Hash the normalized scientific inputs that determine a marginal cache."""
+
+    protocol = values["protocol"]
+    data = values["data"]
+    chronos = values["chronos"]
+    payload = {
+        "protocol": {
+            "full_group_only": protocol["full_group_only"],
+            "ordered_entity_ids": protocol["ordered_entity_ids"],
+            "entity_count": protocol["entity_count"],
+        },
+        "data": {key: value for key, value in data.items() if key != "local_dir"},
+        "forecast": values["forecast"],
+        "covariates": values["covariates"],
+        "split": values["split"],
+        "chronos": {
+            key: value
+            for key, value in chronos.items()
+            if key not in {"device", "batch_size"}
+        },
+        "pit": values["pit"],
+    }
+    return canonical_json_hash(payload)
+
+
+def base_fingerprint(config: BaseExperimentConfig) -> str:
+    """Hash only the scientific inputs that determine the frozen marginal cache."""
+
+    return marginal_fingerprint(config.model_dump(mode="json"))
+
+
+def resolve_run_config(
+    base: BaseExperimentConfig,
+    method: MethodConfig,
+    *,
+    seed: int | None = None,
+) -> ResolvedExperimentConfig:
+    """Adapt role-specific scientific configuration to the existing numerical pipeline."""
+
+    values: dict[str, Any] = {
+        key: value
+        for key, value in base.model_dump(mode="python").items()
+        if key not in {"kind", "id", "output"}
+    }
+    values["output"] = {
+        "root_dir": "runs",
+        "cache_dir": base.output.cache_dir,
+        "cache_name": f"{base.id}-{base_fingerprint(base)[:12]}",
+        "experiment_name": f"{base.id}_{method.id}",
+        "save_resolved_config": base.output.save_resolved_config,
+    }
+    values["dependence"] = {"method": method.family, "model": None}
+    if isinstance(method, StaticGaussianMethodConfig):
+        values["dependence"]["model"] = method.model.model_dump(mode="python")
+    elif isinstance(method, ConditionalLowRankMethodConfig):
+        values["dependence"]["model"] = method.model.model_dump(mode="python")
+    elif isinstance(method, SetAwareLowRankMethodConfig):
+        values["dependence"]["model"] = method.model.model_dump(mode="python")
+    elif isinstance(method, ConditionalKernelMethodConfig):
+        values["dependence"]["model"] = method.model.model_dump(mode="python")
+    if isinstance(
+        method,
+        (ConditionalLowRankMethodConfig, SetAwareLowRankMethodConfig, ConditionalKernelMethodConfig),
+    ):
+        optimization = method.optimization.model_dump(mode="python")
+        configured_seed = int(optimization.pop("seed"))
+        values["seed"] = configured_seed if seed is None else seed
+        values["features"] = method.features.model_dump(mode="python")
+        values["training"] = optimization
+    else:
+        values["seed"] = 42 if seed is None else seed
+    return ResolvedExperimentConfig.model_validate(values)

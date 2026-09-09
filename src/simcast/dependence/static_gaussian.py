@@ -10,7 +10,7 @@ import numpy as np
 import torch
 from sklearn.covariance import LedoitWolf  # type: ignore[import-untyped]
 
-from simcast.dependence.base import ArrayLike, BaseDependenceModel, entity_indices, validate_training_data
+from simcast.dependence.base import ArrayLike, entity_indices, validate_training_data
 
 
 def _covariance_to_correlation(covariance: np.ndarray, jitter: float) -> np.ndarray:
@@ -41,7 +41,7 @@ def _covariance_to_correlation(covariance: np.ndarray, jitter: float) -> np.ndar
     return np.asarray(correlation, dtype=np.float64)
 
 
-class StaticGaussianCopula(BaseDependenceModel):
+class StaticGaussianCopula:
     """M1: Ledoit-Wolf spatial correlation, per lead or pooled over leads."""
 
     def __init__(
@@ -152,6 +152,3 @@ class StaticGaussianCopula(BaseDependenceModel):
         model.n_leads = correlations.shape[0]
         model._correlations = torch.from_numpy(correlations.copy())
         return model
-
-
-StaticGaussianDependenceModel = StaticGaussianCopula

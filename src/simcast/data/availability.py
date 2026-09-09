@@ -106,8 +106,3 @@ def select_measured_weather(
             raise ValueError("measured weather cannot supply timestamps after the origin")
         selected = selected.reindex(requested)
     return selected
-
-
-# Concise aliases for callers that use singular terminology.
-mask_unavailable_target = mask_unavailable_targets
-latest_available_weather = select_latest_weather_forecast

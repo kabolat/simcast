@@ -31,16 +31,11 @@ def _assert_valid_correlation(correlation: torch.Tensor) -> None:
     torch.linalg.cholesky(correlation)
 
 
-def test_independent_identity_sampling_and_roundtrip(tmp_path: Path) -> None:
+def test_independent_identity_and_roundtrip(tmp_path: Path) -> None:
     model = IndependentCopula(["a", "b", "c"], n_leads=2)
     correlation = model.correlation_matrix(1, entity_ids=["c", "a"])
     assert torch.equal(correlation, torch.eye(2, dtype=torch.float64))
     _assert_valid_correlation(correlation)
-
-    first = model.sample_uniforms(32, 1, generator=torch.Generator().manual_seed(7))
-    second = model.sample_uniforms(32, 1, generator=torch.Generator().manual_seed(7))
-    assert torch.equal(first, second)
-    assert bool(((first > 0) & (first < 1)).all())
 
     path = model.save(tmp_path / "m0.npz")
     restored = IndependentCopula.load(path)

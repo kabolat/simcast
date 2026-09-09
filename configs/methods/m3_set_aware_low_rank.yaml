@@ -1,0 +1,31 @@
+kind: method
+id: m3
+family: set_aware_low_rank
+features:
+  use_forecast_embedding: true
+  layer_normalize_embedding: true
+  use_quantile_shape: true
+  use_median: true
+  use_log_spread: true
+  use_within_patch_position: true
+  use_location: true
+  use_entity_id_embedding: false
+  shape_eps: 1.0e-6
+  standardize_scalar_features: true
+model:
+  model_dim: 128
+  num_layers: 2
+  num_heads: 4
+  latent_rank: 4
+  dropout: 0.1
+  sigma_floor: 1.0e-3
+  jitter: 1.0e-6
+optimization:
+  seed: 42
+  optimizer: adamw
+  batch_size: 64
+  epochs: 100
+  learning_rate: 1.0e-3
+  weight_decay: 1.0e-4
+  gradient_clip_norm: 1.0
+  patience: 12

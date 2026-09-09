@@ -5,21 +5,21 @@ from __future__ import annotations
 import json
 import logging
 import os
-import platform
 import random
-import subprocess
-from collections.abc import Sequence
 from datetime import UTC, datetime
-from importlib.metadata import version
 from pathlib import Path
-from typing import Annotated
 
 import numpy as np
 import torch
-import typer
 import yaml  # type: ignore[import-untyped]
 
-from simcast.config import SimcastConfig, load_config
+from simcast.config import (
+    ConditionalKernelConfig,
+    ConditionalLowRankConfig,
+    ResolvedExperimentConfig,
+    SetAwareLowRankConfig,
+    StaticGaussianConfig,
+)
 from simcast.dependence import IndependentCopula, StaticGaussianCopula
 from simcast.dependence.conditional_kernel import ConditionalKernelGaussianCopula
 from simcast.dependence.conditional_low_rank import ConditionalLowRankGaussianCopula
@@ -28,24 +28,24 @@ from simcast.evaluation.plots import plot_training_history
 from simcast.fm.cache import PITLibrary, load_pit_library
 from simcast.fm.feature_builder import FeatureBuilder
 from simcast.fm.pit import dependence_pit_scores
-from simcast.reproducibility import config_sha256, sha256_file
+from simcast.reproducibility import config_sha256, environment_metadata, sha256_file, utc_run_id
 from simcast.training import ConditionalTrainer, DependenceCollator, DependenceDataset
 
 LOGGER = logging.getLogger(__name__)
 
 
-def _cache_path(config: SimcastConfig, override: str | Path | None) -> Path:
+def _cache_path(config: ResolvedExperimentConfig, override: str | Path | None) -> Path:
     if override is not None:
         return Path(override).expanduser().resolve()
     name = config.output.cache_name or f"liander2024_{config.data.entity_type}"
     return (Path(config.output.cache_dir).expanduser() / name).resolve()
 
 
-def _run_directory(config: SimcastConfig, method: str, override: str | Path | None) -> Path:
+def _run_directory(config: ResolvedExperimentConfig, method: str, override: str | Path | None) -> Path:
     if override is not None:
         path = Path(override).expanduser().resolve()
     else:
-        stamp = datetime.now(UTC).strftime("%Y-%m-%d_%H%M%S")
+        stamp = utc_run_id()
         path = (Path(config.output.root_dir).expanduser() / f"{stamp}_{method}").resolve()
     path.mkdir(parents=True, exist_ok=False)
     return path
@@ -66,28 +66,15 @@ def _seed_everything(seed: int, deterministic: bool) -> None:
         torch.backends.cuda.enable_math_sdp(True)
 
 
-def _git_commit() -> str | None:
-    result = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    return result.stdout.strip() if result.returncode == 0 else None
-
-
-def _write_run_metadata(run_dir: Path, config: SimcastConfig, cache_path: Path, entity_ids: list[str]) -> None:
+def _write_run_metadata(
+    run_dir: Path, config: ResolvedExperimentConfig, cache_path: Path, entity_ids: list[str]
+) -> None:
     resolved = config.model_dump(mode="json")
     (run_dir / "resolved_config.yaml").write_text(yaml.safe_dump(resolved, sort_keys=False), encoding="utf-8")
-    packages = {
-        name: version(name) for name in ("numpy", "pandas", "torch", "scikit-learn", "xarray", "zarr", "transformers")
-    }
     metadata = {
         "created_at": datetime.now(UTC).isoformat(),
-        "git_commit": _git_commit(),
+        **environment_metadata(),
         "config_sha256": config_sha256(config),
-        "python": platform.python_version(),
-        "packages": packages,
         "cache_path": str(cache_path),
         "dataset_revision": config.data.revision,
         "chronos_source_revision": config.chronos.source_revision,
@@ -101,12 +88,12 @@ def _write_run_metadata(run_dir: Path, config: SimcastConfig, cache_path: Path, 
         "experimental_protocol": {
             "name": config.protocol.name,
             "full_group_only": config.protocol.full_group_only,
-            "subset_training": config.subset_training.enabled,
-            "entity_selection_augmentation_enabled": config.subset_training.enabled,
+            "subset_training": False,
+            "entity_selection_augmentation_enabled": False,
         },
         "seed": config.seed,
         "evaluation_seed": config.sampling.evaluation_seed,
-        "checkpoint_selection": config.confirmatory.checkpoint_selection,
+        "checkpoint_selection": "validation_pseudo_nll",
         "dependence_pit_transform": config.pit.dependence_transform,
     }
     (run_dir / "run_metadata.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
@@ -116,41 +103,6 @@ def _split_indices(library: PITLibrary, label: str) -> np.ndarray:
     return np.flatnonzero(np.asarray(library.dataset["split"].values) == label)
 
 
-def _validate_confirmatory_cache(library: PITLibrary, config: SimcastConfig) -> None:
-    if not config.confirmatory.enabled:
-        return
-    cached = library.metadata.get("resolved_config")
-    if not isinstance(cached, dict):
-        raise ValueError("confirmatory runs require cache metadata with a resolved configuration")
-    expected = config.model_dump(mode="json")
-    exact_sections = ("forecast", "covariates")
-    for section in exact_sections:
-        if cached.get(section) != expected[section]:
-            raise ValueError(f"confirmatory cache {section} configuration does not match the requested protocol")
-    checked_keys = {
-        "data": ("dataset_id", "revision", "entity_type", "target_column", "include_epex", "include_profiles"),
-        "chronos": ("source_revision", "model_id", "model_revision", "dtype", "cross_learning"),
-    }
-    for section, keys in checked_keys.items():
-        cached_section = cached.get(section)
-        mismatch = not isinstance(cached_section, dict) or any(
-            cached_section.get(key) != expected[section][key] for key in keys
-        )
-        if mismatch:
-            raise ValueError(f"confirmatory cache {section} configuration does not match the requested protocol")
-    cached_pit = cached.get("pit")
-    if not isinstance(cached_pit, dict) or any(
-        cached_pit.get(key) != expected["pit"][key] for key in ("mode", "monotone_repair", "eps")
-    ):
-        raise ValueError("confirmatory cache PIT construction does not match the requested protocol")
-
-
-def _complete_origin_indices(library: PITLibrary, indices: np.ndarray, limit: int) -> np.ndarray:
-    scores = np.asarray(library.dataset["pit_z"].isel(origin=indices).values)
-    has_complete_vector = np.isfinite(scores).all(axis=1).any(axis=1)
-    return indices[has_complete_vector][:limit]
-
-
 def _locations(library: PITLibrary) -> torch.Tensor | None:
     dataset = library.dataset
     if "latitude" not in dataset or "longitude" not in dataset:
@@ -158,9 +110,11 @@ def _locations(library: PITLibrary) -> torch.Tensor | None:
     return torch.tensor(np.stack((dataset["latitude"].values, dataset["longitude"].values), axis=-1))
 
 
-def _feature_builder(config: SimcastConfig, library: PITLibrary) -> FeatureBuilder:
+def _feature_builder(config: ResolvedExperimentConfig, library: PITLibrary) -> FeatureBuilder:
     patch_size = int(library.dataset.attrs["output_patch_size"])
     settings = config.features
+    if settings is None:
+        raise TypeError("conditional dependence requires feature parameters")
     if settings.use_entity_id_embedding:
         raise NotImplementedError(
             "entity-ID embeddings are an ablation and are intentionally disabled in this proof of concept"
@@ -178,7 +132,9 @@ def _feature_builder(config: SimcastConfig, library: PITLibrary) -> FeatureBuild
     )
 
 
-def _dependence_scores(library: PITLibrary, config: SimcastConfig) -> tuple[np.ndarray, np.ndarray | None]:
+def _dependence_scores(
+    library: PITLibrary, config: ResolvedExperimentConfig
+) -> tuple[np.ndarray, np.ndarray | None]:
     dataset = library.dataset
     scores, mapping = dependence_pit_scores(
         torch.tensor(dataset["pit_u"].values, dtype=torch.float32),
@@ -205,7 +161,7 @@ def _arrays(
 
 
 def _train_conditional(
-    config: SimcastConfig,
+    config: ResolvedExperimentConfig,
     library: PITLibrary,
     run_dir: Path,
     entity_ids: list[str],
@@ -214,11 +170,6 @@ def _train_conditional(
 ) -> None:
     train_indices = _split_indices(library, "train")
     validation_indices = _split_indices(library, "validation")
-    if method == "conditional_kernel":
-        smoke = config.dependence.conditional_kernel
-        if smoke.smoke_only:
-            train_indices = _complete_origin_indices(library, train_indices, smoke.smoke_max_origins)
-            validation_indices = _complete_origin_indices(library, validation_indices, smoke.smoke_max_origins)
     if not train_indices.size or not validation_indices.size:
         raise ValueError("conditional training requires non-empty chronological train and validation partitions")
     train_embeddings, train_predictions, train_z = _arrays(library, train_indices, dependence_z)
@@ -226,6 +177,10 @@ def _train_conditional(
     levels = torch.tensor(library.dataset["quantile"].values, dtype=torch.float32)
     locations = _locations(library)
     builder = _feature_builder(config, library)
+    features = config.features
+    training = config.training
+    if features is None or training is None:
+        raise TypeError("conditional dependence requires feature and optimization parameters")
     train_features = builder.fit_transform(train_embeddings, train_predictions, levels, locations)
     validation_features = builder.transform(validation_embeddings, validation_predictions, levels, locations)
     if config.protocol.full_group_only:
@@ -233,13 +188,15 @@ def _train_conditional(
         if train_features.shape[1] != expected_entities or validation_features.shape[1] != expected_entities:
             raise ValueError(f"full-group protocol requires all {expected_entities} entities in every feature case")
     if method == "conditional_low_rank":
-        m2_config = config.dependence.conditional_low_rank
+        m2_config = config.dependence.model
+        if not isinstance(m2_config, ConditionalLowRankConfig):
+            raise TypeError("conditional_low_rank runtime model parameters are invalid")
         conditional_model = ConditionalLowRankGaussianCopula(
             input_dim=train_features.shape[-1],
             latent_rank=m2_config.latent_rank,
             hidden_dims=m2_config.hidden_dims,
             dropout=m2_config.dropout,
-            layer_norm=config.features.layer_normalize_embedding,
+            layer_norm=features.layer_normalize_embedding,
             sigma_floor=m2_config.sigma_floor,
             jitter=m2_config.jitter,
         )
@@ -247,7 +204,9 @@ def _train_conditional(
         model_kwargs = conditional_model.model_kwargs
         model_jitter = m2_config.jitter
     elif method == "set_aware_low_rank":
-        m3_config = config.dependence.set_aware_low_rank
+        m3_config = config.dependence.model
+        if not isinstance(m3_config, SetAwareLowRankConfig):
+            raise TypeError("set_aware_low_rank runtime model parameters are invalid")
         set_model = SetAwareLowRankGaussianCopula(
             input_dim=train_features.shape[-1],
             model_dim=m3_config.model_dim,
@@ -262,7 +221,9 @@ def _train_conditional(
         model_kwargs = set_model.model_kwargs
         model_jitter = m3_config.jitter
     elif method == "conditional_kernel":
-        kernel_config = config.dependence.conditional_kernel
+        kernel_config = config.dependence.model
+        if not isinstance(kernel_config, ConditionalKernelConfig):
+            raise TypeError("conditional_kernel runtime model parameters are invalid")
         kernel_model = ConditionalKernelGaussianCopula(
             input_dim=train_features.shape[-1],
             hidden_dims=kernel_config.hidden_dims,
@@ -279,24 +240,18 @@ def _train_conditional(
         raise ValueError(f"unsupported conditional method: {method}")
     device = config.chronos.device if torch.cuda.is_available() else "cpu"
     trainer = ConditionalTrainer(
-        batch_size=config.training.batch_size,
-        epochs=config.training.epochs,
-        learning_rate=config.training.learning_rate,
-        weight_decay=config.training.weight_decay,
-        gradient_clip_norm=config.training.gradient_clip_norm,
-        patience=config.training.patience,
+        batch_size=training.batch_size,
+        epochs=training.epochs,
+        learning_rate=training.learning_rate,
+        weight_decay=training.weight_decay,
+        gradient_clip_norm=training.gradient_clip_norm,
+        patience=training.patience,
         jitter=model_jitter,
         seed=config.seed,
         device=device,
         expected_num_entities=len(entity_ids) if config.protocol.full_group_only else None,
     )
-    subset = config.subset_training
-    collator = DependenceCollator(
-        subset_enabled=subset.enabled,
-        min_entities=subset.min_entities,
-        full_group_probability=subset.full_group_probability,
-        generator=torch.Generator().manual_seed(config.seed),
-    )
+    collator = DependenceCollator()
 
     def checkpoint_payload() -> dict[str, object]:
         return {
@@ -330,7 +285,7 @@ def _train_conditional(
 
 
 def train_from_config(
-    config: SimcastConfig,
+    config: ResolvedExperimentConfig,
     *,
     cache_dir: str | Path | None = None,
     output_dir: str | Path | None = None,
@@ -340,7 +295,6 @@ def train_from_config(
     _seed_everything(config.seed, config.runtime.deterministic)
     cache_path = _cache_path(config, cache_dir)
     library = load_pit_library(cache_path, access="training")
-    _validate_confirmatory_cache(library, config)
     entity_ids = [str(value) for value in library.dataset["entity_id"].values]
     if config.protocol.ordered_entity_ids and entity_ids != config.protocol.ordered_entity_ids:
         raise ValueError("configured ordered entity IDs do not match the complete cached group")
@@ -357,7 +311,9 @@ def train_from_config(
     if method == "independent":
         IndependentCopula().fit(train_z, entity_ids).save(run_dir / "model.npz")
     elif method == "static_gaussian":
-        settings = config.dependence.static_gaussian
+        settings = config.dependence.model
+        if not isinstance(settings, StaticGaussianConfig):
+            raise TypeError("static_gaussian runtime model parameters are invalid")
         model = StaticGaussianCopula(
             shrinkage=settings.shrinkage,
             share_across_leads=settings.share_across_leads,
@@ -375,31 +331,3 @@ def train_from_config(
     metadata["model_sha256"] = sha256_file(model_path)
     metadata_path.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
     return run_dir
-
-
-def train_dependence(
-    config_path: str | Path,
-    *,
-    overrides: Sequence[str] = (),
-    cache_dir: str | Path | None = None,
-    output_dir: str | Path | None = None,
-) -> Path:
-    return train_from_config(load_config(config_path, overrides=overrides), cache_dir=cache_dir, output_dir=output_dir)
-
-
-def main(
-    config: Annotated[Path, typer.Option("--config", exists=True, dir_okay=False, readable=True)],
-    override: Annotated[
-        list[str] | None,
-        typer.Option("--set", help="Configuration override dotted.path=value"),
-    ] = None,
-    cache_dir: Annotated[Path | None, typer.Option("--cache-dir", file_okay=False)] = None,
-    output_dir: Annotated[Path | None, typer.Option("--output-dir", file_okay=False)] = None,
-) -> None:
-    resolved = load_config(config, overrides=override or ())
-    logging.basicConfig(level=getattr(logging, resolved.runtime.log_level))
-    typer.echo(train_from_config(resolved, cache_dir=cache_dir, output_dir=output_dir))
-
-
-if __name__ == "__main__":
-    typer.run(main)

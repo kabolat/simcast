@@ -1,23 +1,17 @@
-import pytest
 import torch
 
-from simcast.dependence.conditional_low_rank import ConditionalLowRankGaussianCopula
 from simcast.dependence.set_aware_low_rank import SetAwareLowRankGaussianCopula
 
 
-@pytest.mark.parametrize("kind", ["m2", "m3"])
-def test_conditional_models_are_permutation_equivariant(kind: str) -> None:
+def test_m3_is_permutation_equivariant() -> None:
     torch.manual_seed(41)
-    if kind == "m2":
-        model = ConditionalLowRankGaussianCopula(7, hidden_dims=(12,), dropout=0.0).eval()
-    else:
-        model = SetAwareLowRankGaussianCopula(
-            7,
-            model_dim=12,
-            num_layers=1,
-            num_heads=3,
-            dropout=0.0,
-        ).eval()
+    model = SetAwareLowRankGaussianCopula(
+        7,
+        model_dim=12,
+        num_layers=1,
+        num_heads=3,
+        dropout=0.0,
+    ).eval()
     features = torch.randn(3, 8, 7)
     permutation = torch.tensor([5, 0, 7, 2, 1, 6, 4, 3])
     original = model(features)

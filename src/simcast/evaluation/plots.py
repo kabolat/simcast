@@ -209,15 +209,6 @@ def plot_interval_coverage(
     return _finish(figure, path)
 
 
-def plot_variable_cardinality(table: Mapping[str, tuple[Sequence[int], Sequence[float]]], path: str | Path) -> Path:
-    figure, axis = plt.subplots(figsize=(7, 4))
-    for method, (cardinalities, scores) in table.items():
-        axis.plot(cardinalities, scores, marker="o", label=method)
-    axis.set(xlabel="Number of entities", ylabel="Mean pinball loss", title="Variable-cardinality diagnostic")
-    axis.legend()
-    return _finish(figure, path)
-
-
 def plot_score_by_lead(table: Mapping[str, Sequence[float]], path: str | Path) -> Path:
     figure, axis = plt.subplots(figsize=(9, 4))
     for method, scores in table.items():

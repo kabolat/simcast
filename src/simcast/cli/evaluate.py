@@ -9,16 +9,15 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated, Any, Protocol, cast
+from typing import Protocol, cast
 
 import numpy as np
 import pandas as pd
 import torch
-import typer
 import yaml  # type: ignore[import-untyped]
 
-from simcast.cli.train_dependence import _cache_path, _dependence_scores, _git_commit, _validate_confirmatory_cache
-from simcast.config import SimcastConfig, load_config
+from simcast.cli.train_dependence import _cache_path, _dependence_scores
+from simcast.config import ResolvedExperimentConfig
 from simcast.dependence import IndependentCopula, StaticGaussianCopula
 from simcast.evaluation.aggregate import AggregateEvaluation, evaluate_aggregate_ensemble
 from simcast.evaluation.plots import (
@@ -36,16 +35,21 @@ from simcast.evaluation.plots import (
     plot_pit_histogram,
     plot_quantile_coverage,
     plot_score_by_lead,
-    plot_variable_cardinality,
 )
 from simcast.fm.cache import PITLibrary, load_pit_library
-from simcast.reproducibility import config_sha256, sha256_file
+from simcast.reproducibility import config_sha256, git_commit, sha256_file, utc_run_id
 from simcast.sampling.gaussian_copula import generate_scenarios
 from simcast.training.checkpoint import LoadedConditionalModel, load_conditional_checkpoint
 from simcast.training.losses import gaussian_copula_pseudo_nll
 
 LOGGER = logging.getLogger(__name__)
-CORE_METHODS = ("independent", "static_gaussian", "conditional_low_rank", "set_aware_low_rank")
+CORE_METHODS = (
+    "independent",
+    "static_gaussian",
+    "conditional_low_rank",
+    "set_aware_low_rank",
+    "conditional_kernel",
+)
 
 
 class _FactorModel(Protocol):
@@ -78,7 +82,7 @@ def _latest_run(root: Path, method: str) -> Path:
 
 
 def _resolve_runs(
-    config: SimcastConfig,
+    config: ResolvedExperimentConfig,
     methods: Sequence[str],
     supplied: Mapping[str, str | Path] | None,
 ) -> dict[str, Path]:
@@ -90,9 +94,9 @@ def _resolve_runs(
     return provided
 
 
-def _evaluation_directory(config: SimcastConfig, override: str | Path | None) -> Path:
+def _evaluation_directory(config: ResolvedExperimentConfig, override: str | Path | None) -> Path:
     if override is None:
-        stamp = datetime.now(UTC).strftime("%Y-%m-%d_%H%M%S")
+        stamp = utc_run_id()
         path = (Path(config.output.root_dir).expanduser() / f"{stamp}_evaluation").resolve()
     else:
         path = Path(override).expanduser().resolve()
@@ -130,7 +134,7 @@ def _prepare_method(
     name: str,
     run_paths: Mapping[str, Path],
     library: PITLibrary,
-    config: SimcastConfig,
+    config: ResolvedExperimentConfig,
     entity_indices: Sequence[int],
 ) -> PreparedMethod:
     _, _, predictions, embeddings = _test_arrays(library, entity_indices)
@@ -213,7 +217,7 @@ def _sample_and_evaluate(
     predictions: torch.Tensor,
     levels: torch.Tensor,
     valid: torch.Tensor,
-    config: SimcastConfig,
+    config: ResolvedExperimentConfig,
     *,
     dependence_z: torch.Tensor | None = None,
     num_samples: int | None = None,
@@ -337,7 +341,7 @@ def _method_seed(name: str, run_paths: Mapping[str, Path]) -> int | None:
 
 
 def _case_tables(
-    config: SimcastConfig,
+    config: ResolvedExperimentConfig,
     library: PITLibrary,
     results: Mapping[str, MethodEvaluation],
     run_paths: Mapping[str, Path],
@@ -443,7 +447,7 @@ def _plots(
     truth: torch.Tensor,
     predictions: torch.Tensor,
     valid: torch.Tensor,
-    config: SimcastConfig,
+    config: ResolvedExperimentConfig,
 ) -> None:
     figures = output / "figures"
     ids = _entity_ids(library)
@@ -528,9 +532,6 @@ def _plots(
 def _scientific_summary(
     metrics: Mapping[str, Mapping[str, float | int]],
     mean_abs_pit_correlation: float,
-    *,
-    full_group_only: bool,
-    variable_k_path: Path | None,
 ) -> dict[str, str]:
     def delta(left: str, right: str) -> str:
         if left not in metrics or right not in metrics:
@@ -561,20 +562,14 @@ def _scientific_summary(
         "question_4": delta("static_gaussian", "conditional_low_rank"),
         "question_5": delta("conditional_low_rank", "set_aware_low_rank"),
         "question_6": (
-            "Cross-group heterogeneity is assessed in the consolidated full-group summary; "
+            "Cross-group heterogeneity is assessed in the consolidated summary; "
             "this evaluation uses the complete static group only."
-            if full_group_only
-            else (
-                f"Variable-cardinality aggregate diagnostics are stored in {variable_k_path.name}."
-                if variable_k_path is not None
-                else "Variable-cardinality diagnostics were not requested."
-            )
         ),
     }
 
 
 def evaluate_from_config(
-    config: SimcastConfig,
+    config: ResolvedExperimentConfig,
     *,
     methods: Sequence[str] = CORE_METHODS,
     method_runs: Mapping[str, str | Path] | None = None,
@@ -583,14 +578,13 @@ def evaluate_from_config(
 ) -> Path:
     """Open sealed test truth once and perform final evaluation."""
 
-    unknown = set(methods) - set((*CORE_METHODS, "conditional_kernel"))
+    unknown = set(methods) - set(CORE_METHODS)
     if unknown:
         raise ValueError(f"unknown methods: {sorted(unknown)}")
     if not methods or len(methods) != len(set(methods)):
         raise ValueError("methods must be non-empty and unique")
     cache_path = _cache_path(config, cache_dir)
     library = load_pit_library(cache_path, access="evaluation")
-    _validate_confirmatory_cache(library, config)
     runs = _resolve_runs(config, methods, method_runs)
     output = _evaluation_directory(config, output_dir)
     all_entities = list(range(library.dataset.sizes["entity"]))
@@ -629,69 +623,9 @@ def evaluate_from_config(
     if frequency_mapping is not None:
         np.savez_compressed(output / "pit_training_frequency_map.npz", midpoints=frequency_mapping)
 
-    variable_k_path: Path | None = None
-    if not config.protocol.full_group_only:
-        coverage_key = f"coverage_{config.evaluation.interval_levels[-1]:g}"
-        variable_rows: list[dict[str, Any]] = []
-        for cardinality in config.evaluation.variable_k_sizes:
-            if cardinality > len(all_entities):
-                continue
-            if cardinality == len(all_entities):
-                for name, result in results.items():
-                    variable_rows.append(
-                        {
-                            "method": name,
-                            "entities": cardinality,
-                            "mean_pinball": result.aggregate.overall["mean_pinball"],
-                            coverage_key: result.aggregate.overall[coverage_key],
-                        }
-                    )
-                continue
-            subset = all_entities[:cardinality]
-            _, subset_truth, subset_predictions, _ = _test_arrays(library, subset)
-            subset_valid = _valid_pairs(subset_truth, subset_predictions)
-            for name in methods:
-                subset_prepared = _prepare_method(name, runs, library, config, subset)
-                subset_result = _sample_and_evaluate(
-                    subset_prepared,
-                    subset_truth,
-                    subset_predictions,
-                    levels,
-                    subset_valid,
-                    config,
-                    num_samples=min(1024, config.sampling.num_samples),
-                    compute_joint=False,
-                )
-                variable_rows.append(
-                    {
-                        "method": name,
-                        "entities": cardinality,
-                        "mean_pinball": subset_result.aggregate.overall["mean_pinball"],
-                        coverage_key: subset_result.aggregate.overall[coverage_key],
-                    }
-                )
-        variable_k_path = output / "variable_k.csv"
-        variable_table = pd.DataFrame(variable_rows, columns=["method", "entities", "mean_pinball", coverage_key])
-        variable_table.to_csv(variable_k_path, index=False)
-        if not variable_table.empty:
-            plot_variable_cardinality(
-                {
-                    str(name): (
-                        subset["entities"].astype(int).tolist(),
-                        subset["mean_pinball"].astype(float).tolist(),
-                    )
-                    for name, subset in variable_table.groupby("method", sort=False)
-                },
-                output / "figures" / "variable_cardinality.png",
-            )
     _plots(output, library, prepared, results, truth, predictions, valid, config)
     _, off_diagonal = _training_correlations(library)
-    summary = _scientific_summary(
-        metrics,
-        float(np.mean(np.abs(off_diagonal))),
-        full_group_only=config.protocol.full_group_only,
-        variable_k_path=variable_k_path,
-    )
+    summary = _scientific_summary(metrics, float(np.mean(np.abs(off_diagonal))))
     (output / "scientific_summary.json").write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
@@ -710,8 +644,8 @@ def evaluate_from_config(
         "experimental_protocol": {
             "name": config.protocol.name,
             "full_group_only": config.protocol.full_group_only,
-            "subset_training": config.subset_training.enabled,
-            "entity_selection_augmentation_enabled": bool(config.evaluation.variable_k_sizes),
+            "subset_training": False,
+            "entity_selection_augmentation_enabled": False,
         },
         "joint_score_estimator": "empirical all-pairs estimator on the selected joint ensemble",
         "joint_score_num_samples": config.evaluation.joint_score_num_samples,
@@ -723,7 +657,6 @@ def evaluate_from_config(
         "chronos_source_revision": config.chronos.source_revision,
         "chronos_model_revision": config.chronos.model_revision,
         "dependence_pit_transform": config.pit.dependence_transform,
-        "confirmatory": config.confirmatory.model_dump(mode="json"),
         "model_sha256": {
             name: sha256_file(
                 path
@@ -735,7 +668,7 @@ def evaluate_from_config(
             )
             for name, path in runs.items()
         },
-        "git_commit": _git_commit(),
+        "git_commit": git_commit(),
         "created_at": datetime.now(UTC).isoformat(),
     }
     (output / "evaluation_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
@@ -744,37 +677,3 @@ def evaluate_from_config(
             yaml.safe_dump(config.model_dump(mode="json"), sort_keys=False), encoding="utf-8"
         )
     return output
-
-
-def _parse_run(values: Sequence[str]) -> dict[str, Path]:
-    result: dict[str, Path] = {}
-    for value in values:
-        method, separator, path = value.partition("=")
-        if not separator or not method or not path:
-            raise ValueError("--method-run values must use method=/path/to/run")
-        result[method] = Path(path)
-    return result
-
-
-def main(
-    config: Annotated[Path, typer.Option("--config", exists=True, dir_okay=False, readable=True)],
-    methods: Annotated[list[str] | None, typer.Option("--methods")] = None,
-    method_run: Annotated[list[str] | None, typer.Option("--method-run")] = None,
-    cache_dir: Annotated[Path | None, typer.Option("--cache-dir", file_okay=False)] = None,
-    output_dir: Annotated[Path | None, typer.Option("--output-dir", file_okay=False)] = None,
-    override: Annotated[list[str] | None, typer.Option("--set")] = None,
-) -> None:
-    resolved = load_config(config, overrides=override or ())
-    logging.basicConfig(level=getattr(logging, resolved.runtime.log_level))
-    path = evaluate_from_config(
-        resolved,
-        methods=methods or CORE_METHODS,
-        method_runs=_parse_run(method_run or ()),
-        cache_dir=cache_dir,
-        output_dir=output_dir,
-    )
-    typer.echo(path)
-
-
-if __name__ == "__main__":
-    typer.run(main)

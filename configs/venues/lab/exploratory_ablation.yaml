@@ -1,0 +1,21 @@
+kind: composite
+name: exploratory_ablation
+venue: lab
+bases:
+  - {id: transformer, config: ../../bases/liander2024/transformer.yaml}
+experiments:
+  - {id: m0, method: ../../methods/m0_independent.yaml}
+  - id: m2_no_location
+    method: ../../methods/m2_conditional_low_rank.yaml
+    overrides: {features: {use_location: false}, optimization: {epochs: 2, patience: 1}}
+  - id: m3_no_location
+    method: ../../methods/m3_set_aware_low_rank.yaml
+    overrides: {features: {use_location: false}, optimization: {epochs: 2, patience: 1}}
+  - id: m4_no_location
+    method: ../../methods/m4_conditional_kernel.yaml
+    overrides: {features: {use_location: false}, optimization: {epochs: 2, patience: 1}}
+analysis:
+  reference: m0
+  bootstrap_replicates: 200
+  primary_block_length: 7
+  sensitivity_block_lengths: [3]
