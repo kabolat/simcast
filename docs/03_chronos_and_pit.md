@@ -1,246 +1,403 @@
-# Frozen Chronos forecasts, fixed marginal grids, features, and PIT construction
+# Frozen marginal forecasts, quantile validity, and finite PIT observations
 
-## Why Chronos is frozen
+This chapter explains how a frozen Chronos-2 forecast becomes the marginal
+component of the joint probabilistic model. It proceeds from predictive random
+variables to finite quantiles, quantile validity, historical rank observations,
+and finally the covariates used by conditional dependence models.
 
-The experiment is designed to isolate the contribution of spatial dependence.
-Chronos-2 is therefore a frozen marginal forecaster:
-
-- source commit: `8589d1988e9676817548e9626738ff06b6ca6370`;
-- model revision: `29ec3766d36d6f73f0696f85560a422f50e8498c`;
-- model ID: `amazon/chronos-2`;
-- default inference dtype: `bfloat16`;
-- all model parameters have `requires_grad=False`;
-- the model remains in evaluation mode and inference runs under `no_grad`;
-- each physical entity remains a separate Chronos group (`cross_learning=false`).
-
-The wrapper uses the official `Chronos2Dataset` preprocessing, instance
-scaling, patching, future-covariate alignment, and `target_idx_ranges`. Each
-physical entity must have exactly one target row. It never replaces group IDs
-with a common zero, which would make Chronos cross-learn between entities and
-change the experimental intervention.
-
-Only a single direct model forward pass is allowed. A request exceeding
-`max_output_patches * output_patch_size` raises an error because autoregressive
-unrolling would not yield one coherent set of output-patch representations.
-
-## The minimal Chronos patch
-
-The upstream model already computes a forecast-side representation immediately
-before the quantile head but does not return it. `scripts/setup_chronos.sh`
-checks out the exact source commit, applies
-`patches/chronos2_forecast_embeds.patch`, and installs that source editable with
-`uv`. The patch adds a `forecast_embeds` field to `Chronos2Output` and exposes
-the existing tensor. It does not alter attention, scaling, loss, encoder
-states, quantile values, or inference logic.
-
-The setup is idempotent: it detects an already-applied patch before attempting
-to apply it again.
-
-## Returned marginal and representation tensors
-
-For every forecast instance $i$ and group $g$, the wrapper returns:
+The central separation is
 
 $$
-\widehat y^{(i)}\in\mathbb R^{K_g\times H\times Q},
-\qquad
-e^{(i)}\in\mathbb R^{K_g\times P\times D}.
+\underbrace{F_{k,\tau}^{(i)}}_{\text{entity marginal distribution}}
+\quad+\quad
+\underbrace{C_{g,\tau}^{(i)}}_{\text{cross-entity copula}}
+\quad\Longrightarrow\quad
+\underbrace{P(\{Y_{k,\tau}^{(i)}\}_{k\in\mathcal E_g}\mid\mathcal I^{(i)})}_{\text{joint forecast}}.
 $$
 
-In the observed model configuration, $Q=21$, output patch size $S=16$,
-$H=96$, $P=\lceil H/S\rceil=6$, and hidden width $D=768$. Quantile predictions
-are retained in float32. Embeddings are created in float32, stored in float16
-to reduce cache size, then converted back to float32 for adapter training.
+Chronos-2 determines the finite representation of $F_{k,\tau}^{(i)}$. Methods
+M0--M4 may change $C_{g,\tau}^{(i)}$, but they may not change any marginal
+quantile value.
 
-The patch index for one-based lead $\tau$ is
+## 1. Frozen marginal forecasting
 
-$$
-p(\tau)=\left\lfloor\frac{\tau-1}{S}\right\rfloor.
-$$
+### Theory
 
-All 16 leads in an output patch reuse the same stored representation. The
-within-patch position feature described below restores lead position within
-that block.
-
-## Conditional-model feature vector
-
-The feature vector is evidence available at $t^{(i)}$, not a new target model.
-It parameterizes a candidate conditional copula $C_{g,\tau}^{(i)}$ while
-leaving $F_{k,\tau}^{(i)}$ unchanged. Thus an M2/M3 improvement is evidence
-that frozen forecast context is associated with residual spatial rank
-dependence; it is not evidence that a dependence model improved an entity
-marginal.
-
-No additional temporal model is learned. For each $(i,k,\tau)$, the
-deterministic vector $v_{k,\tau}^{(i)}$ concatenates enabled components in this
-exact order:
-
-1. raw forecast-patch embedding $e_{k,p(\tau)}^{(i)}$;
-2. normalized native-quantile shape;
-3. marginal median;
-4. log absolute 80% spread;
-5. normalized within-patch position;
-6. latitude and longitude.
-
-Let $m=\hat y_{k,\tau,0.5}^{(i)}$ and
-$s=\hat y_{k,\tau,0.9}^{(i)}-\hat y_{k,\tau,0.1}^{(i)}$. Quantile
-shape component $j$ is
+For forecast instance $i$, entity $k$, and one-based lead $\tau$, let
 
 $$
-r_j=\frac{\hat y_{k,\tau,q_j}^{(i)}-m}{|s|+\epsilon_s},
-\qquad \epsilon_s=10^{-6}.
+F_{k,\tau}^{(i)}(y)
+=P\!\left(Y_{k,\tau}^{(i)}\le y\mid\mathcal I^{(i)}\right).
 $$
 
-The scalar distribution components are $m$ and
-$\log(|s|+\epsilon_s)$. The within-patch component is
+$Y_{k,\tau}^{(i)}$ is the future random variable and $\mathcal I^{(i)}$ is the
+information available at forecast origin $t^{(i)}$. Chronos-2 is used only to
+approximate this marginal distribution. Its weights are frozen, it is placed in
+evaluation mode, and no dependence-model loss is propagated into it.
+
+The forecast for one physical entity is conditioned on that entity's own
+history and admissible covariates. Distinct physical entities retain distinct
+Chronos group identifiers. Consequently, the marginal forecaster does not
+perform cross-entity learning; spatial interaction is introduced only by the
+copula studied later.
+
+### Example
+
+Suppose the group contains three transformers. At origin
+$t^{(i)}=\text{2024-06-01 23:45 UTC}$, Chronos receives seven days of transformer 1's
+past load and the covariates available for its next day. It returns transformer
+1's marginal quantiles. Transformers 2 and 3 are processed as distinct series.
+M3 may later contextualize their *dependence features*, but it cannot revise
+any of these three marginal forecasts.
+
+### Configuration and implementation
+
+| Scientific choice | Configuration | Implementation |
+|---|---|---|
+| frozen model identity | `chronos.model_id`, `chronos.model_revision` | `Chronos2FeatureExtractor` |
+| source implementation | `chronos.source_revision` | `src/simcast/fm/chronos2_features.py` |
+| numerical precision | `chronos.dtype`, `chronos.device` | `Chronos2FeatureExtractor.predict` |
+| physical entities remain separate | `chronos.cross_learning: false` | group-ID construction in `Chronos2FeatureExtractor` |
+| lookback and horizon | `forecast.lookback_steps`, `forecast.horizon_steps` | cache construction in `build_cache_from_config` |
+
+`cross_learning: true` would change the scientific intervention and is therefore
+not part of the present study.
+
+## 2. Finite native quantile representation
+
+### Theory
+
+Chronos does not return an analytic CDF. It returns $Q$ ordered probability
+levels $0<q_1<\cdots<q_Q<1$ and corresponding predicted values
 
 $$
-w_\tau=\frac{(\tau-1)\bmod S}{\max(S-1,1)}.
+\mathcal Q_{k,\tau}^{(i)}
+=\left\{\left(\hat y_{k,\tau,q_j}^{(i)},q_j\right)\right\}_{j=1}^{Q}.
 $$
 
-With the native $Q=21$ grid and all defaults enabled, the feature dimension is
-$D+Q+1+1+1+2=794$.
+Here $q_j$ is a probability, whereas $\hat y_{k,\tau,q_j}^{(i)}$ is a value in
+the physical unit of the target. For example,
+$\hat y_{k,\tau,0.9}^{(i)}=50$ means that the forecast assigns 90% probability
+to an outcome no greater than 50, subject to the finite-grid approximation.
 
-All non-embedding components are concatenated into one scalar block. For each
-scalar feature $f$, mean $\mu_f$ and population standard deviation $s_f$ are
-estimated over **all origin, entity, and lead positions in the training
-partition only**. The transformed value is $(x_f-\mu_f)/s_f$. If the standard
-deviation is at most $10^{-6}$, scale is set to one. These statistics are
-frozen for validation and test and stored in every conditional checkpoint.
-
-`layer_normalize_embedding` is slightly historical naming: it controls the
-input `LayerNorm` of M2, while M3 and M4 always begin with layer normalization.
-No trainable entity-ID embedding is supported; enabling the configuration flag
-raises `NotImplementedError`.
-
-## Quantile crossings
-
-A quantile row crosses when
+The current model supplies $Q=21$ levels. With horizon $H=96$ and output patch
+size $S=16$, it also returns $P=H/S=6$ forecast-side representations
+$e_{k,p}^{(i)}\in\mathbb R^{768}$. Leads 1--16 share representation $p=0$,
+leads 17--32 share $p=1$, and so forth, with
 
 $$
-\exists j:\hat y_{k,\tau,q_j}^{(i)}>\hat y_{k,\tau,q_{j+1}}^{(i)}.
+p(\tau)=\left\lfloor\frac{\tau-1}{16}\right\rfloor.
 $$
 
-Crossing frequency is computed on the **raw** Chronos output overall, by
-entity, and by lead before any repair. With `monotone_repair: none`, a crossing
-invalidates that entity row and therefore the complete spatial vector.
+### Example
 
-With `monotone_repair: isotonic`, each finite row is replaced by the solution
+For $H=96$, lead $\tau=35$ belongs to patch
+$p(35)=\lfloor34/16\rfloor=2$. The quantile values remain lead-specific, but
+the 768-dimensional Chronos representation is shared with leads 33--48. A
+within-patch position covariate later distinguishes lead 35 from its neighbours.
+
+### Configuration and implementation
+
+The number and locations of native quantiles are properties of the pinned
+Chronos model, not tunable Simcast probabilities. `forecast.horizon_steps`
+controls $H$. `Chronos2FeatureExtractor.predict` returns
+`quantile_predictions` and `forecast_embeddings`; `build_cache_from_config`
+stores them as `quantile_prediction` and `forecast_embedding`.
+
+## 3. Quantile crossing and monotone repair
+
+### Theory
+
+A valid quantile function is nondecreasing in probability. A crossing occurs
+when a lower probability receives a larger predicted value than a higher
+probability:
 
 $$
-\widetilde{\boldsymbol q}
+\exists j\in\{1,\ldots,Q-1\}:\quad
+\hat y_{k,\tau,q_j}^{(i)}>\hat y_{k,\tau,q_{j+1}}^{(i)}.
+$$
+
+Crossing makes the row inconsistent with any CDF. Two scientifically distinct
+responses are supported:
+
+1. `none`: declare the row invalid;
+2. `isotonic`: replace it by the nearest nondecreasing sequence in squared
+   Euclidean distance,
+
+$$
+\widetilde{\boldsymbol y}
 =\arg\min_{x_1\le\cdots\le x_Q}
-\sum_{j=1}^{Q}\left(x_j-\hat y_{k,\tau,q_j}^{(i)}\right)^2.
+\sum_{j=1}^{Q}(x_j-\hat y_j)^2.
 $$
 
-The repaired values are used both for PIT construction and scenario
-projection, and they are persisted in the cache. Raw crossing diagnostics are
-still retained. For most groups, the FM-derived grid is the raw Chronos grid;
-for solar it is this deterministic repair. In both cases the resulting grid is
-fixed across M0--M4, and no dependence model can modify it.
+This repair changes the marginal grid before dependence modelling. It is not a
+copula operation. Once repaired, the same values are held fixed for every
+dependence method.
 
-Solar is the only supplied configuration that enables repair. Its raw crossing
-rate is 25.290%, mainly at zero-output hours. Without repair, 15,477 of 33,312
-origin-lead vectors are invalid and eight leads have no complete training
-vectors, making lead-wise M1 inestimable. With repair, only three test cases are
-dropped for missing truth.
+### Numerical example
 
-## Discretized PIT
+Consider levels $(0.1,0.5,0.9)$ and predictions $(20,35,32)$. The final two
+values cross because $35>32$. Under `none`, this entity row is invalid. Under
+isotonic least squares, the conflicting pair is pooled, yielding
+$(20,33.5,33.5)$. The repaired row is nondecreasing, although two quantiles are
+tied. Ties are valid and are treated deterministically.
 
-Chronos supplies values only at increasing native probability levels
-$0<q_1<\cdots<q_Q<1$. Simcast intentionally does not invent a continuous CDF.
-Define probability edges
+The solar data provide the important empirical example: night-time forecasts
+contain many raw crossings. The configured solar analysis applies isotonic
+repair before both historical PIT construction and future scenario projection.
 
-$$
-a=(0,q_1,\ldots,q_Q,1)
-$$
+### Configuration and implementation
 
-and cell locations
+| Behaviour | Configuration | Function |
+|---|---|---|
+| reject crossed rows | `pit.monotone_repair: none` | `discretized_pit` |
+| least-squares repair | `pit.monotone_repair: isotonic` | `repair_quantiles_isotonic` |
+| crossing summaries | no additional argument | `quantile_crossings`, `crossing_diagnostics` |
 
-$$
-c_j=\frac{a_j+a_{j+1}}2,\qquad j=0,\ldots,Q.
-$$
+All functions are in `src/simcast/fm/pit.py`. Raw crossing diagnostics are
+computed before repair so the intervention remains visible.
 
-For observation $y_{k,\tau}^{(i)}$, let $J$ be the index of the first predicted
-quantile value greater than or equal to the observation; if none exists,
-$J=Q$. Then
+## 4. Why there are $Q+1$ PIT cells
 
-$$
-u_{k,\tau}^{(i)}=c_J,
-\qquad
-z_{k,\tau}^{(i)}=\Phi^{-1}\!\left(
-\min(1-\epsilon,\max(\epsilon,u_{k,\tau}^{(i)}))
-\right),
-\quad\epsilon=10^{-7}.
-$$
+### Theory
 
-Implementation uses left-sided `searchsorted`, so equality with a predicted
-quantile belongs to the lower value interval ending at that quantile. Tied
-isotonic values are handled deterministically by the first equal entry.
+If a complete CDF $F$ were known, the probability integral transform (PIT) of
+an observation $y$ would be $u=F(y)$. Under a continuous calibrated predictive
+distribution, $U$ would be uniform on $(0,1)$. Here only $Q$ quantile values are
+known, so $F(y)$ cannot be evaluated exactly without inventing interpolation.
 
-This is a pseudo-PIT, not a randomized PIT. Even under a perfectly calibrated
-forecast it is supported only on $Q+1$ locations and its Gaussianized scores
-are correspondingly discrete. Gaussian-copula fitting is therefore a
-pseudo-likelihood procedure.
-
-The two maps in the study answer different questions and must not be
-conflated. The historical map $y\mapsto u$ allocates an observation to a finite
-PIT cell so that dependence can be learned from realized outcomes. The forward
-map $U\mapsto\hat y$ allocates a simulated uniform to a finite native-quantile
-value so that scenarios retain the frozen marginal law. Neither is a continuous
-CDF reconstruction.
-
-### Training-frequency PIT sensitivity
-
-The confirmatory primary analysis retains the nominal finite-cell midpoint
-above. A separate sensitivity fits empirical cell probabilities using training
-origins only for every entity and lead. Cell $c$ is mapped to the midpoint of
-its frozen empirical mass,
+The $Q$ predicted quantiles partition the real line into $Q+1$ intervals:
 
 $$
-\tilde u_{k,\tau,c}
-=\sum_{r<c}\hat p_{k,\tau,r}+\tfrac12\hat p_{k,\tau,c},
-\qquad
-\tilde z_{k,\tau,c}=\Phi^{-1}(\tilde u_{k,\tau,c}).
+\begin{aligned}
+I_0&=(-\infty,\hat y_{q_1}],\\
+I_j&=(\hat y_{q_j},\hat y_{q_{j+1}}],\quad j=1,\ldots,Q-1,\\
+I_Q&=(\hat y_{q_Q},\infty).
+\end{aligned}
 $$
 
-Validation and test frequencies never enter this map. The sensitivity changes
-only dependence scores used for fitting and pseudo-NLL diagnosis. It does not
-interpolate the CDF or alter persisted/repaired Chronos quantiles and scenario
-projection.
+The corresponding probability edges are
 
-## Complete spatial vectors
+$$
+a=(0,q_1,\ldots,q_Q,1).
+$$
 
-An $(i,\tau)$ case for group $g$ is valid only if every
-$k\in\mathcal E_g$ has a finite observation, every FM-derived quantile value is
-finite, and every quantile row is noncrossing after the configured repair.
-Formally,
+Because the observation identifies only a cell, not an exact CDF value, the
+method assigns the midpoint of that cell's probability interval:
+
+$$
+c_j=\frac{a_j+a_{j+1}}2.
+$$
+
+The resulting $u=c_j$ is called a **pseudo-PIT**: it is a deterministic,
+finite approximation to $F(y)$ rather than the exact continuous PIT.
+
+### Numerical example
+
+Let
+
+$$
+(q_1,q_2,q_3)=(0.1,0.5,0.9),\qquad
+(\hat y_{q_1},\hat y_{q_2},\hat y_{q_3})=(20,30,50).
+$$
+
+There are four cells, not three:
+
+| observation $y$ | value interval | probability interval | pseudo-PIT |
+|---:|---|---|---:|
+| $y\le20$ | $I_0$ | $(0,0.1)$ | $0.05$ |
+| $20<y\le30$ | $I_1$ | $(0.1,0.5)$ | $0.30$ |
+| $30<y\le50$ | $I_2$ | $(0.5,0.9)$ | $0.70$ |
+| $y>50$ | $I_3$ | $(0.9,1)$ | $0.95$ |
+
+If the realized value is $y=36$, only the statement
+$0.5<F(36)\le0.9$ is justified by the finite grid. Simcast records its midpoint
+$u=0.70$, then Gaussianizes it:
+
+$$
+z=\Phi^{-1}(0.70)\approx0.524.
+$$
+
+This value says the realization lies above the forecast median but below the
+forecast 90% quantile. It does not claim that the exact CDF value is 0.70.
+
+### Configuration and implementation
+
+| Behaviour | Configuration | Function |
+|---|---|---|
+| finite-cell construction | `pit.mode: discretized` | `discretized_pit` |
+| Gaussian clipping | `pit.eps` | `gaussianize_pit` |
+| group-level construction | `pit.monotone_repair`, `pit.eps` | `build_group_pit` |
+
+Equality with a predicted quantile enters the interval ending at that quantile
+because `discretized_pit` uses a left-sided search. No CDF interpolation or tail
+extrapolation is performed.
+
+## 5. Complete spatial pseudo-observations
+
+### Theory
+
+First define entity-level validity:
+
+$$
+V_{k,\tau}^{(i)}=
+\begin{cases}
+1,&\text{if }y_{k,\tau}^{(i)}\text{ and every marginal quantile are finite, and the row is valid after repair},\\
+0,&\text{otherwise.}
+\end{cases}
+$$
+
+The complete-group indicator is
 
 $$
 V_{g,\tau}^{(i)}=\prod_{k\in\mathcal E_g}V_{k,\tau}^{(i)}.
 $$
 
-When $V_{g,\tau}^{(i)}=0$, all $u_{k,\tau}^{(i)}$ and
-$z_{k,\tau}^{(i)}$ for $k\in\mathcal E_g$ are stored as
-`NaN`. This prevents each model from learning a differently composed group.
-
-## Marginal invariance during scenario generation
-
-The PIT cells and scenario projection use related but deliberately different
-partitions of probability space. Scenario uniforms are mapped to the nearest
-native probability level using boundaries
+Thus $V_{g,\tau}^{(i)}=1$ exactly when every one of the $K_g$ entity rows is
+valid. Only then is the spatial score vector defined:
 
 $$
-b_0=0,\quad b_j=\frac{q_j+q_{j+1}}2\ (j=1,\ldots,Q-1),\quad b_Q=1.
+\mathbf z_{g,\tau}^{(i)}
+=\left[z_{k,\tau}^{(i)}\right]_{k\in\mathcal E_g}
+\in\mathbb R^{K_g}.
 $$
 
-If $U\in[b_j,b_{j+1})$ (with the implemented right-boundary convention), the
-scenario value is exactly $\hat y_{k,\tau,q_{j+1}}^{(i)}$ under one-based indexing. There
-is no interpolation. Since every Gaussian-copula component has a uniform
-marginal, each method assigns the same probability mass $b_{j+1}-b_j$ to the
-same fixed FM-derived quantile value. Only the joint indices across entities
-change.
+### Example
 
-Consequences include finite scenario support, ties, no values below the lowest
-or above the highest native quantile, and aggregate quantiles that are Monte
-Carlo order statistics rather than sums of equally labelled marginal
-quantiles.
+For a five-wind-park group, suppose four entities have valid pseudo-PITs and the
+fifth has a missing realization. The validity vector is $(1,1,1,1,0)$, hence
+$V_{g,\tau}^{(i)}=0$. The whole five-dimensional vector is recorded as invalid.
+The analysis never estimates a four-entity correlation for this case.
+
+### Configuration and implementation
+
+`protocol.full_group_only: true`, `protocol.ordered_entity_ids`, and
+`protocol.entity_count` declare the group. `build_group_pit` applies the
+complete-vector rule and returns `valid_origin_lead`. `PITLibrary` stores all
+invalid group scores as missing values so every dependence method receives the
+same scientific sample.
+
+## 6. Training-frequency PIT sensitivity
+
+### Theory
+
+Nominal cell midpoints need not be uniformly occupied in the training period.
+The sensitivity analysis estimates training cell frequencies
+$\hat p_{k,\tau,c}$ and maps each cell to the midpoint of its empirical mass:
+
+$$
+\widetilde u_{k,\tau,c}
+=\sum_{r<c}\hat p_{k,\tau,r}+\frac12\hat p_{k,\tau,c}.
+$$
+
+This map is estimated from training origins only and then frozen. It changes the
+pseudo-scores used to estimate dependence; it does not change marginal
+quantiles or scenario projection.
+
+### Example
+
+Suppose three finite cells have training frequencies $(0.2,0.5,0.3)$. Their
+empirical midpoints are $(0.10,0.45,0.85)$. A validation observation assigned
+to the second nominal cell receives $\widetilde u=0.45$ regardless of validation
+frequencies. This avoids validation/test leakage.
+
+### Configuration and implementation
+
+`pit.dependence_transform: nominal_cells` is primary;
+`pit.dependence_transform: training_frequency` selects the sensitivity.
+`fit_training_frequency_midpoints`, `apply_training_frequency_midpoints`, and
+`dependence_pit_scores` implement the train-only transformation.
+
+## 7. Probability-space projection for scenarios
+
+### Theory
+
+Historical PIT construction maps an observed target $y$ to a probability cell.
+Scenario projection is the opposite-direction operation: it maps a simulated
+uniform probability $U$ to one of the fixed marginal quantile values. These are
+different maps.
+
+For native levels $q_1<\cdots<q_Q$, nearest-level boundaries are
+
+$$
+b_0=0,\qquad b_j=\frac{q_j+q_{j+1}}2,qquad b_Q=1.
+$$
+
+Every $U\in(0,1)$ is assigned to one native level, and the scenario value is
+exactly the corresponding $\hat y_{q_j}$. There is no interpolation between
+values. Because every Gaussian-copula component has a uniform marginal, all
+dependence methods preserve the same finite marginal masses.
+
+### Numerical example
+
+Using levels $(0.1,0.5,0.9)$ gives boundaries $(0,0.3,0.7,1)$. Uniform draws in
+$(0,0.3)$ select $\hat y_{0.1}=20$; draws in $(0.3,0.7)$ select
+$\hat y_{0.5}=30$; draws in $(0.7,1)$ select $\hat y_{0.9}=50$. Therefore a draw
+$U=0.72$ produces 50. Dependence methods change joint combinations such as
+$(20,50,30)$ across entities, not the set of values available to one entity.
+
+### Configuration and implementation
+
+`sampling.empirical_quantile_method: nearest` selects the finite projection.
+`project_uniforms_to_quantiles` in
+`src/simcast/sampling/quantile_projection.py` performs it, and
+`GaussianCopulaSampler` combines it with correlated uniforms. The configured
+isotonic-repaired grid, when applicable, is the grid projected here.
+
+## 8. Features for conditional dependence
+
+### Theory
+
+For conditional methods, define a feature vector measurable at the origin:
+
+$$
+v_{k,\tau}^{(i)}=
+\left[e_{k,p(\tau)}^{(i)},\ r_{k,\tau,1:Q}^{(i)},\ m_{k,\tau}^{(i)},\
+\log(|s_{k,\tau}^{(i)}|+\epsilon_s),\ w_\tau,\ \ell_k\right].
+$$
+
+Here $m$ is the median, $s=\hat y_{0.9}-\hat y_{0.1}$ is the 80% spread,
+$r_j=(\hat y_{q_j}-m)/(|s|+\epsilon_s)$ is normalized quantile shape,
+$w_\tau=((\tau-1)\bmod16)/15$ is within-patch position, and $\ell_k$ is the
+optional latitude/longitude pair. Scalar means and variances are estimated on
+training origins only and frozen for validation/test.
+
+### Example
+
+If $(\hat y_{0.1},\hat y_{0.5},\hat y_{0.9})=(20,30,50)$, then $m=30$ and
+$s=30$. The three shape values are approximately $(-0.333,0,0.667)$. These
+describe asymmetry and spread of the current marginal forecast while the
+Chronos embedding describes its internal forecast context.
+
+### Configuration and implementation
+
+The conditional method's `features.use_*` arguments include or remove each
+component; `features.shape_eps` controls $\epsilon_s`; and
+`features.standardize_scalar_features` controls train-only standardization.
+`FeatureBuilder` in `src/simcast/fm/feature_builder.py` defines the ordering,
+fits training statistics, and applies the frozen transformation.
+
+## 9. Scientific record retained in the cache
+
+The cache is an immutable representation of the marginal experiment. It stores
+the ordered entity group, forecast origins, split labels, observations,
+quantile grids, Chronos representations, pseudo-PITs, Gaussianized scores,
+validity indicators, and raw crossing diagnostics. Its metadata records the
+dataset/model revisions and resolved scientific configuration.
+
+### Example inspection
+
+For a cached tensor shaped `[347, 15, 96, 21]`, the scientific interpretation
+is 347 forecast instances, the same 15 ordered entities at every instance, 96
+one-day leads, and 21 native quantile levels. It is not 347 independent samples:
+the origins are chronological and uncertainty analysis resamples them in
+blocks.
+
+### Configuration and implementation
+
+`base.output.cache_dir` selects the cache root. `base_fingerprint` derives the
+scientific identity from entity order, revisions, forecast and information-set
+rules, split, Chronos, and PIT construction; `locate_compatible_cache` verifies
+that identity against metadata. `build_cache_from_config` creates the record,
+while `save_pit_library` and `load_pit_library` write and read it. A directory
+label alone never establishes compatibility.

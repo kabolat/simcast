@@ -1,12 +1,11 @@
 # Scientific method-notebook companion
 
-The notebooks in `notebooks/05` through `09` are not an alternative
-implementation of Simcast. They are a transparent reading of the same cached
-scientific objects used by the command-line experiments. A selected YAML
-configuration determines the static group $\mathcal E_g$, its ordering, the
-frozen Chronos marginal grid, and the cache identity.
+The notebooks in `notebooks/dependency_methods/` form an independent reading
+path. They examine the same cached scientific objects as registered
+command-line experiments, but each restarts the notation and derivation so no
+earlier notebook is prerequisite.
 
-Each notebook makes the following chain explicit:
+The shared transformation is
 
 $$
 \{(\hat y_{k,\tau,q_j}^{(i)},q_j),y_{k,\tau}^{(i)}\}
@@ -16,37 +15,43 @@ $$
 \longrightarrow \widetilde A_{g,\tau}^{(i,m)}.
 $$
 
-The methods differ only at the middle arrow, where they specify the same-lead
-Gaussian-copula correlation matrix. The notebooks preserve the complete ordered
-group: a missing entity invalidates an entire $(i,\tau)$ vector and never leads
-to a smaller displayed or fitted group.
+The methods differ only in the construction of the same-lead correlation
+matrix. Every notebook preserves the complete ordered group: one invalid
+entity invalidates $(i,\tau)$ and never produces a smaller fitted group.
 
 | Notebook | Scientific question | Correlation construction |
 |---|---|---|
-| `05_m0_independent_copula.ipynb` | What does aggregate uncertainty look like when residual ranks are independent? | $R=I_{K_g}$ |
-| `06_m1_static_gaussian_copula.ipynb` | What persistent same-lead rank association is present in the training period? | lead-specific training PIT correlation |
-| `07_m2_conditional_low_rank_copula.ipynb` | Can frozen per-entity forecast context predict dependence? | $\Lambda\Lambda^\mathsf T+\operatorname{diag}(\sigma^2)$ |
-| `08_m3_set_aware_low_rank_copula.ipynb` | Does contextualizing the full group improve that conditional representation? | self-attention followed by the same low-rank form |
-| `09_m4_conditional_kernel_diagnostic.ipynb` | What does a restricted smooth, non-negative kernel dependence family imply? | RBF Gram matrix, diagnostic only |
+| `00_m0_independent_copula.ipynb` | What remains under independent residual ranks? | $R=I_{K_g}$ |
+| `01_m1_static_gaussian_copula.ipynb` | What persistent training-period rank association exists? | lead-specific PIT correlation |
+| `02_m2_conditional_low_rank_copula.ipynb` | Can frozen entity context predict dependence? | $\Lambda\Lambda^\mathsf T+\operatorname{diag}(\sigma^2)$ |
+| `03_m3_set_aware_low_rank_copula.ipynb` | Does full-group contextualization add information? | self-attention, then the same low-rank form |
+| `04_m4_conditional_kernel.ipynb` | What follows from a smooth nonnegative kernel restriction? | RBF Gram matrix |
 
-## Read-only by default
+## Organization of each monograph
 
-Every method notebook has `TRAIN_IF_MISSING = False` and
-`RUN_EVALUATION = False`. In this state it only opens an existing cache and,
-when available, an existing checkpoint/evaluation. It does not download data,
-call Chronos, train a model, overwrite a run, or create a result artifact.
+Each notebook defines $i,t^{(i)},g,\mathcal E_g,K_g,\tau,Y,y,F,A$ and the
+complete-group indicator $V$ before using them. It then states the statistical
+hypothesis, gives a numerical or graphical example, identifies the relevant
+configuration arguments and mathematical implementation, and only then offers
+disabled estimation/evaluation cells. No displayed equation depends on a
+symbol introduced in another notebook.
 
-To turn a notebook into a self-contained didactic experiment, change the two
-controls deliberately and set a new `OUTPUT_DIR`. Those cells call the same
-public training and evaluation functions as the CLI; they do not reproduce
-their mathematical steps with notebook-only code. The CLI remains the primary
-route for registered paper experiments, while the notebooks are intended for
-inspection, teaching, and interpretation.
+## Read-only default and worked example
 
-## How to read results
+`TRAIN_IF_MISSING = False` and `RUN_EVALUATION = False` make a monograph
+read-only. For example, opening M2 reads the selected frozen marginal cache and
+visualizes an illustrative low-rank correlation; it does not fit parameters.
+Changing `TRAIN_IF_MISSING` deliberately calls the same `train_from_config`
+transformation as the command-line experiment. Changing `RUN_EVALUATION`
+opens test labels and writes scores to the explicitly chosen new directory.
 
-The notebook plots are descriptive. For a formal paper comparison, use the
-predeclared multi-seed runs, origin-level aggregation, and moving-block
-bootstrap in the confirmatory report. In particular, do not choose a method
-from one visualized origin, and do not compare absolute scores across entity
-types with different scales.
+## Implementation guidance and interpretation
+
+`BASE_FILE` selects the frozen-marginal experiment and `METHOD_FILE` selects
+one dependence hypothesis. `BASE_OVERRIDES` and `METHOD_OVERRIDES` apply only
+to their corresponding role. Cache
+compatibility is determined from scientific metadata, not a convenient name.
+Notebook diagrams are explanatory. Formal comparisons require predeclared
+multi-seed runs, origin-level aggregation, and temporally blocked uncertainty
+intervals. A single visualized origin must never select a method, and absolute
+scores must not be compared across entity types with different scales.

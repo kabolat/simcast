@@ -93,7 +93,8 @@ study should define validation-only selection rules before opening test labels.
 7. Add unit tests for PSD/Cholesky, gradients, save/load, permutations,
    full-group shape enforcement, and malformed inputs.
 8. Add a synthetic end-to-end test without touching real test labels.
-9. Predeclare whether the method is core, ablation, or smoke-only.
+9. Predeclare the method's role and any reduced laboratory budget in an
+   explicit composite entry.
 10. Update the mathematical and artifact documentation before running the
     final test evaluation.
 
@@ -150,7 +151,7 @@ Absolute proper scores are scale-dependent.
 - inspect calibration jointly with interval width and proper scores;
 - examine whether gains concentrate at particular leads/seasons;
 - report joint scores as well as the aggregate objective;
-- preserve unfavorable and failed models, including bounded smoke results;
+- preserve unfavorable and failed models, including every declared M4 seed;
 - distinguish exploratory interpretation from confirmatory conclusions.
 
 ## Confirmatory statistical uncertainty analysis
@@ -163,7 +164,7 @@ study uses a predeclared seven-daily-origin block and sensitivity lengths three
 and fourteen, with 10,000 replicates for final numbers. Report mean difference,
 relative difference, and a confidence interval.
 
-For M2/M3, separate two sources of uncertainty:
+For M2--M4, separate two sources of uncertainty:
 
 - data/test-period uncertainty, assessed with paired temporal resampling;
 - optimization uncertainty, assessed by independent training seeds.
@@ -175,17 +176,17 @@ noise; scenario-count sensitivity can be evaluated separately.
 ## Known implementation semantics to preserve or revise explicitly
 
 - `sampling.common_random_numbers` controls whether case-keyed base draws are
-  shared across methods; confirmatory configs set it to `true`.
+  shared across methods; supplied bases set it to `true`.
 - either joint-score flag enables both Energy and Variogram calculations.
 - `evaluation.report_by_lead` does not currently suppress the lead table.
 - `runtime.num_workers` is not passed to the current trainer DataLoaders.
-- Full-group configurations reject subset training and variable-$K$ evaluation;
-  architecture-level variable-size capability is not an experiment.
-- M4 smoke mode uses only the first eligible complete origins within each
-  partition; full mode uses the complete train and validation partitions.
-- confirmatory cache reuse is validated against data, forecast, covariate,
-  Chronos, and marginal-PIT construction settings; ordinary exploratory cache
-  reuse remains less strict.
+- Every configured fit and evaluation uses the complete static group;
+  architecture-level variable-size capability is not an evaluated experiment.
+- M2, M3, and M4 use every valid complete training and validation case. Reduced
+  laboratory budgets are explicit composite overrides and never truncate
+  origins implicitly.
+- All cache reuse is validated by one marginal fingerprint covering group,
+  data, forecast, covariates, split, Chronos, and PIT construction.
 
 These are documented behavior, not necessarily ideal future APIs. If changed,
 add regression tests, bump artifact schema where compatibility changes, and
@@ -204,3 +205,18 @@ It is useful to distinguish:
 
 The repository directly supports levels 1 and 2 through revisions, `uv.lock`,
 manifests, and replay commands. Level 3 remains future scientific work.
+
+## Worked validity example and implementation guidance
+
+Suppose a proposed model returns a symmetric $5\times5$ matrix for a five-park
+group but one eigenvalue is negative. Symmetry and shape alone are insufficient:
+the matrix does not define a Gaussian copula until the declared stabilization
+produces positive definiteness and restores unit diagonal. If one park is
+missing, producing a valid $4\times4$ matrix is still scientifically wrong
+because it changes $\mathcal E_g$.
+
+Model-level tests belong beside `src/simcast/dependence/`; complete-group and
+missingness tests belong in the training/evaluation test modules; invariance
+tests compare $R(PX)$ with $PR(X)P^\mathsf T$. Any extension must document its
+estimand, example, configuration fields, controlling class, and effect on cache
+or checkpoint compatibility before results are compared.

@@ -129,10 +129,9 @@ quantile grid, test cases, and base random draws. The core hierarchy is:
 - M1: static lead-specific Gaussian copula;
 - M2: conditional low-rank Gaussian copula with a shared entity-wise network;
 - M3: set-aware conditional low-rank Gaussian copula that contextualizes the
-  complete group with self-attention.
-
-M4 is an optional conditional kernel diagnostic and is not central to the
-full-group comparison.
+  complete group with self-attention;
+- M4: conditional RBF-kernel Gaussian copula in a learned entity-feature
+  geometry.
 
 ## PIT pseudo-observations
 
@@ -214,7 +213,7 @@ $$
 \end{aligned}
 $$
 
-M0 versus M1 addresses the first mechanism. M2/M3 versus M1 address the
+M0 versus M1 addresses the first mechanism. M2--M4 versus M1 address the
 second. A non-improving conditional model is therefore scientifically
 informative: the present conditional parameterization did not improve the
 stated predictive target over a static dependence estimate.
@@ -224,7 +223,7 @@ stated predictive target over a static dependence estimate.
 Modeled:
 
 - same-lead forecast-error dependence across all entities in one static group;
-- origin- and lead-dependent correlations for M2/M3;
+- origin- and lead-dependent correlations for M2--M4;
 - aggregate uncertainty induced by full-group spatial scenarios.
 
 Not modeled:
@@ -238,7 +237,7 @@ Not modeled:
 - continuous CDF interpolation or tail extrapolation;
 - causal effects or operational decisions.
 
-M2/M3 remain mathematically capable of accepting other cardinalities, but this
+M2--M4 remain mathematically capable of accepting other cardinalities, but this
 is an architectural property only and is not evaluated in the full-group study.
 
 ## Scientific assumptions
@@ -266,11 +265,13 @@ is an architectural property only and is not evaluated in the full-group study.
 4. Does context-conditioned low-rank dependence improve over static dependence?
 5. Does full-group set-aware contextualization improve over entity-wise
    conditioning?
-6. How heterogeneous is the benefit of dependence modeling across physical
+6. How does the nonnegative learned-kernel restriction of M4 compare with
+   signed low-rank dependence?
+7. How heterogeneous is the benefit of dependence modeling across physical
    entity groups?
 
 These are predictive questions. “Best” means lowest held-out mean aggregate
-pinball among M0--M3 under the declared full-group protocol, not causal,
+pinball among M0--M4 under the declared full-group protocol, not causal,
 universally superior, or statistically significant.
 
 ## Interpretation discipline
@@ -280,3 +281,18 @@ better. Coverage must be considered with nominal coverage and interval width;
 coverage alone is not a proper score. Absolute values are not comparable across
 entity types because scales and units differ. Confirmatory claims require
 paired temporal uncertainty intervals and multiple neural-training seeds.
+
+## Worked example and implementation guidance
+
+Consider $\mathcal E_g=\{k_1,k_2,k_3\}$. At one origin and lead, all methods
+receive the same three marginal quantile grids. M0 generates their ranks
+independently, whereas M1--M4 generate correlated ranks. If the observations
+are $(12,18,25)$, then $a_{g,\tau}^{(i)}=55$. The comparison asks which
+dependence construction best represents the random sum $A_{g,\tau}^{(i)}$; it
+does not compare different marginal forecasts.
+
+The base fields `data.entity_type` and `protocol.*` declare the group.
+`build_entity_group` in `src/simcast/data/grouping.py` establishes
+$\mathcal E_g$; `training/dataset.py` and `cli/evaluate.py` preserve it.
+The base fields `evaluation.*` and `sampling.*` declare scores and scenario
+counts.

@@ -192,3 +192,31 @@ Before treating a new run as valid, verify that:
 - `test_labels.zarr` was opened only through evaluation access;
 - any changed stride/horizon still uses boundary purging;
 - skipped origins and invalid vectors are reported, not silently imputed.
+
+## Worked origin example
+
+Let $t^{(i)}=$ 2024-06-01 23:45 UTC. With $L=672$ and $H=96$, history begins
+at 2024-05-26 00:00 UTC and ends at the origin. The first future target is at
+2024-06-02 00:00 UTC and the final one at 23:45 UTC. A target measured at the
+origin is immediately admissible; the 00:00 target is a future label.
+
+For a 12:00 future-weather value, `vintage` admits only forecasts whose
+`available_at` is no later than the origin. If vintages were issued at 18:00
+and 00:00, it selects 18:00. `oracle` instead selects the realized 12:00
+weather measurement and must be labelled an oracle diagnostic.
+
+## Configuration and implementation guidance
+
+| Scientific choice | Configuration | Controlling implementation |
+|---|---|---|
+| static group | `data.entity_type`, `protocol.*` | `data/grouping.py` |
+| temporal grid | `forecast.*` | `data/windows.py` |
+| immediate target availability | fixed project rule | `data/availability.py` |
+| vintage or oracle weather | `covariates.future_weather_source` | `data/availability.py` |
+| covariate definition | `covariates.weather`, `covariates.calendar.*` | `data/covariates.py` |
+| chronological partitions | `split.*` | `data/windows.py` |
+
+Changing the weather source changes $\mathcal I^{(i)}$ and therefore defines a
+different scientific experiment and a different marginal fingerprint. The
+cache locator compares that fingerprint with stored metadata; a human-chosen
+directory name has no scientific role.

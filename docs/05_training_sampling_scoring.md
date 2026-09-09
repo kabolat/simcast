@@ -1,40 +1,39 @@
-# Full-group training, scenario generation, and scoring
+# Full-group dependence fitting, scenario generation, and scoring
 
-## Training cases
+## Dependence-fitting cases
 
 For group $g$, conditional training converts each valid $(i,\tau)$ into
 
 $$
-\left(V_{g,\tau}^{(i)},\mathbf z_{g,\tau}^{(i)}\right),
+\left(X_{g,\tau}^{(i)},\mathbf z_{g,\tau}^{(i)}\right),
 $$
 
 where
 
 $$
-V_{g,\tau}^{(i)}\in\mathbb R^{K_g\times F},
+X_{g,\tau}^{(i)}\in\mathbb R^{K_g\times F},
 \qquad
 \mathbf z_{g,\tau}^{(i)}\in\mathbb R^{K_g}.
 $$
 
-A case exists only if all entity scores and features are finite. The code axis
+A case exists only if the binary validity indicator
+$V_{g,\tau}^{(i)}=1$ and all features are finite. $X$ is the feature matrix;
+it must not be confused with $V$. The code axis
 is `[origin, entity, lead, feature]`; dataset construction flattens only the
 valid `(origin, lead)` cases. Origin and lead indices are metadata rather than
 direct network inputs. Lead information enters through the frozen forecast,
 patch representation, and within-patch position.
 
-The full-group protocol rejects subset training at configuration validation and
-checks the entity dimension again immediately before every M2/M3 model call.
+The base schema has no entity-selection setting and checks the entity dimension
+again immediately before every M2--M4 model call.
 Every training and validation batch therefore contains exactly the complete
 ordered $\mathcal E_g$. Missing one entity invalidates the case instead of
 shrinking it.
 
-M1 uses complete training vectors directly and does not use validation. M2 and
-M3 train on the chronological training partition and use chronological
-validation pseudo-likelihood for checkpoint selection. M4 follows the same
-full-group rule when run as an optional diagnostic.
-
-The generic collator still contains legacy subset functionality so old
-exploratory artifacts can be understood, but no full-group config can enable it.
+M1 uses complete training vectors directly and does not use validation. M2,
+M3, and M4 fit on the chronological training partition and use chronological
+validation pseudo-likelihood for checkpoint selection. `DependenceCollator`
+only stacks complete vectors; it has no subset mode.
 
 ## Gaussian-copula pseudo-likelihood
 
@@ -259,3 +258,20 @@ matrices, and figures. It does not create prefix-$K$ tables,
 variable-cardinality CSVs, or reduced-group figures. Architecture-level
 variable-size tests remain only to ensure that shared-weight mathematics has
 not been accidentally hard-coded to one $K_g$; they are not experiments.
+
+## Worked scoring example and implementation guidance
+
+Suppose three aggregate scenarios are $(48,55,63)$ and the observation is
+$a=58$. The first CRPS term is
+$(|48-58|+|55-58|+|63-58|)/3=6$; the second term uses all nine ordered pairs to
+account for ensemble dispersion. Energy Score applies the same principle to
+vectors of entity values and therefore evaluates the joint spatial law.
+
+For M2--M4, `method.optimization.*` controls optimization. In the base,
+`sampling.num_samples`,
+`sampling.evaluation_seed`, and `sampling.common_random_numbers` control joint
+draws; base `evaluation.*` declares the score levels and joint-ensemble size.
+Training is in `training/trainer.py`, sampling in
+`sampling/gaussian_copula.py`, finite projection in
+`sampling/quantile_projection.py`, and scoring in `evaluation/metrics.py` and
+`evaluation/aggregate.py`, all below `src/simcast/`.

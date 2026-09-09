@@ -2,14 +2,15 @@
 
 ## PIT library directory
 
-Default location is `artifacts/cache/<cache_name>/`:
+The canonical location is
+`artifacts/cache/<base-id>-<marginal-fingerprint-prefix>/`:
 
 ```text
 dataset.zarr/                 public arrays; test labels replaced by NaN
 test_labels.zarr/             true_y, pit_u, pit_z for test origins only
 metadata.json                 provenance, protocol, missingness, crossings
 marginal_diagnostics.json     train+validation marginal diagnostics only
-resolved_config.json          fully expanded configuration
+resolved_config.json          internal numerical view used to build the record
 ```
 
 ### `dataset.zarr`
@@ -53,9 +54,9 @@ contains overall and per-entity median MAE, native-level pinball losses,
 central interval coverage, PIT histogram counts/frequencies, PIT mean and
 variance, and tail-cell fractions. Missing values are omitted metric by metric.
 
-## Model run directory
+## Dependence-fit directory
 
-Every trained method directory contains:
+Every fitted method directory contains:
 
 ```text
 resolved_config.yaml
@@ -70,8 +71,8 @@ training_curve.png              M2/M3/M4 only
 
 `run_metadata.json` records creation time, Git commit, Python and key package
 versions, absolute cache path, seed, group name, complete ordered entity IDs,
-$K_g$, `full_group_only`, subset-training status, and whether entity-selection
-augmentation was enabled. It also records resolved-config and model SHA-256
+$K_g$, `full_group_only`, and the absence of entity selection. It also records
+resolved-config and model SHA-256
 hashes, pinned data/FM revisions, optimization and evaluation seeds, checkpoint
 criterion, and PIT dependence transform. M0's NPZ stores IDs and
 lead count. M1's stores all correlation matrices plus estimator settings.
@@ -158,23 +159,53 @@ Factor plots must be interpreted cautiously because low-rank factors are
 rotation non-identifiable. Correlation matrices and aggregate score changes are
 scientifically more stable objects.
 
-## Experiment root and replay
+## Singular experiment root
 
-The high-level runner adds `experiment_manifest.json` at the root with cache,
-method, evaluation, bounded-M4 status, Git commit, and creation time. Its
-`resolved_config.yaml` is the base experiment config; each method subdirectory
-also records the method-specific resolved config, including smoke-mode M4 caps
-when that path is selected. Standalone full M4 runs record `smoke_only: false`.
+A singular root contains `resolved_base.yaml`, `resolved_method.yaml`, an
+optional `resolved_reference_method.yaml`, `singular_manifest.json`, fitted
+method directories, and one evaluation directory. The role separation makes it
+possible to verify which quantities defined the fixed marginal law and which
+defined the dependence hypothesis.
 
-Artifact paths are absolute in manifests. Moving a repository or deleting a
-cache/checkpoint breaks replay until paths are updated or explicit inputs are
-provided. Model and config hashes detect changed contents, but archival research
-releases should still package the full cache/run tree or provide stable paths.
+## Composite experiment and report roots
 
-## Confirmatory report directory
+Composite output follows:
 
-`build_powertech_report` reads saved evaluation directories only. It produces a
-`results/` directory with the tidy merged Parquet files and seed, group,
-bootstrap, ablation, PIT, and rank summaries; compact CSV/LaTeX tables; PDF/SVG
-figures with PNG previews; diagnostics; `scientific_summary.md`; `protocol.json`;
-and exact reproduction commands. The builder has no training call path.
+```text
+runs/<venue>/<composite>/<run-id>/
+reports/<venue>/<composite>/<run-id>/
+```
+
+The run root contains the resolved composite, exact expansion manifest,
+environment and Git record, base/method hashes, composite log, shared M0/M1
+fits, seed-specific M2--M4 fits, evaluations, and completion state. The report
+root contains concatenated per-origin records, method summaries, paired
+effects, and figures. M4 is processed by the same generic traversal as M2 and
+M3.
+
+Resume compares the stored composite SHA-256 digest with the newly resolved
+declaration. A mismatch is rejected; a validated complete cell is preserved.
+Artifact paths may be absolute in manifests, so archival releases should
+package the complete referenced tree or provide stable remapping metadata.
+
+## Historical artifacts
+
+`read_evaluation_artifacts` recursively discovers current and historical
+`evaluation_manifest.json` files and returns their original JSON payloads. It
+performs no schema migration and never rewrites an artifact. Historical
+artifacts remain inspectable but are not executable through removed monolithic
+configuration interfaces.
+
+## Scientific example and implementation guidance
+
+A tensor named `quantile_prediction` with dimensions
+`[origin, entity, lead, quantile]` is evidence only when its coordinate values
+and metadata identify $t^{(i)}$, the complete $\mathcal E_g$, $\tau$, and
+$q_j$. Likewise, a score without its valid-case mask and method correlation is
+not independently interpretable. The record schema preserves these links.
+
+`save_pit_library` and `load_pit_library` control the marginal record;
+dependence fitting and evaluation entry points write method and score records.
+A human-chosen directory name has no scientific meaning. Revision
+hashes, ordered entity IDs, resolved configuration, and content checksums are
+the evidence used to establish compatibility.

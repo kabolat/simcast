@@ -9,6 +9,10 @@ $$
 R_{g,\tau}^{(i)}\in\mathbb R^{K_g\times K_g}.
 $$
 
+This matrix is constructed only when the complete-group validity indicator
+$V_{g,\tau}^{(i)}=1$, where Chapter 3 defines $V$. It therefore always has one
+row and column for every member of $\mathcal E_g$.
+
 For scenario $m$,
 
 $$
@@ -174,7 +178,7 @@ A padding-mask interface remains as a possible future software capability.
 The full-group protocol never pads, drops, or selects entities; M3 always contextualizes all
 $K_g$ members.
 
-## M4: optional conditional RBF-kernel copula
+## M4: conditional RBF-kernel copula
 
 M4 embeds each full-group entity with a shared MLP,
 
@@ -195,12 +199,11 @@ and nugget $\nu=10^{-3}$. Correlation normalization and jitter follow. The RBF
 Gram matrix is positive semidefinite and permutation equivariant, but its
 off-diagonal correlations are nonnegative, a substantive restriction.
 
-The bounded smoke config uses at most 32 train and validation origins, five
-epochs, patience two, and no entity selection. The full M4 config uses complete
-partitions and the normal optimizer budget, also without entity selection.
-Legacy smoke results remain diagnostic. The previous full transformer M4 run
-used random subset augmentation and is also legacy; neither is a core
-full-group result.
+M4 is fitted on every valid complete training vector and selected by
+chronological validation pseudo-NLL, using the same partition and optimization
+semantics as M2 and M3. Its supplied method file uses the same 100-epoch
+maximum and patience 12. Preliminary composites may explicitly reduce these
+budgets for M2, M3, and M4 alike; no M4-specific data truncation exists.
 
 ## Model hierarchy
 
@@ -210,7 +213,7 @@ full-group result.
 | M1 static | yes | no | empirical group estimate | no | core baseline |
 | M2 conditional low-rank | yes | yes | no | yes | core method |
 | M3 set-aware low-rank | yes | yes | self-attention | yes | core method |
-| M4 conditional kernel | yes | yes | pairwise embedded distance | yes | optional diagnostic |
+| M4 conditional kernel | yes | yes | pairwise embedded distance | yes | core method |
 
 ## Numerical-stabilization audit
 
@@ -234,3 +237,28 @@ the learned objective or scenario law and make old checkpoints numerically
 incomparable. Tests verify unit diagonal, symmetry, and strict positive
 definiteness after repeated stabilization. Cholesky failure remains visible
 rather than silently substituting independence.
+
+## Worked comparisons and implementation guidance
+
+For $K_g=3$, M0 uses $I_3$: a high sampled rank for one entity conveys no
+information about the others. M1 may instead estimate
+
+$$
+R=\begin{bmatrix}1&0.7&0.2\\0.7&1&0.1\\0.2&0.1&1\end{bmatrix},
+$$
+
+and use it at every origin for that lead. M2 and M3 may produce a different
+matrix at each origin; M3 additionally lets one entity's context affect all
+contextual representations. M4 makes correlations decay with learned
+embedding distance and cannot represent negative off-diagonal values.
+
+| Method | Configuration | Controlling class |
+|---|---|---|
+| M0 | method file with `family: independent` | `IndependentCopula` |
+| M1 | `method.model.*` in the static file | `StaticGaussianCopula` |
+| M2 | `method.features/model/optimization` | `ConditionalLowRankGaussianCopula` |
+| M3 | `method.features/model/optimization` | `SetAwareLowRankGaussianCopula` |
+| M4 | `method.features/model/optimization` | `ConditionalKernelGaussianCopula` |
+
+These classes are in `src/simcast/dependence/`. Conditional method files place
+the information in `features` and numerical estimation in `optimization`.

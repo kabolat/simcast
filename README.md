@@ -1,217 +1,164 @@
 # Simcast
 
-> **Detailed research documentation:** start with
-> [`docs/README.md`](docs/README.md) for the mathematical formulation, exact
-> information-set rules, M0--M4 derivations, pipeline operation, experiment
-> protocol/results, artifact schemas, limitations, and reproduction guide.
+Simcast studies same-lead, cross-entity forecast-error dependence while holding
+Chronos-2 marginal forecasts fixed. For forecast instance $i$, lead
+$\tau\in[H]$, and complete static physical group
+$\mathcal E_g=\{k_1,\ldots,k_{K_g}\}$, Chronos supplies fixed marginal
+quantile grids for the random variables $Y_{k,\tau}^{(i)}$. A dependence method
+supplies only the copula $C_{g,\tau}^{(i)}$:
 
-Simcast is a research proof of concept for learning same-lead, cross-entity
-forecast-error dependence on top of frozen Chronos-2 forecasts. FM-derived
-marginal quantile grids are fixed across dependence methods: raw native grids
-are used for most groups, while solar uses one deterministic isotonic repair
-before the grid is fixed. Only the copula used to form spatial aggregates
-changes.
+$$
+P\!\left(Y_{k,\tau}^{(i)}\le y_k,\ k\in\mathcal E_g\mid\mathcal I^{(i)}\right)
+=C_{g,\tau}^{(i)}\!\left(\{F_{k,\tau}^{(i)}(y_k)\}_{k\in\mathcal E_g}\right).
+$$
 
-For forecast instance $i$, lead $\tau$, and complete static group
-$\mathcal E_g$, each method draws entity scenarios and evaluates the observed
-aggregate
+The estimand of primary interest is the distribution of the spatial aggregate
+
+$$A_{g,\tau}^{(i)}=\sum_{k\in\mathcal E_g}Y_{k,\tau}^{(i)}.$$
+
+Every training, validation, and test case uses all $K_g$ entities. If one
+entity is invalid at $(i,\tau)$, the complete vector is invalid; the group is
+never reduced.
+
+Detailed scientific documentation begins at
+[`docs/README.md`](docs/README.md). Executable explanations are in
+[`notebooks/README.md`](notebooks/README.md).
+
+## Dependence hypotheses
+
+- M0: independent Gaussian copula, $R_{g,\tau}^{(i)}=I_{K_g}$.
+- M1: static Gaussian copula estimated from training pseudo-PIT scores, either
+  lead-specific or pooled.
+- M2: conditional low-rank Gaussian copula whose shared entity-wise network
+  predicts factor parameters from FM-derived features.
+- M3: set-aware conditional low-rank Gaussian copula that contextualizes the
+  complete group with position-free entity self-attention.
+- M4: conditional RBF-kernel Gaussian copula in a learned embedding space.
+
+M4 has the same experimental status as M2 and M3. All three use the complete
+training partition, chronological validation, and explicitly configured
+optimization budgets. A reduced laboratory budget is a property of a
+composite experiment, not of a method.
+
+FM-derived marginal grids are fixed across all five methods. Most entity groups
+use raw native Chronos-2 quantiles. Solar uses deterministic isotonic repair
+because its raw quantiles cross substantially; the repaired grid is then fixed
+for every method. Historical pseudo-PITs use the finite $Q+1$-cell rule and do
+not interpolate a continuous CDF.
+
+## Configuration as scientific design
+
+Human-authored YAML files represent three distinct objects:
 
 ```text
-a[g, tau, i] = sum(y[k, tau, i] for k in E_g).
+configs/
+  bases/liander2024/       # data, group, information set, Chronos, PIT, estimands
+  methods/                 # exactly one of M0--M4
+  venues/<venue>/          # explicit composite experiments and analyses
 ```
 
-The dependence target is the vector of discretized, Gaussianized PIT
-pseudo-observations at one lead. Simcast never models temporal covariance
-between different leads and never treats raw-load correlation as forecast-error
-dependence.
+A base defines the frozen-marginal experiment. A method file contains only
+parameters meaningful to one dependence hypothesis. A composite explicitly
+lists bases, method variants, repetitions, and paired analyses; no hidden
+Cartesian grid is generated.
 
-## Methods
+The marginal cache is identified by a SHA-256 fingerprint of the scientific
+inputs that determine it: ordered group, data revision, forecast protocol,
+covariates, split, Chronos revision, and PIT construction. Method, venue,
+evaluation, and report settings do not enter this fingerprint. Cache directory
+names are never trusted without compatible metadata.
 
-- M0 `independent`: identity Gaussian copula; no fitting.
-- M1 `static_gaussian`: Ledoit-Wolf PIT correlation per lead, with optional
-  pooling across leads.
-- M2 `conditional_low_rank`: shared entity-wise MLP predicting factor loadings
-  and uniqueness from frozen Chronos features.
-- M3 `set_aware_low_rank`: position-free entity self-attention followed by the
-  same low-rank correlation construction.
-- M4 `conditional_kernel`: optional RBF-kernel correlation with separate full
-  training and bounded smoke configurations.
-
-M2 and M3 have parameter counts independent of entity cardinality, and M3 is
-permutation equivariant. The full-group protocol nevertheless uses every
-member of each complete static group in every training, validation, and test
-case. Configuration validation rejects subset training and reduced-cardinality
-evaluation.
-
-The corrected five-group baseline table and the audit that excludes
-the earlier subset-trained neural runs are in
-[`docs/08_experiments_and_results.md`](docs/08_experiments_and_results.md).
-Machine-readable results are tracked in
-[`results/full_group_metrics.csv`](results/full_group_metrics.csv).
-
-The frozen multi-seed confirmatory layer and report workflow are documented in
-[`docs/12_powertech2027_confirmatory_protocol.md`](docs/12_powertech2027_confirmatory_protocol.md).
-
-Run one predeclared group/family and then aggregate saved runs without
-retraining:
-
-```bash
-uv run python -m simcast.cli.run_powertech_experiments \
-  --config configs/powertech2027/transformer.yaml \
-  --phase main \
-  --output-dir runs/powertech2027/transformer/main \
-  --rebuild-cache
-
-uv run python -m simcast.cli.build_powertech_report \
-  --input-root runs/powertech2027 \
-  --output-dir reports/powertech2027
-```
-
-## Reproducible setup with uv
-
-Python dependencies are locked by `uv.lock`. The official Chronos source is
-pinned and installed editable after applying the minimal output-contract patch.
+## Setup with uv
 
 ```bash
 uv sync --group dev
 bash scripts/setup_chronos.sh
 ```
 
-Pinned revisions:
+Pinned revisions are recorded in the base configuration and lockfile. The
+Chronos patch exposes the already computed output-patch representation; it does
+not change Chronos attention, normalization, loss, or quantile values.
 
-- Liander2024: `dce7fe9bbae0d62288986fa97fa1ee7e9d3b7044`
-- Chronos source: `8589d1988e9676817548e9626738ff06b6ca6370`
-- Chronos-2 model: `29ec3766d36d6f73f0696f85560a422f50e8498c`
-
-The patch exposes the already computed output-patch `forecast_embeds`. It does
-not alter encoder states, normalization, attention, loss, or quantile values.
-
-## Liander2024 workflow
-
-The default experiment uses one static group containing all entities with
-`group_name: transformer`, 15-minute resolution, seven days of context
-(`L=672`), a 24-hour horizon (`H=96`), and daily origins at 23:45 UTC. Canonical
-entity IDs are `group_name::name`; cardinality is read from
-`liander2024_targets.yaml`, never hardcoded.
-
-Set the local data directory once, then run the individual stages:
+The default data path is `data/liander2024`. It can be changed without changing
+cache identity:
 
 ```bash
-export SIMCAST_DATA_DIR=/path/to/liander2024
-
+export SIMCAST_DATA_DIR=/absolute/path/to/liander2024
+export SIMCAST_DEVICE=cuda
 uv run python -m simcast.cli.download_data \
-  --config configs/liander2024_transformer.yaml
-
-uv run python -m simcast.cli.build_cache \
-  --config configs/liander2024_transformer.yaml
-
-uv run python -m simcast.cli.train_dependence \
-  --config configs/method_independent.yaml
-uv run python -m simcast.cli.train_dependence \
-  --config configs/method_static_gaussian.yaml
-uv run python -m simcast.cli.train_dependence \
-  --config configs/method_conditional_low_rank.yaml
-uv run python -m simcast.cli.train_dependence \
-  --config configs/method_set_aware_low_rank.yaml
-
-uv run python -m simcast.cli.evaluate \
-  --config configs/liander2024_transformer.yaml \
-  --methods independent \
-  --methods static_gaussian \
-  --methods conditional_low_rank \
-  --methods set_aware_low_rank
+  --base configs/bases/liander2024/transformer.yaml
 ```
 
-Or run cache construction, M0--M3 training, and the one-time final evaluation
-with one command:
+## Singular experiment
+
+A singular experiment fits and evaluates exactly one selected method:
 
 ```bash
-uv run python -m simcast.cli.run_experiment \
-  --config configs/liander2024_transformer.yaml
+uv run python -m simcast.cli.run_singular \
+  --base configs/bases/liander2024/transformer.yaml \
+  --method configs/methods/m4_conditional_kernel.yaml
 ```
 
-Add `--include-kernel-smoke` to include bounded M4. An existing compatible
-cache is reused. `--rebuild-cache` explicitly replaces it.
-
-To train optional M4 with the full transformer train/validation partitions and
-the same optimizer budget as M2/M3:
+An explicit reference can be evaluated on the same valid cases, fixed
+marginals, and case-keyed Gaussian draws:
 
 ```bash
-uv run python -m simcast.cli.train_dependence \
-  --config configs/method_conditional_kernel.yaml
+uv run python -m simcast.cli.run_singular \
+  --base configs/bases/liander2024/transformer.yaml \
+  --method configs/methods/m4_conditional_kernel.yaml \
+  --reference-method configs/methods/m0_independent.yaml
 ```
 
-Named configs are also provided for every homogeneous Liander entity type:
+## Composite experiment
 
-- `configs/liander2024_transformer.yaml`
-- `configs/liander2024_solar_park.yaml`
-- `configs/liander2024_wind_park.yaml`
-- `configs/liander2024_mv_feeder.yaml`
-- `configs/liander2024_station_installation.yaml`
-
-The solar config explicitly enables isotonic repair because raw Chronos solar
-quantiles cross frequently around zero-output hours; without repair, several
-leads have too few complete PIT vectors to estimate M1. Raw crossing rates are
-still recorded in cache diagnostics.
-
-Configuration values can be overridden with repeatable dotted assignments:
+A composite performs only the experiments explicitly declared in its YAML:
 
 ```bash
-uv run python -m simcast.cli.run_experiment \
-  --config configs/liander2024_transformer.yaml \
-  --set training.epochs=20 \
-  --set sampling.num_samples=2048
+uv run python -m simcast.cli.run_composite \
+  --config configs/venues/<venue>/main.yaml
 ```
 
-## Leakage controls
-
-- Past targets and measured weather must be available by the forecast origin.
-- Each future timestamp uses the latest versioned weather forecast whose
-  `available_at` is no later than the origin.
-- Origins are chronological; train, validation, and test boundaries are purged
-  when forecast horizons overlap.
-- Scalar feature statistics are fitted on training origins only.
-- Test `true_y`, `pit_u`, and `pit_z` are physically stored in a separate Zarr
-  group. Training APIs cannot open them; only final evaluation requests
-  `access="evaluation"`.
-- A missing realization or invalid/crossing marginal drops the complete
-  `(origin, lead)` spatial vector, never an entity from the static group.
-
-Quantiles are not interpolated. Historical pseudo-PIT values use deterministic
-`Q+1` cells; scenario uniforms use a separate nearest-quantile probability-cell
-projection. Consequently every method has exactly the same fixed discrete
-marginal law within a group; only joint co-occurrence changes.
-
-## Outputs
-
-The PIT library is an xarray/Zarr artifact with named `origin`, `entity`,
-`lead`, `quantile`, `patch`, and `hidden` dimensions. Forecast-patch embeddings
-are stored once per patch in float16 and converted to float32 for adapter
-training.
-
-Each model run contains its resolved configuration, complete ordered entity IDs,
-software and Git metadata, config/checkpoint hashes, model/checkpoints, training histories, and a training
-curve. Final evaluation writes:
-
-- overall JSON and lead-wise CSV metrics;
-- aggregate pinball, coverage, interval width/score, WIS, and CRPS;
-- spatial Energy and Variogram Scores (Energy Score uses the empirical
-  all-pairs estimator on the selected 512-member joint ensemble, with chunking
-  only for memory efficiency);
-- marginal, correlation, factor, dynamics, aggregate-fan, and summary figures;
-- a six-question scientific summary.
-- tidy per-origin-lead and per-origin Parquet score tables, including test
-  Gaussian-copula pseudo-NLL.
-
-The test labels are opened only during this final evaluation. To rerun a saved
-training or evaluation artifact:
+Long composites can use a stable identifier and resume validated completed
+cells:
 
 ```bash
-uv run python -m simcast.cli.reproduce runs/<run-directory> \
-  --output-dir runs/<new-directory>
+uv run python -m simcast.cli.run_composite \
+  --config configs/venues/<venue>/main.yaml \
+  --run-id replication_01 --resume
 ```
 
-## Development checks
+Resume is accepted only when the stored resolved-composite hash is identical.
+Completed compatible cells are preserved; changed designs and partial outputs
+are never silently overwritten.
+
+A venue is a reproducible research workspace, not a Python environment.
+Outputs follow:
+
+```text
+runs/<venue>/<composite>/<run-id>/
+reports/<venue>/<composite>/<run-id>/
+```
+
+The repository includes `lab` composites with deliberately small explicit
+budgets for understanding the workflow. Such results are preliminary by
+design, regardless of which trainable method is selected.
+
+## Evaluation
+
+Aggregate scenario quantiles, coverage, interval width and score, WIS, and CRPS
+are evaluated from $\widetilde A_{g,\tau}^{(i,m)}$. Energy Score uses the
+empirical all-pairs estimator on the selected 512-member joint ensemble;
+chunking changes only memory consumption. Variogram Score assesses pairwise
+spatial contrasts. Composite effects are paired at the origin level and use a
+moving-block bootstrap to retain temporal dependence.
+
+Every run records the complete ordered entity set, revisions, resolved
+role-specific configurations, hashes, seeds, environment and Git metadata,
+fitted methods, evaluation manifests, and completion state. Historical
+evaluation manifests remain readable through `simcast.reporting`, but the old
+execution schemas are not accepted or rewritten.
+
+## Validation
 
 ```bash
 uv run ruff check src tests
@@ -219,22 +166,11 @@ uv run mypy src
 uv run pytest
 ```
 
-CUDA seeds and deterministic-algorithm requests are set. Exact bitwise replay
-can still be affected by GPU kernels, PyTorch/CUDA versions, and device model;
-these versions are stored with each training run.
-
-## Interactive notebooks
-
-[`notebooks/README.md`](notebooks/README.md) introduces executable notebooks
-for configuration, EDA, cache/feature inspection, dependence modelling, and
-evaluation. They call the same configuration loader and stage functions as the
-CLI, rather than maintaining a second implementation of the experiment.
+These checks use synthetic data and temporary artifacts. They do not run
+Chronos inference or scientific experiments.
 
 ## Attribution and license
 
 The [Liander2024 Energy Forecasting Benchmark](https://huggingface.co/datasets/OpenSTEF/liander2024-energy-forecasting-benchmark)
-is published by OpenSTEF under
-[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
-
-Chronos is Copyright Amazon.com, Inc. or its affiliates and licensed under
-Apache-2.0. Simcast's own source code is licensed under the MIT License.
+is published by OpenSTEF under CC BY 4.0. Chronos is Copyright Amazon.com, Inc.
+or its affiliates and licensed under Apache-2.0. Simcast source is MIT licensed.

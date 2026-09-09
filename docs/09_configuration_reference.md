@@ -1,190 +1,261 @@
-# Configuration reference
+# Scientific configuration reference
 
-Configuration is loaded by strict Pydantic models: unknown fields, invalid
-ranges, and inconsistent dimensions fail immediately. YAML files can contain
-`extends` as one path or a list. Parents are merged in order, mappings merge
-recursively, and scalars/lists in children replace parent values. Cycles are
-rejected. `${NAME}` requires an environment variable;
-`${NAME:-default}` supplies a fallback. Repeatable CLI `--set dotted.key=value`
-overrides are YAML-parsed after inheritance and environment expansion.
+## 1. Why the configuration has three roles
 
-Defaults below are code defaults; `configs/base.yaml` overrides Chronos batch
-size from 16 to 256. The supplied experiments resolve through `base.yaml`.
+A scientific comparison needs to distinguish what is held fixed from what is
+varied. Simcast therefore validates three YAML document kinds.
 
-## Root and data
-
-| Key | Default | Meaning |
+| Kind | Statistical role | Contents |
 |---|---|---|
-| `seed` | `42` | nonnegative global seed |
-| `protocol.name` | `legacy` in code; `full_group` in `base.yaml` | declared experiment protocol |
-| `protocol.full_group_only` | `false` in code; `true` in `base.yaml` | enforce complete static groups |
-| `data.dataset_id` | OpenSTEF Liander repo | Hugging Face dataset ID |
-| `data.revision` | `dce7fe...b7044` | required exact dataset snapshot |
-| `data.local_dir` | `data/liander2024` | local snapshot root; base config honors `SIMCAST_DATA_DIR` |
-| `data.entity_type` | `transformer` | one of the five supported homogeneous types |
-| `data.target_column` | `load` | target column in measurement Parquet |
-| `data.include_epex` | `false` | download EPEX file; not used in current covariate builder |
-| `data.include_profiles` | `false` | download profiles file; not used in current covariate builder |
+| `base` | defines the common marginal experiment | data, $\mathcal E_g$, information set, origins, Chronos, PIT, sampling, estimands |
+| `method` | defines one dependence hypothesis | exactly one of M0--M4 and only its meaningful parameters |
+| `composite` | defines a family of comparisons | explicit bases, method variants, repetitions, reference, uncertainty analysis, venue |
 
-## Forecast protocol
+All models forbid unknown fields. `extends` accepts one relative path or an
+ordered list of parents; nested mappings merge recursively and lists replace.
+Inheritance cycles fail. Environment expressions use `${NAME}` or
+`${NAME:-default}`. Loader overrides use dotted YAML values.
 
-| Key | Default | Meaning/constraint |
+Implementation: the three public loaders are `load_base_config`,
+`load_method_config`, and `load_composite_config` in `simcast.config`.
+
+## 2. Base configuration
+
+### 2.1 Complete group and data
+
+```yaml
+kind: base
+id: transformer
+protocol:
+  name: full_group
+  full_group_only: true
+  ordered_entity_ids: [transformer::A, transformer::B]
+  entity_count: 2
+data:
+  entity_type: transformer
+```
+
+`ordered_entity_ids` defines
+$\mathcal E_g=[k_1,\ldots,k_{K_g}]$ including its order, and `entity_count`
+must equal $K_g$. Every ID must have the selected homogeneous entity-type
+prefix. No entity-selection or variable-cardinality field exists.
+
+| Key | Supplied value | Scientific meaning |
+|---|---|---|
+| `data.dataset_id` | pinned Liander repository | population source |
+| `data.revision` | exact commit | immutable data version |
+| `data.local_dir` | `${SIMCAST_DATA_DIR:-data/liander2024}` | operational location; not part of the scientific fingerprint |
+| `data.entity_type` | one homogeneous type | physical group $g$ |
+| `data.target_column` | `load` | observation $y_{k,t}$ |
+| `data.include_epex`, `include_profiles` | `false` | optional files, currently excluded |
+
+Example: transformer has $K_g=15$ in its supplied base; solar and wind each
+have $K_g=5$. The group is invalid at $(i,\tau)$ if any member is invalid.
+
+### 2.2 Forecast instances and information set
+
+| Key | Supplied value | Meaning |
 |---|---:|---|
-| `forecast.timezone` | `UTC` | only supported internal timezone |
-| `forecast.frequency_minutes` | 15 | positive and must divide 1,440 |
-| `forecast.origin_time` | `23:45` | UTC, minute precision, aligned to frequency |
-| `forecast.lookback_steps` | 672 | inclusive history length |
-| `forecast.horizon_steps` | 96 | number of future leads |
-| `forecast.origin_stride_steps` | 96 | step distance between origins |
+| `forecast.timezone` | `UTC` | time coordinate |
+| `forecast.frequency_minutes` | 15 | $\Delta$ |
+| `forecast.origin_time` | `23:45` | daily phase of $t^{(i)}$ |
+| `forecast.lookback_steps` | 672 | observed history length $L$ |
+| `forecast.horizon_steps` | 96 | number of leads $H$ |
+| `forecast.origin_stride_steps` | 96 | distance between candidate origins |
+| `covariates.weather` | five ordered fields | weather variables supplied to Chronos |
+| `covariates.future_weather_source` | `vintage` | latest forecast with release time no later than $t^{(i)}$ |
+| same | `oracle` | realized future weather; an explicitly non-operational information set |
+| `covariates.calendar.include_hour` | `true` | cyclic hour coordinates |
+| `covariates.calendar.include_day_of_week` | `true` | cyclic weekday coordinates |
+| `covariates.calendar.include_is_weekend` | `true` | binary Saturday/Sunday indicator |
 
-## Covariates and split
+For `vintage`, future weather at physical time $t^{(i)}+\tau\Delta$ is selected
+only from a forecast vintage available by $t^{(i)}$. Target measurements are
+assumed available when measured, but future targets are never included in
+$\mathcal I^{(i)}$. See [Chapter 2](02_data_and_information_set.md).
 
-| Key | Default | Meaning |
-|---|---|---|
-| `covariates.weather` | five named weather fields | unique nonempty columns in fixed order |
-| `covariates.future_weather_source` | `vintage` | `vintage` uses latest released forecast; `oracle` uses realized future measurements |
-| `covariates.calendar.enabled` | `true` | append cyclic calendar channels |
-| `...include_hour` | `true` | sine/cosine fractional UTC hour |
-| `...include_day_of_week` | `true` | sine/cosine weekday |
-| `...include_is_weekend` | `true` | binary UTC Saturday/Sunday indicator |
-| `covariates.epex.enabled` | `false` | reserved; currently not consumed |
-| `covariates.profiles.enabled` | `false` | reserved; currently not consumed |
-| `split.tune_fraction` | 0.80 | open interval `(0,1)`; train+validation prefix |
-| `split.validation_fraction_within_tune` | 0.20 | open interval `(0,1)` in config model |
-| `split.purge_overlapping_horizons` | `true` | remove leaking boundary origins |
+### 2.3 Chronological partitions
 
-## Chronos and PIT
+`split.tune_fraction: 0.80` forms the chronological train-plus-validation
+prefix. `validation_fraction_within_tune: 0.20` assigns its final portion to
+validation. `purge_overlapping_horizons: true` removes boundary origins if
+their realized forecast horizons overlap across partitions.
 
-| Key | Base experiment value | Meaning |
-|---|---|---|
-| `chronos.source_url` | official Amazon repository | clone source |
-| `chronos.source_revision` | `8589...6370` | exact patched source commit |
-| `chronos.model_id` | `amazon/chronos-2` | Hugging Face model ID |
-| `chronos.model_revision` | `29ec...498c` | exact model artifact revision |
-| `chronos.device` | `${SIMCAST_DEVICE:-cuda}` | load/inference device |
-| `chronos.dtype` | `bfloat16` | one of float16/bfloat16/float32 |
-| `chronos.batch_size` | 256 | entity-row batch size used by Chronos dataset |
-| `chronos.cross_learning` | `false` | literal false; cannot be enabled |
-| `pit.mode` | `discretized` | only implemented PIT method |
-| `pit.monotone_repair` | `none` | `none` or `isotonic`; solar config uses isotonic |
-| `pit.eps` | $10^{-7}$ | clamp before inverse normal, in `(0,0.5)` |
+Changing a split changes the sample used to estimate PIT dependence and
+therefore changes the base fingerprint.
 
-## Conditional features
+### 2.4 Frozen Chronos forecast
 
-| Key | Default | Meaning |
-|---|---|---|
-| `features.use_forecast_embedding` | `true` | include raw patch representation |
-| `features.layer_normalize_embedding` | `true` | controls M2 input LayerNorm |
-| `features.use_quantile_shape` | `true` | include all normalized native quantiles |
-| `features.use_median` | `true` | include native median |
-| `features.use_log_spread` | `true` | include log absolute q90-q10 spread |
-| `features.use_within_patch_position` | `true` | include lead position in output patch |
-| `features.use_location` | `true` | include latitude/longitude; locations then required |
-| `features.use_entity_id_embedding` | `false` | unsupported ablation; true raises an error |
-| `features.shape_eps` | $10^{-6}$ | spread denominator/log and standardizer threshold |
-| `features.standardize_scalar_features` | `true` | train-only scalar standardization |
+| Key | Meaning |
+|---|---|
+| `chronos.source_url`, `source_revision` | exact source implementation |
+| `chronos.model_id`, `model_revision` | exact pretrained parameters |
+| `chronos.device`, `dtype`, `batch_size` | numerical execution |
+| `chronos.cross_learning: false` | each physical entity is forecast separately |
 
-At least one feature component must remain enabled. Quantile-derived components
-require native levels 0.1, 0.5, and 0.9.
+Source and model revisions determine the statistical forecast and enter the
+fingerprint. Device and batch size are operational and do not. Cross-entity
+attention in the foundation model is forbidden by the literal `false` field.
 
-## Dependence models
+### 2.5 Finite pseudo-PIT
 
-`dependence.method` is one of `independent`, `static_gaussian`,
-`conditional_low_rank`, `set_aware_low_rank`, or `conditional_kernel`.
+| Key | Meaning |
+|---|---|
+| `pit.mode: discretized` | deterministic $Q+1$-cell pseudo-PIT; no CDF interpolation |
+| `pit.monotone_repair` | `none` or deterministic `isotonic` repair |
+| `pit.dependence_transform` | nominal cells or a training-only cell-frequency sensitivity |
+| `pit.eps` | probability clamp before $\Phi^{-1}$ |
 
-| Section/key | Default | Meaning |
+If native levels are $q_1<\cdots<q_Q$, the predictive value thresholds divide
+the real line into $Q+1$ cells. An observation receives the midpoint of its
+cell's probability interval. Solar declares `isotonic`; its repaired grid is
+used consistently for historical cells and scenario projection. See
+[Chapter 3](03_chronos_and_pit.md) for equations and numerical examples.
+
+### 2.6 Sampling and estimands
+
+| Key | Supplied value | Meaning |
 |---|---:|---|
-| `static_gaussian.shrinkage` | `ledoit_wolf` | only supported estimator |
-| `static_gaussian.share_across_leads` | `false` | pool all lead vectors if true |
-| `static_gaussian.jitter` | $10^{-6}$ | positive stabilization |
-| `conditional_low_rank.latent_rank` | 4 | factor rank |
-| `conditional_low_rank.hidden_dims` | `[256,128]` | nonempty positive MLP widths |
-| `conditional_low_rank.activation` | `gelu` | only supported activation |
-| `conditional_low_rank.dropout` | 0.1 | in `[0,1)` |
-| `conditional_low_rank.sigma_floor` | $10^{-3}$ | positive uniqueness floor |
-| `conditional_low_rank.jitter` | $10^{-6}$ | positive stabilization |
-| `set_aware_low_rank.model_dim` | 128 | transformer width |
-| `set_aware_low_rank.num_layers` | 2 | encoder depth |
-| `set_aware_low_rank.num_heads` | 4 | attention heads; must divide model width |
-| `set_aware_low_rank.latent_rank` | 4 | factor rank |
-| `set_aware_low_rank.dropout` | 0.1 | transformer/head dropout |
-| `set_aware_low_rank.sigma_floor` | $10^{-3}$ | uniqueness floor |
-| `set_aware_low_rank.jitter` | $10^{-6}$ | stabilization |
-| `conditional_kernel.hidden_dims` | `[256,128]` | embedding MLP widths |
-| `conditional_kernel.embedding_dim` | 16 | learned RBF coordinate width |
-| `conditional_kernel.activation` | `gelu` | only supported activation |
-| `conditional_kernel.dropout` | 0.1 | MLP dropout |
-| `conditional_kernel.initial_length_scale` | 1.0 | positive initial RBF scale |
-| `conditional_kernel.nugget` | $10^{-3}$ | positive diagonal nugget |
-| `conditional_kernel.jitter` | $10^{-6}$ | stabilization |
-| `conditional_kernel.smoke_only` | `true` | if true, limit origins; full M4 config sets false |
-| `conditional_kernel.smoke_max_origins` | 32 | max complete train and validation origins in smoke mode only |
+| `sampling.num_samples` | 4096 | aggregate scenarios $M$ per valid case |
+| `sampling.evaluation_seed` | 2027 | scenario randomness |
+| `sampling.common_random_numbers` | `true` | case-keyed Gaussian draws shared across methods |
+| `sampling.empirical_quantile_method` | `nearest` | finite ensemble order statistic |
+| `evaluation.quantile_levels` | seven probabilities | reported aggregate quantiles |
+| `evaluation.interval_levels` | 0.50, 0.80, 0.90 | central interval levels |
+| `evaluation.joint_score_num_samples` | 512 | selected ensemble size for joint scores |
+| `evaluation.energy_score` | `true` | empirical all-pairs Energy Score |
+| `evaluation.variogram_score` | `true` | Variogram Score |
+| `evaluation.variogram_power` | 0.5 | pairwise-difference exponent |
 
-## Full-group enforcement and optimization
+These settings do not alter cached Chronos quantiles. They define Monte Carlo
+resolution and reported estimands and therefore belong to the common base,
+not to a dependence method.
 
-| Key | Default | Meaning |
+## 3. Method configuration
+
+### 3.1 M0: independence
+
+```yaml
+kind: method
+id: m0
+family: independent
+```
+
+No feature, model, or optimization section is admissible because
+$R_{g,\tau}^{(i)}=I_{K_g}$ is completely specified.
+
+### 3.2 M1: static Gaussian copula
+
+```yaml
+kind: method
+id: m1
+family: static_gaussian
+model:
+  shrinkage: ledoit_wolf
+  share_across_leads: false
+  jitter: 1.0e-6
+```
+
+`share_across_leads: false` estimates one training correlation per lead;
+`true` pools all valid leads. Ledoit--Wolf shrinkage and positive jitter
+stabilize the estimate. M1 has no gradient optimization or conditioning
+features.
+
+### 3.3 Features for M2--M4
+
+Only conditional methods admit `features`:
+
+| Key | Meaning |
+|---|---|
+| `use_forecast_embedding` | Chronos output-patch representation |
+| `layer_normalize_embedding` | LayerNorm before downstream prediction |
+| `use_quantile_shape` | normalized native quantile shape |
+| `use_median` | native median level |
+| `use_log_spread` | log absolute q90--q10 spread |
+| `use_within_patch_position` | lead position inside an output patch |
+| `use_location` | latitude and longitude |
+| `use_entity_id_embedding` | currently unsupported and fixed false |
+| `shape_eps` | numerical threshold in shape/spread construction |
+| `standardize_scalar_features` | fit scalar normalization on training origins only |
+
+These features form $x_{k,\tau}^{(i)}$. A feature ablation is expressed by a
+repeated composite entry with an explicit override; it is not hidden in the
+base.
+
+### 3.4 M2 model
+
+`model.latent_rank` is $r$;
+`hidden_dims`, `activation`, and `dropout` specify the shared entity-wise map;
+`sigma_floor` lower-bounds uniqueness; and `jitter` stabilizes the final
+correlation. See [Chapter 4](04_dependence_models.md) for
+$\Sigma=\Lambda\Lambda^\top+\operatorname{diag}(\sigma^2)$ and its
+correlation normalization.
+
+### 3.5 M3 model
+
+`model_dim`, `num_layers`, and `num_heads` specify position-free entity
+self-attention. `model_dim` must be divisible by `num_heads`. `latent_rank`,
+`dropout`, `sigma_floor`, and `jitter` define the subsequent low-rank map. No
+positional entity index is supplied, preserving permutation equivariance.
+
+### 3.6 M4 model
+
+`hidden_dims` and `embedding_dim` define the map to learned coordinates $h_k$.
+`initial_length_scale` initializes $\ell$ in
+$\exp(-\|h_a-h_b\|^2/(2\ell^2))$; `nugget` and `jitter` stabilize the
+correlation. M4 has no reduced-data flag, origin cap, or special budget.
+
+### 3.7 Optimization for M2--M4
+
+| Key | Supplied value | Meaning |
 |---|---:|---|
-| `subset_training.enabled` | `false` | legacy capability; forbidden by the full-group protocol |
-| `subset_training.min_entities` | 4 | legacy-only lower bound |
-| `subset_training.full_group_probability` | 0.25 | legacy-only full-group probability |
-| `training.optimizer` | `adamw` | only supported optimizer |
-| `training.batch_size` | 64 | complete origin-lead cases per batch |
-| `training.epochs` | 100 | maximum epochs |
-| `training.learning_rate` | $10^{-3}$ | AdamW learning rate |
-| `training.weight_decay` | $10^{-4}$ | nonnegative AdamW decay |
-| `training.gradient_clip_norm` | 1.0 | positive global norm cap |
-| `training.patience` | 12 | no-improvement epochs; cannot exceed epochs |
+| `seed` | 42 in standalone files | initialization and batch order |
+| `optimizer` | `adamw` | optimizer family |
+| `batch_size` | 64 | complete $(i,\tau)$ vectors per batch |
+| `epochs` | 100 | maximum passes |
+| `patience` | 12 | validation pseudo-NLL stopping patience |
+| `learning_rate` | $10^{-3}$ | step size |
+| `weight_decay` | $10^{-4}$ | AdamW decay |
+| `gradient_clip_norm` | 1.0 | gradient norm bound |
 
-## Sampling and evaluation
+All three trainable methods use the same semantics. A composite may override
+budgets explicitly and validation then applies to that method type.
 
-| Key | Default | Meaning/current behavior |
-|---|---:|---|
-| `sampling.num_samples` | 4096 | aggregate scenarios per valid case |
-| `sampling.evaluation_seed` | 2027 | scenario seed, separate from neural optimization seed |
-| `sampling.empirical_quantile_method` | `nearest` | only accepted method |
-| `sampling.common_random_numbers` | `true` | share case-keyed base normals across dependence methods |
-| `evaluation.quantile_levels` | `[.05,.10,.25,.50,.75,.90,.95]` | sorted unique report levels |
-| `evaluation.interval_levels` | `[.50,.80,.90]` | sorted unique central coverages |
-| `evaluation.energy_score` | `true` | jointly controls whether both joint scores are computed |
-| `evaluation.variogram_score` | `true` | jointly controls whether both joint scores are computed |
-| `evaluation.variogram_power` | 0.5 | in `(0,2]` |
-| `evaluation.report_by_lead` | `true` | retained config field; lead table is currently always written |
-| `evaluation.scenario_batch_size` | 16 | cases sampled together |
-| `evaluation.joint_score_num_samples` | 512 | cap for entity-level scores |
-| `evaluation.variable_k_sizes` | `[]` | legacy-only diagnostic; nonempty is forbidden by the full-group protocol |
+## 4. Composite configuration
 
-Current code computes both Energy and Variogram Scores when either score flag
-is true; it computes neither only when both are false. The individual flags
-should therefore not be interpreted as independent switches.
+`bases` assigns local IDs to base files and optional valid base overrides.
+`experiments` assigns distinct IDs to method files, optional base selections,
+optional conditional seeds, and role-valid method overrides. Expansion is the
+literal nested sequence of each entry's selected bases and seeds.
 
-For `protocol.name: full_group`, validation requires
-`full_group_only: true`, `subset_training.enabled: false`, and an empty
-`evaluation.variable_k_sizes`. Attempts to override either entity-selection
-setting fail before training or evaluation starts.
+Deterministic M0/M1 entries cannot declare repeated seeds. Conditional entries
+without `seeds` use their method file's optimization seed. `analysis.reference`
+must name a deterministic M0 or M1 entry when executed. Bootstrap replicate
+count and block lengths define the paired origin-level uncertainty calculation.
 
-`protocol.name: powertech2027` additionally requires a complete ordered entity
-ID list, its matching `entity_count`, and `confirmatory.enabled: true`.
-Confirmatory fields declare the ten neural seeds, bootstrap replicate/block
-settings, validation-only checkpoint criterion, feature-set label, experiment
-family, and the acknowledged prior inspection of the test period. The selected
-feature-set label is validated against the individual feature switches.
+Example: five bases, two deterministic entries, and three conditional entries
+with ten seeds expand to $5+5+50+50+50=160$ cells.
 
-`pit.dependence_transform` is `nominal_cells` for the primary analysis or
-`training_frequency` for the train-only empirical-cell sensitivity. It never
-changes the scenario marginal quantile grid.
+## 5. Venue and path validity
 
-## Runtime and output
+A composite at `configs/venues/<venue>/study.yaml` must declare the same safe
+slug in `venue`. The output roots are fixed:
 
-| Key | Default | Meaning |
-|---|---|---|
-| `runtime.deterministic` | `true` | request deterministic PyTorch algorithms with warnings |
-| `runtime.num_workers` | 0 | validated and recorded; current trainer does not pass it to DataLoader |
-| `runtime.log_level` | `INFO` | DEBUG/INFO/WARNING/ERROR |
-| `output.root_dir` | `runs` | default model/evaluation root |
-| `output.cache_dir` | `artifacts/cache` | default PIT-library root |
-| `output.cache_name` | null | defaults to `liander2024_<entity_type>` |
-| `output.experiment_name` | null | defaults to entity type in high-level runner |
-| `output.save_resolved_config` | `true` | persist replayable config |
+```text
+runs/<venue>/<composite>/<run-id>/
+reports/<venue>/<composite>/<run-id>/
+```
 
-The currently passive settings called out above are documented so a researcher
-does not mistake recorded intent for implemented behavior.
+This rule makes a venue cloneable and prevents path escape. `run-id` is either
+a UTC timestamp or an explicit lowercase safe slug.
+
+## 6. Cache fingerprint
+
+`base_fingerprint` hashes precisely the base fields that determine the frozen
+marginal/PIT record. It excludes the local data path, Chronos device and batch
+size, sampling, evaluation, runtime, method, composite, venue, and reporting.
+`locate_compatible_cache` verifies metadata, not a user-supplied cache label.
+
+Example: changing `evaluation.joint_score_num_samples` reuses the same marginal
+cache. Changing `pit.monotone_repair`, ordered entity IDs, weather source,
+forecast horizon, or Chronos model revision requires a different cache.
