@@ -399,7 +399,11 @@ def build_cache_from_config(
     )
     pit_u = pit.u.cpu().numpy().astype(np.float32, copy=False)
     pit_z = pit.z.cpu().numpy().astype(np.float32, copy=False)
+    crossing_indices = None
+    crossing_raw_quantile_predictions = None
     if config.pit.monotone_repair == "isotonic":
+        crossing_indices = np.argwhere(raw_pit.crossing_diagnostics.crossed)
+        crossing_raw_quantile_predictions = quantile_predictions[tuple(crossing_indices.T)]
         quantile_predictions = (
             repair_quantiles_isotonic(torch.from_numpy(quantile_predictions)).numpy().astype(np.float32, copy=False)
         )
@@ -435,6 +439,8 @@ def build_cache_from_config(
         entity_ids=group.entity_ids,
         true_y=true_y,
         quantile_predictions=quantile_predictions,
+        crossing_indices=crossing_indices,
+        crossing_raw_quantile_predictions=crossing_raw_quantile_predictions,
         pit_u=pit_u,
         pit_z=pit_z,
         forecast_embeddings=forecast_embeddings,

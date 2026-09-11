@@ -139,7 +139,19 @@ def test_isotonic_cache_persists_repaired_quantiles(monkeypatch, tmp_path: Path)
 
     library = load_pit_library(destination)
     predictions = library.dataset["quantile_prediction"].values
+    indices = np.column_stack(
+        [
+            library.dataset["crossing_origin_index"].values,
+            library.dataset["crossing_entity_index"].values,
+            library.dataset["crossing_lead_index"].values,
+        ]
+    )
+    raw_predictions = library.dataset["crossing_raw_quantile_prediction"].values
     assert np.all(np.diff(predictions, axis=-1) >= 0)
+    assert np.any(np.diff(raw_predictions, axis=-1) < 0)
+    for raw, (origin, entity, lead) in zip(raw_predictions, indices, strict=True):
+        assert np.all(np.diff(predictions[origin, entity, lead]) >= 0)
+        assert np.any(np.diff(raw) < 0)
     assert library.metadata["pit"]["crossing_frequency"] > 0
     levels = torch.tensor(library.dataset["quantile"].values)
     marginal = torch.tensor(predictions[0, :, 0])

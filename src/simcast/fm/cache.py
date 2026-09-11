@@ -51,6 +51,8 @@ def build_cache_dataset(
     entity_ids: Sequence[str],
     true_y: np.ndarray,
     quantile_predictions: np.ndarray,
+    crossing_indices: np.ndarray | None = None,
+    crossing_raw_quantile_predictions: np.ndarray | None = None,
     pit_u: np.ndarray,
     pit_z: np.ndarray,
     forecast_embeddings: np.ndarray,
@@ -67,6 +69,10 @@ def build_cache_dataset(
 
     truth = np.asarray(true_y)
     predictions = np.asarray(quantile_predictions)
+    audit_indices = None if crossing_indices is None else np.asarray(crossing_indices)
+    audit_predictions = (
+        None if crossing_raw_quantile_predictions is None else np.asarray(crossing_raw_quantile_predictions)
+    )
     u = np.asarray(pit_u)
     z = np.asarray(pit_z)
     embeddings = np.asarray(forecast_embeddings)
@@ -78,6 +84,15 @@ def build_cache_dataset(
     n_origin, n_entity, horizon = truth.shape
     if predictions.shape != (n_origin, n_entity, horizon, levels.size):
         raise ValueError("quantile_predictions shape does not match truth and quantile levels")
+    if (audit_indices is None) != (audit_predictions is None):
+        raise ValueError("crossing indices and raw quantile predictions must be provided together")
+    if audit_indices is not None and (
+        audit_indices.ndim != 2
+        or audit_indices.shape[1] != 3
+        or audit_predictions is None
+        or audit_predictions.shape != (audit_indices.shape[0], levels.size)
+    ):
+        raise ValueError("crossing audit must have indices [row, 3] and raw predictions [row, quantile]")
     if u.shape != truth.shape or z.shape != truth.shape:
         raise ValueError("pit_u and pit_z must match true_y")
     if embeddings.ndim != 4 or embeddings.shape[:2] != (n_origin, n_entity):
@@ -102,6 +117,15 @@ def build_cache_dataset(
         "pit_z": (("origin", "entity", "lead"), z),
         "forecast_embedding": (("origin", "entity", "patch", "hidden"), embeddings),
     }
+    if audit_indices is not None and audit_predictions is not None:
+        data_vars.update(
+            {
+                "crossing_origin_index": (("crossing",), audit_indices[:, 0]),
+                "crossing_entity_index": (("crossing",), audit_indices[:, 1]),
+                "crossing_lead_index": (("crossing",), audit_indices[:, 2]),
+                "crossing_raw_quantile_prediction": (("crossing", "quantile"), audit_predictions),
+            }
+        )
     if latitude is not None:
         lat = np.asarray(latitude, dtype=np.float32)
         if lat.shape != (n_entity,):
