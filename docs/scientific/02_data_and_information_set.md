@@ -1,5 +1,11 @@
 # Data, forecast origins, and information sets
 
+**Operational realization.** The corresponding data, forecast, covariate, and
+split arguments are listed in the
+[configuration reference](../technical/configuration_reference.md). The
+[usage guide](../technical/usage_guide.md) explains data download and local
+data locations.
+
 ## Dataset and homogeneous groups
 
 The experiments use the Liander2024 Energy Forecasting Benchmark snapshot

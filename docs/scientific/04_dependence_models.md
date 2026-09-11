@@ -1,5 +1,10 @@
 # Dependence models M0--M4
 
+**Operational realization.** Valid method YAML fields for M0--M4 are listed in
+the [configuration reference](../technical/configuration_reference.md). The
+[usage guide](../technical/usage_guide.md) shows singular and composite
+commands that fit these methods.
+
 ## Shared Gaussian-copula construction
 
 For forecast instance $i$, lead $\tau$, and static group $g$, each method

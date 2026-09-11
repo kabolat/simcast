@@ -1,5 +1,10 @@
 # Research question, estimand, and assumptions
 
+**Operational realization.** The fixed base and method roles used to enact
+this comparison are specified in the
+[configuration reference](../technical/configuration_reference.md); commands
+and notebooks are described in the [usage guide](../technical/usage_guide.md).
+
 ## Scientific objective
 
 Simcast studies whether spatial aggregate forecasts improve when residual

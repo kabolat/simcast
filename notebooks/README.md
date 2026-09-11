@@ -72,6 +72,7 @@ mathematical walk-through for every copula family. They take separate base and
 method YAML files and locate the compatible cache from its metadata fingerprint,
 exactly as the CLI does. In their default
 read-only state they inspect cached arrays, existing checkpoints, and existing
-evaluation files only. See
-[`docs/13_method_notebook_companion.md`](../docs/13_method_notebook_companion.md)
-for the scientific reading guide.
+evaluation files only. Their scientific reading guide is the individual
+notebook introduction together with
+[Dependence models](../docs/scientific/04_dependence_models.md) and
+[Training, sampling, and scoring](../docs/scientific/05_training_sampling_scoring.md).

@@ -1,5 +1,15 @@
 # Artifact schemas and output files
 
+This is the storage-level counterpart to the scientific study. The meaning of
+the cached marginals and PITs is defined in
+[Frozen marginal forecasts and finite PITs](../scientific/03_chronos_and_pit.md);
+the meaning of fitted methods and reported scores is defined in
+[Dependence fitting, scenario generation, and scoring](../scientific/05_training_sampling_scoring.md).
+The declaration-to-evidence chain is described in
+[Scientific workflow](../scientific/06_scientific_workflow.md), and the
+reporting interpretation is described in
+[Experiments, reporting, and result interpretation](../scientific/07_experiments_and_results.md).
+
 ## PIT library directory
 
 The canonical location is
@@ -30,6 +40,8 @@ The xarray schema is `simcast.pit_library`, version 1.
 | `hidden` | `[D]` | int64 | embedding channel |
 | `true_y` | `[N,K,H]` | float | realization; test slice masked publicly |
 | `quantile_prediction` | `[N,K,H,Q]` | float32 | fixed native marginal; never test-masked |
+| `crossing_{origin,entity,lead}_index` | `[C]` | int64 | coordinates of the `C` raw quantile rows that cross, retained only with isotonic repair |
+| `crossing_raw_quantile_prediction` | `[C,Q]` | float32 | raw Chronos values for those crossed rows; the matching repaired row is addressed in `quantile_prediction` by its stored coordinates |
 | `pit_u` | `[N,K,H]` | float32 | discrete PIT; test slice masked publicly |
 | `pit_z` | `[N,K,H]` | float32 | Gaussian score; test slice masked publicly |
 | `forecast_embedding` | `[N,K,P,D]` | float16 | frozen output-patch representation |
@@ -181,7 +193,21 @@ environment and Git record, base/method hashes, composite log, shared M0/M1
 fits, seed-specific M2--M4 fits, evaluations, and completion state. The report
 root contains concatenated per-origin records, method summaries, paired
 effects, and figures. M4 is processed by the same generic traversal as M2 and
-M3.
+M3. The [usage guide](usage_guide.md#10-outputs-and-interpretation) gives the
+practical inspection order; this reference defines the meaning and location of
+the files.
+
+The current generic report root contains:
+
+```text
+per_origin_metrics.parquet  concatenated origin-level records
+method_summary.csv          primary aggregate pinball summary by method entry and seed
+paired_effects.csv          declared paired moving-block bootstrap effects
+method_comparison.png/.pdf  graphical view of the primary metric
+```
+
+The report fields retain `base_id`, `experiment_id`, `method`, and configured
+seed so that a displayed comparison can be traced to its resolved declaration.
 
 Resume compares the stored composite SHA-256 digest with the newly resolved
 declaration. A mismatch is rejected; a validated complete cell is preserved.

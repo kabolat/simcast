@@ -1,5 +1,10 @@
 # Frozen marginal forecasts, quantile validity, and finite PIT observations
 
+**Operational realization.** The `chronos.*` and `pit.*` arguments are listed
+in the [configuration reference](../technical/configuration_reference.md), and
+the cache fields that preserve the resulting fixed marginal record are listed
+in the [artifact reference](../technical/artifact_reference.md).
+
 This chapter explains how a frozen Chronos-2 forecast becomes the marginal
 component of the joint probabilistic model. It proceeds from predictive random
 variables to finite quantiles, quantile validity, historical rank observations,
@@ -320,7 +325,7 @@ different maps.
 For native levels $q_1<\cdots<q_Q$, nearest-level boundaries are
 
 $$
-b_0=0,\qquad b_j=\frac{q_j+q_{j+1}}2,qquad b_Q=1.
+b_0=0,\qquad b_j=\frac{q_j+q_{j+1}}2, \qquad b_Q=1.
 $$
 
 Every $U\in(0,1)$ is assigned to one native level, and the scenario value is

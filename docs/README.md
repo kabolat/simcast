@@ -1,9 +1,9 @@
 # Simcast research documentation
 
-This directory is the scientific record for the Simcast proof of concept. It
-explains what is estimated, what is held fixed, which information is available
-at each forecast origin, how every dependence model is constructed, and how the
-reported experiments can be reproduced.
+This directory has two connected reading paths. `scientific/` explains what is
+estimated, what is held fixed, what information is available at each forecast
+origin, and how each dependence model is constructed. `technical/` explains
+how those declared objects are configured, computed, stored, and reproduced.
 
 Simcast asks one narrow question:
 
@@ -18,39 +18,44 @@ then fixed across M0--M4. Dependence models change only which marginal outcomes
 occur together. They do not fine-tune Chronos, alter the fixed grid, or model
 dependence between different forecast leads.
 
-## Suggested reading paths
+## Scientific documentation
 
-For a scientific reader, read these in order:
+Read these in order to understand the study:
 
-1. [Research question, notation, and assumptions](01_research_problem.md)
-2. [Data, forecast origins, and information sets](02_data_and_information_set.md)
-3. [Frozen Chronos forecasts and PIT construction](03_chronos_and_pit.md)
-4. [Dependence models M0--M4](04_dependence_models.md)
-5. [Dependence fitting, scenario generation, and scores](05_training_sampling_scoring.md)
-6. [Experimental protocol and results](08_experiments_and_results.md)
-7. [Confirmatory experimental protocol](12_confirmatory_protocol.md)
-8. [Method-notebook scientific companion](13_method_notebook_companion.md)
+1. [Research question, notation, and assumptions](scientific/01_research_problem.md)
+2. [Data, forecast origins, and information sets](scientific/02_data_and_information_set.md)
+3. [Frozen Chronos forecasts and PIT construction](scientific/03_chronos_and_pit.md)
+4. [Dependence models M0--M4](scientific/04_dependence_models.md)
+5. [Dependence fitting, scenario generation, and scores](scientific/05_training_sampling_scoring.md)
+6. [Scientific workflow](scientific/06_scientific_workflow.md)
+7. [Experiments, reporting, and result interpretation](scientific/07_experiments_and_results.md)
 
 Within Chapters 1--6, the preferred order is definition and derivation, then a
 worked physical or numerical example, then the configuration and
 implementation guidance needed to reproduce that mathematical choice.
-Chapters 7--10 translate the same objects into executable experiments and
-scientific records; Chapters 11--13 delimit inference and provide independent
-method monographs.
+
+## Technical documentation
+
+Use these documents to operate or inspect the repository:
+
+1. [Usage guide: installation, commands, notebooks, and outputs](technical/usage_guide.md)
+2. [Configuration reference: valid YAML fields, types, defaults, and constraints](technical/configuration_reference.md)
+3. [Artifact reference: cache, run, and report schemas](technical/artifact_reference.md)
+
+The tracks deliberately cross-reference one another. A scientific chapter
+states the statistical object and links to the relevant configuration or
+artifact reference. A technical document links back to the chapter that
+defines the estimand or method it operationalizes.
 
 Historical tracked summaries may describe earlier exploratory configurations.
 They are not silently relabeled as results of the current role-separated
-composites; [Chapter 8](08_experiments_and_results.md) states the admissibility
-criteria for new numerical claims.
+composites; [Chapter 7](scientific/07_experiments_and_results.md) states the admissibility
+criteria for new numerical claims and the evidence required for reporting them.
 
-For a researcher running or extending the code:
-
-1. [Scientific workflow](06_scientific_workflow.md)
-2. [Running and reproducing experiments](07_running_experiments.md)
-3. [Interactive notebook guide](../notebooks/README.md)
-4. [Configuration reference](09_configuration_reference.md)
-5. [Artifact schemas and output files](10_artifact_reference.md)
-6. [Validation, limitations, and extension guide](11_validation_and_extension.md)
+The [interactive notebook guide](../notebooks/README.md) provides a third,
+didactic route: notebooks use both scientific definitions and technical
+interfaces, but are organized for explanation rather than as the source of
+record for either.
 
 ## One-page conceptual map
 
@@ -97,4 +102,4 @@ fitting for M2--M4, and origin-block uncertainty, but it still cannot establish
 external validity from one year.
 
 All notation used across the documentation is defined in
-[01_research_problem.md](01_research_problem.md#indices-and-static-groups).
+[01_research_problem.md](scientific/01_research_problem.md#indices-and-static-groups).

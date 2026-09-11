@@ -1,5 +1,10 @@
 # Full-group dependence fitting, scenario generation, and scoring
 
+**Operational realization.** Sampling and evaluation arguments are defined in
+the [configuration reference](../technical/configuration_reference.md), while
+saved fitted methods and evaluation records are described in the
+[artifact reference](../technical/artifact_reference.md).
+
 ## Dependence-fitting cases
 
 For group $g$, conditional training converts each valid $(i,\tau)$ into

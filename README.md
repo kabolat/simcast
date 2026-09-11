@@ -70,6 +70,10 @@ names are never trusted without compatible metadata.
 
 ## Setup with uv
 
+For a task-oriented guide to installation, data, caches, commands, notebooks,
+temporary overrides, and output locations, start with
+[docs/technical/usage_guide.md](docs/technical/usage_guide.md).
+
 ```bash
 uv sync --group dev
 bash scripts/setup_chronos.sh
@@ -88,6 +92,20 @@ export SIMCAST_DEVICE=cuda
 uv run python -m simcast.cli.download_data \
   --base configs/bases/liander2024/transformer.yaml
 ```
+
+## Frozen-marginal cache
+
+Construct the Chronos quantile, representation, and finite-PIT record for one
+base without fitting a dependence method:
+
+```bash
+uv run python -m simcast.cli.build_cache \
+  --base configs/bases/liander2024/transformer.yaml
+```
+
+The canonical cache location is determined by the scientific marginal
+fingerprint of the base. To choose a location explicitly, use `--output-dir`.
+An existing cache is never replaced unless `--overwrite` is supplied.
 
 ## Singular experiment
 
