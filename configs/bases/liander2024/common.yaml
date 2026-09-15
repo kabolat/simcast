@@ -46,8 +46,8 @@ chronos:
 
 pit:
   mode: discretized
-  monotone_repair: isotonic
-  dependence_transform: nominal_cells
+  monotone_repair: none
+  dependence_transform: training_frequency
   eps: 1.0e-7
 
 sampling:

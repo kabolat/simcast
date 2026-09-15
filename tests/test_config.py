@@ -83,7 +83,7 @@ def test_method_files_are_strictly_role_specific(
 @pytest.mark.parametrize(
     ("filename", "entity_type", "entity_count", "repair"),
     [
-        ("transformer.yaml", "transformer", 15, "none"),
+        ("transformer.yaml", "transformer", 15, "isotonic"),
         ("solar_park.yaml", "solar_park", 5, "isotonic"),
         ("wind_park.yaml", "wind_park", 5, "none"),
         ("mv_feeder.yaml", "mv_feeder", 15, "none"),
