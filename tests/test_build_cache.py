@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 import torch
 
 import simcast.cli.build_cache as cache_cli
@@ -158,3 +159,16 @@ def test_isotonic_cache_persists_repaired_quantiles(monkeypatch, tmp_path: Path)
     scenarios = generate_scenarios(torch.eye(3), marginal, levels, num_samples=256)
     for entity in range(3):
         assert set(scenarios.entity_samples[:, entity].tolist()).issubset(set(marginal[entity].tolist()))
+
+
+def test_existing_cache_fails_before_loading_data_or_forecasting(monkeypatch, tmp_path: Path) -> None:
+    destination = tmp_path / "existing-library"
+    destination.mkdir()
+    monkeypatch.setattr(
+        cache_cli,
+        "build_entity_group",
+        lambda *_args, **_kwargs: pytest.fail("existing cache should stop before data loading"),
+    )
+
+    with pytest.raises(FileExistsError, match="refusing to overwrite existing cache"):
+        cache_cli.build_cache_from_config(_config(tmp_path), output_dir=destination)

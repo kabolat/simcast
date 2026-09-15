@@ -299,6 +299,10 @@ def build_cache_from_config(
 ) -> Path:
     """Run frozen entity-wise inference and persist the labeled PIT library."""
 
+    destination = _cache_destination(config, output_dir)
+    if destination.exists() and not overwrite:
+        raise FileExistsError(f"refusing to overwrite existing cache: {destination}")
+
     np.random.seed(config.seed)
     torch.manual_seed(config.seed)
     if torch.cuda.is_available():
