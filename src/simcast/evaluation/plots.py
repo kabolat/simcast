@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -55,13 +56,38 @@ def plot_missingness(true_y: np.ndarray, entity_ids: Sequence[str], path: str | 
     return _finish(figure, path)
 
 
-def plot_pit_histogram(pit_u: np.ndarray, path: str | Path) -> Path:
+def plot_pit_histogram(
+    pit_u: np.ndarray,
+    path: str | Path,
+    *,
+    quantile_levels: Sequence[float] | np.ndarray | None = None,
+    mode: Literal["discretized", "linear_interpolation"] = "discretized",
+) -> Path:
     values = np.asarray(pit_u)
     values = values[np.isfinite(values)]
-    figure, axis = plt.subplots(figsize=(6, 4))
-    axis.hist(values, bins=np.linspace(0, 1, 21).tolist(), density=True, alpha=0.8)
+    figure, axis = plt.subplots(figsize=(10 if mode == "discretized" else 6, 4))
+    if mode == "discretized":
+        if quantile_levels is None:
+            raise ValueError("quantile_levels are required for a discretized PIT plot")
+        levels = np.asarray(quantile_levels, dtype=np.float64)
+        edges = np.concatenate(([0.0], levels, [1.0]))
+        locations = 0.5 * (edges[:-1] + edges[1:])
+        counts = np.asarray(
+            [np.count_nonzero(np.isclose(values, location, rtol=0.0, atol=1.0e-7)) for location in locations]
+        )
+        observed_mass = counts / counts.sum() if counts.sum() else counts.astype(np.float64)
+        ratio = observed_mass / np.diff(edges)
+        positions = np.arange(locations.size)
+        axis.bar(positions, ratio, alpha=0.8)
+        axis.set_xticks(positions, [f"{value:.3f}" for value in locations], rotation=55, ha="right")
+        axis.set(xlabel="Attainable pseudo-PIT midpoint", ylabel="Observed / nominal cell mass")
+    elif mode == "linear_interpolation":
+        axis.hist(values, bins=np.linspace(0, 1, 21).tolist(), density=True, alpha=0.8)
+        axis.set(xlabel="Interpolated PIT", ylabel="Density")
+    else:
+        raise ValueError(f"unknown PIT mode: {mode}")
     axis.axhline(1.0, color="black", linestyle="--", linewidth=1)
-    axis.set(xlabel="Discretized PIT pseudo-observation", ylabel="Density", title="FM marginal PIT")
+    axis.set_title("FM marginal PIT")
     return _finish(figure, path)
 
 

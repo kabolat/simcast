@@ -1,9 +1,4 @@
-"""Discretized PIT pseudo-observations for native quantile forecasts.
-
-The routines in this module never interpolate the Chronos marginal CDF.  A
-realization is assigned to one of the ``Q + 1`` cells induced by the native
-quantile predictions and mapped to that cell's probability midpoint.
-"""
+"""PIT pseudo-observations for finite native-quantile forecasts."""
 
 from __future__ import annotations
 
@@ -15,6 +10,7 @@ import torch
 from sklearn.isotonic import isotonic_regression  # type: ignore[import-untyped]
 
 MonotoneRepair = Literal["none", "isotonic"]
+PITMode = Literal["discretized", "linear_interpolation"]
 
 
 @dataclass(frozen=True)
@@ -98,6 +94,27 @@ def repair_quantiles_isotonic(quantile_predictions: torch.Tensor) -> torch.Tenso
     return torch.as_tensor(repaired.reshape(original_shape), device=predictions.device, dtype=predictions.dtype)
 
 
+def _prepare_pit_inputs(
+    true_y: torch.Tensor,
+    quantile_predictions: torch.Tensor,
+    quantile_levels: torch.Tensor,
+    monotone_repair: MonotoneRepair,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    predictions = torch.as_tensor(quantile_predictions)
+    truth = torch.as_tensor(true_y, device=predictions.device, dtype=predictions.dtype)
+    levels = _validate_levels(torch.as_tensor(quantile_levels, device=predictions.device)).to(predictions.dtype)
+    if predictions.shape[:-1] != truth.shape:
+        raise ValueError("true_y shape must equal quantile_predictions shape without the quantile axis")
+    if predictions.shape[-1] != levels.numel():
+        raise ValueError("quantile axis does not match quantile_levels")
+    if monotone_repair == "isotonic":
+        predictions = repair_quantiles_isotonic(predictions)
+    elif monotone_repair != "none":
+        raise ValueError(f"unknown monotone repair mode: {monotone_repair}")
+    finite = torch.isfinite(truth) & torch.isfinite(predictions).all(dim=-1)
+    return truth, predictions, levels, finite & ~quantile_crossings(predictions)
+
+
 def discretized_pit(
     true_y: torch.Tensor,
     quantile_predictions: torch.Tensor,
@@ -125,20 +142,9 @@ def discretized_pit(
         PIT locations and a row-validity mask, both shaped ``[...]``.
     """
 
-    predictions = torch.as_tensor(quantile_predictions)
-    truth = torch.as_tensor(true_y, device=predictions.device, dtype=predictions.dtype)
-    levels = _validate_levels(torch.as_tensor(quantile_levels, device=predictions.device)).to(predictions.dtype)
-    if predictions.shape[:-1] != truth.shape:
-        raise ValueError("true_y shape must equal quantile_predictions shape without the quantile axis")
-    if predictions.shape[-1] != levels.numel():
-        raise ValueError("quantile axis does not match quantile_levels")
-    if monotone_repair == "isotonic":
-        predictions = repair_quantiles_isotonic(predictions)
-    elif monotone_repair != "none":
-        raise ValueError(f"unknown monotone repair mode: {monotone_repair}")
-
-    finite = torch.isfinite(truth) & torch.isfinite(predictions).all(dim=-1)
-    valid = finite & ~quantile_crossings(predictions)
+    truth, predictions, levels, valid = _prepare_pit_inputs(
+        true_y, quantile_predictions, quantile_levels, monotone_repair
+    )
     # searchsorted returns the first quantile prediction >= y (left side).
     flat_predictions = predictions.reshape(-1, predictions.shape[-1]).contiguous()
     flat_truth = truth.reshape(-1, 1).contiguous()
@@ -147,6 +153,62 @@ def discretized_pit(
     edges = torch.cat((levels.new_tensor([0.0]), levels, levels.new_tensor([1.0])))
     locations = 0.5 * (edges[:-1] + edges[1:])
     u = locations[cell.clamp_max(levels.numel())].reshape(truth.shape)
+    u = torch.where(valid, u, torch.full_like(u, torch.nan))
+    return u, valid
+
+
+def interpolated_pit(
+    true_y: torch.Tensor,
+    quantile_predictions: torch.Tensor,
+    quantile_levels: torch.Tensor,
+    *,
+    monotone_repair: MonotoneRepair = "none",
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Invert the piecewise-linear quantile function using a deterministic mid-PIT for atoms.
+
+    The inverse quantile function is linear between native quantile points and
+    constant on ``[0, q_1]`` and ``[q_Q, 1]``. Equal adjacent predicted values
+    create an atom; an observation exactly at that value receives the midpoint
+    of the corresponding probability interval.
+    """
+
+    truth, predictions, levels, valid = _prepare_pit_inputs(
+        true_y, quantile_predictions, quantile_levels, monotone_repair
+    )
+    flat_predictions = predictions.reshape(-1, predictions.shape[-1]).contiguous()
+    flat_truth = truth.reshape(-1, 1).contiguous()
+    quantile_count = levels.numel()
+    first = torch.searchsorted(flat_predictions, flat_truth, right=False).squeeze(-1)
+    after = torch.searchsorted(flat_predictions, flat_truth, right=True).squeeze(-1)
+
+    if quantile_count == 1:
+        only = flat_predictions[:, 0]
+        locations = torch.where(flat_truth[:, 0] < only, 0.0, 1.0)
+        locations = torch.where(flat_truth[:, 0] == only, 0.5, locations)
+    else:
+        candidate = flat_predictions.gather(1, first.clamp_max(quantile_count - 1).unsqueeze(-1)).squeeze(-1)
+        exact = (first < quantile_count) & (candidate == flat_truth[:, 0])
+
+        lower_exact = torch.where(first == 0, levels.new_zeros(()), levels[first.clamp_max(quantile_count - 1)])
+        last_equal = (after - 1).clamp_min(0)
+        upper_exact = torch.where(
+            last_equal == quantile_count - 1,
+            levels.new_ones(()),
+            levels[last_equal.clamp_max(quantile_count - 1)],
+        )
+        exact_location = 0.5 * (lower_exact + upper_exact)
+
+        upper_index = first.clamp(1, quantile_count - 1)
+        lower_index = upper_index - 1
+        lower_value = flat_predictions.gather(1, lower_index.unsqueeze(-1)).squeeze(-1)
+        upper_value = flat_predictions.gather(1, upper_index.unsqueeze(-1)).squeeze(-1)
+        weight = (flat_truth[:, 0] - lower_value) / (upper_value - lower_value)
+        interpolated = levels[lower_index] + weight * (levels[upper_index] - levels[lower_index])
+        locations = torch.where(exact, exact_location, interpolated)
+        locations = torch.where((first == 0) & ~exact, levels.new_zeros(()), locations)
+        locations = torch.where(first == quantile_count, levels.new_ones(()), locations)
+
+    u = locations.reshape(truth.shape)
     u = torch.where(valid, u, torch.full_like(u, torch.nan))
     return u, valid
 
@@ -249,6 +311,7 @@ def build_group_pit(
     quantile_predictions: torch.Tensor,
     quantile_levels: torch.Tensor,
     *,
+    mode: PITMode = "discretized",
     monotone_repair: MonotoneRepair = "none",
     eps: float = 1e-7,
 ) -> PITResult:
@@ -264,7 +327,13 @@ def build_group_pit(
     if truth.ndim != 3 or predictions.ndim != 4 or predictions.shape[:-1] != truth.shape:
         raise ValueError("expected true_y [origin, entity, lead] and predictions [origin, entity, lead, quantile]")
     diagnostics = crossing_diagnostics(predictions)
-    u, valid_entity = discretized_pit(
+    pit_function = {
+        "discretized": discretized_pit,
+        "linear_interpolation": interpolated_pit,
+    }.get(mode)
+    if pit_function is None:
+        raise ValueError(f"unknown PIT mode: {mode}")
+    u, valid_entity = pit_function(
         truth,
         predictions,
         quantile_levels,

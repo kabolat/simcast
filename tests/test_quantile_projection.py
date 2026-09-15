@@ -1,6 +1,7 @@
 import pytest
 import torch
 
+from simcast.fm.pit import interpolated_pit
 from simcast.sampling.quantile_projection import (
     project_uniforms_to_quantiles,
     quantile_cell_boundaries,
@@ -27,6 +28,37 @@ def test_batched_projection_preserves_entity_specific_values() -> None:
     uniforms = torch.tensor([[[0.1, 0.8]], [[0.5, 0.1]]])
     projected = project_uniforms_to_quantiles(uniforms, values, torch.tensor([0.1, 0.5, 0.9]))
     torch.testing.assert_close(projected, torch.tensor([[[1.0, 30.0]], [[5.0, 40.0]]]))
+
+
+def test_linear_projection_interpolates_interior_and_uses_boundary_atoms() -> None:
+    uniforms = torch.tensor([[0.0], [0.05], [0.1], [0.3], [0.5], [0.7], [0.9], [0.95], [1.0]])
+    predictions = torch.tensor([[10.0, 20.0, 30.0]])
+
+    projected = project_uniforms_to_quantiles(
+        uniforms,
+        predictions,
+        torch.tensor([0.1, 0.5, 0.9]),
+        mode="linear_interpolation",
+    )
+
+    torch.testing.assert_close(projected[:, 0], torch.tensor([10.0, 10.0, 10.0, 15.0, 20.0, 25.0, 30.0, 30.0, 30.0]))
+
+
+def test_linear_projection_and_pit_are_inverse_between_distinct_knots() -> None:
+    levels = torch.tensor([0.1, 0.5, 0.9])
+    uniforms = torch.tensor([[0.2], [0.3], [0.5], [0.7], [0.8]])
+    predictions = torch.tensor([[10.0, 20.0, 30.0]])
+    projected = project_uniforms_to_quantiles(
+        uniforms,
+        predictions,
+        levels,
+        mode="linear_interpolation",
+    )
+
+    recovered, valid = interpolated_pit(projected[:, 0], predictions.expand(5, -1), levels)
+
+    assert valid.all()
+    torch.testing.assert_close(recovered, uniforms[:, 0])
 
 
 def test_projection_validates_inputs() -> None:

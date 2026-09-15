@@ -34,3 +34,18 @@ def test_common_base_normals_make_sampling_reproducible() -> None:
     left = generate_scenarios(torch.eye(2), values, levels, num_samples=2, base_normals=base)
     right = generate_scenarios(torch.eye(2), values, levels, num_samples=2, base_normals=base)
     torch.testing.assert_close(left.entity_samples, right.entity_samples)
+
+
+def test_gaussian_sampler_uses_configured_linear_marginal_projection() -> None:
+    probabilities = torch.tensor([0.3, 0.7])
+    base = torch.special.ndtri(probabilities).unsqueeze(-1)
+    result = generate_scenarios(
+        torch.eye(1),
+        torch.tensor([[10.0, 20.0, 30.0]]),
+        torch.tensor([0.1, 0.5, 0.9]),
+        num_samples=2,
+        base_normals=base,
+        marginal_mode="linear_interpolation",
+    )
+
+    torch.testing.assert_close(result.entity_samples[:, 0], torch.tensor([15.0, 25.0]))

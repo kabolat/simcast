@@ -387,6 +387,7 @@ def build_cache_from_config(
         torch.from_numpy(true_y),
         torch.from_numpy(quantile_predictions),
         torch.from_numpy(quantile_levels),
+        mode=config.pit.mode,
         monotone_repair="none",
         eps=config.pit.eps,
     )
@@ -397,6 +398,7 @@ def build_cache_from_config(
             torch.from_numpy(true_y),
             torch.from_numpy(quantile_predictions),
             torch.from_numpy(quantile_levels),
+            mode=config.pit.mode,
             monotone_repair=config.pit.monotone_repair,
             eps=config.pit.eps,
         )
@@ -537,10 +539,10 @@ def build_cache_from_config(
         pit_u[tune_mask],
         entity_ids=group.entity_ids,
         interval_levels=config.evaluation.interval_levels,
+        pit_mode=config.pit.mode,
     ).as_dict()
     marginal_payload = {"scope": "train_and_validation", **marginal_report}
 
-    destination = _cache_destination(config, output_dir)
     save_pit_library(destination, dataset, metadata, overwrite=overwrite)
     (destination / "marginal_diagnostics.json").write_text(
         json.dumps(marginal_payload, indent=2, sort_keys=True, allow_nan=False) + "\n",
@@ -583,7 +585,7 @@ def main(
     output_dir: Annotated[Path | None, typer.Option("--output-dir", file_okay=False)] = None,
     overwrite: Annotated[bool, typer.Option("--overwrite")] = False,
 ) -> None:
-    """Build frozen Chronos forecasts, embeddings, and discretized PIT scores."""
+    """Build frozen Chronos forecasts, embeddings, and configured PIT scores."""
 
     base_config = load_base_config(base, overrides=override or ())
     logging.basicConfig(

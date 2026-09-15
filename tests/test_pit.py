@@ -10,6 +10,7 @@ from simcast.fm.pit import (
     discretized_pit,
     fit_training_frequency_midpoints,
     gaussianize_pit,
+    interpolated_pit,
     quantile_crossings,
 )
 
@@ -28,6 +29,28 @@ def test_nonuniform_quantile_spacing() -> None:
     predictions = torch.tensor([[0.0, 1.0, 2.0]]).expand(4, -1)
     u, _ = discretized_pit(torch.tensor([-1.0, 0.5, 1.5, 3.0]), predictions, levels)
     assert torch.allclose(u, torch.tensor([0.025, 0.125, 0.5, 0.9]))
+
+
+def test_linear_interpolated_pit_has_consistent_boundary_atoms_and_interior() -> None:
+    levels = torch.tensor([0.1, 0.5, 0.9])
+    predictions = torch.tensor([[1.0, 2.0, 3.0]]).expand(7, -1)
+    truth = torch.tensor([0.0, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0])
+
+    u, valid = interpolated_pit(truth, predictions, levels)
+
+    assert valid.all()
+    torch.testing.assert_close(u, torch.tensor([0.0, 0.05, 0.3, 0.5, 0.7, 0.95, 1.0]))
+
+
+def test_linear_interpolated_pit_uses_probability_midpoint_for_isotonic_ties() -> None:
+    u, valid = interpolated_pit(
+        torch.tensor([2.0]),
+        torch.tensor([[1.0, 2.0, 2.0, 3.0]]),
+        torch.tensor([0.1, 0.4, 0.6, 0.9]),
+    )
+
+    assert valid.all()
+    torch.testing.assert_close(u, torch.tensor([0.5]))
 
 
 def test_crossing_is_flagged_or_repaired_explicitly() -> None:
@@ -51,6 +74,20 @@ def test_invalid_entity_drops_complete_spatial_vector() -> None:
     assert not result.valid_origin_lead[0, 1]
     assert torch.isnan(result.u[0, :, 1]).all()
     assert result.valid_origin_lead[1].all()
+
+
+def test_group_pit_dispatches_to_linear_interpolation() -> None:
+    truth = torch.tensor([[[1.5]]])
+    predictions = torch.tensor([[[[1.0, 2.0, 3.0]]]])
+    result = build_group_pit(
+        truth,
+        predictions,
+        torch.tensor([0.1, 0.5, 0.9]),
+        mode="linear_interpolation",
+    )
+
+    assert result.valid_origin_lead.item()
+    torch.testing.assert_close(result.u, torch.tensor([[[0.3]]]))
 
 
 def test_gaussianized_scores_are_inverse_normal() -> None:

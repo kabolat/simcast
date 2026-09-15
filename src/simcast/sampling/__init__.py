@@ -1,4 +1,4 @@
-"""Copula scenario generation with fixed discrete FM marginals."""
+"""Copula scenario generation with fixed finite-quantile FM marginals."""
 
 from simcast.sampling.gaussian_copula import ScenarioBatch, generate_scenarios, sample_gaussian_uniforms
 from simcast.sampling.quantile_projection import (

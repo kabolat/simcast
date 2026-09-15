@@ -95,6 +95,7 @@ def _write_run_metadata(
         "evaluation_seed": config.sampling.evaluation_seed,
         "checkpoint_selection": "validation_pseudo_nll",
         "dependence_pit_transform": config.pit.dependence_transform,
+        "pit_mode": config.pit.mode,
     }
     (run_dir / "run_metadata.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
 

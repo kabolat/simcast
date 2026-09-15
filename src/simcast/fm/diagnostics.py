@@ -1,13 +1,13 @@
 """Diagnostics for the fixed Chronos-2 marginal forecasts.
 
-These summaries describe the entity-wise marginals only.  They do not alter,
-recalibrate, or interpolate the native Chronos quantiles.
+These summaries describe the entity-wise marginals only. They do not alter or
+recalibrate the native Chronos quantile knots.
 """
 
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 
@@ -70,6 +70,7 @@ def _summary(
     pit: np.ndarray,
     levels: np.ndarray,
     interval_levels: tuple[float, ...],
+    pit_mode: Literal["discretized", "linear_interpolation"],
 ) -> MarginalSummary:
     median_idx = _level_index(levels, 0.5, "median")
     median = predictions[..., median_idx]
@@ -95,14 +96,27 @@ def _summary(
         coverage[_level_key(interval_level)] = _optional_mean(covered.astype(np.float64))
 
     pit_values = pit[np.isfinite(pit)].astype(np.float64, copy=False)
-    probability_edges = np.concatenate(([0.0], levels.astype(np.float64), [1.0]))
-    locations = 0.5 * (probability_edges[:-1] + probability_edges[1:])
-    counts = np.asarray(
-        [np.count_nonzero(np.isclose(pit_values, value, rtol=0.0, atol=1.0e-7)) for value in locations]
-    )
+    if pit_mode == "discretized":
+        probability_edges = np.concatenate(([0.0], levels.astype(np.float64), [1.0]))
+        locations = 0.5 * (probability_edges[:-1] + probability_edges[1:])
+        counts = np.asarray(
+            [np.count_nonzero(np.isclose(pit_values, value, rtol=0.0, atol=1.0e-7)) for value in locations]
+        )
+    elif pit_mode == "linear_interpolation":
+        probability_edges = np.linspace(0.0, 1.0, 21)
+        locations = 0.5 * (probability_edges[:-1] + probability_edges[1:])
+        counts, _ = np.histogram(pit_values, bins=probability_edges)
+    else:
+        raise ValueError(f"unknown PIT mode: {pit_mode}")
     frequencies = counts / pit_values.size if pit_values.size else counts.astype(np.float64)
-    lower_tail = float(counts[0] / pit_values.size) if pit_values.size else None
-    upper_tail = float(counts[-1] / pit_values.size) if pit_values.size else None
+    lower_tail: float | None
+    upper_tail: float | None
+    if pit_values.size and pit_mode == "linear_interpolation":
+        lower_tail = float(np.mean(pit_values <= levels[0]))
+        upper_tail = float(np.mean(pit_values >= levels[-1]))
+    else:
+        lower_tail = float(counts[0] / pit_values.size) if pit_values.size else None
+        upper_tail = float(counts[-1] / pit_values.size) if pit_values.size else None
 
     return MarginalSummary(
         forecast_sample_count=int(median_mask.sum()),
@@ -130,6 +144,7 @@ def compute_marginal_diagnostics(
     *,
     entity_ids: list[str] | tuple[str, ...] | None = None,
     interval_levels: tuple[float, ...] | list[float] = (0.5, 0.8, 0.9),
+    pit_mode: Literal["discretized", "linear_interpolation"] = "discretized",
 ) -> MarginalDiagnostics:
     """Compute pooled and entity-wise frozen-marginal diagnostics.
 
@@ -162,7 +177,7 @@ def compute_marginal_diagnostics(
     if len(ids) != n_entity or len(set(ids)) != n_entity:
         raise ValueError("entity_ids must be unique and match the entity dimension")
 
-    overall = _summary(truth, predictions, pit, levels, intervals)
+    overall = _summary(truth, predictions, pit, levels, intervals, pit_mode)
     by_entity = {
         entity_id: _summary(
             truth[:, entity_idx, :],
@@ -170,6 +185,7 @@ def compute_marginal_diagnostics(
             pit[:, entity_idx, :],
             levels,
             intervals,
+            pit_mode,
         )
         for entity_idx, entity_id in enumerate(ids)
     }

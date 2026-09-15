@@ -130,10 +130,16 @@ class ChronosConfig(ConfigModel):
 
 
 class PitConfig(ConfigModel):
-    mode: Literal["discretized"] = "discretized"
+    mode: Literal["discretized", "linear_interpolation"] = "discretized"
     monotone_repair: Literal["none", "isotonic"] = "none"
     dependence_transform: Literal["nominal_cells", "training_frequency"] = "nominal_cells"
     eps: Annotated[float, Field(gt=0.0, lt=0.5)] = 1.0e-7
+
+    @model_validator(mode="after")
+    def validate_dependence_transform(self) -> Self:
+        if self.mode == "linear_interpolation" and self.dependence_transform == "training_frequency":
+            raise ValueError("training_frequency is defined only for discretized PIT cells")
+        return self
 
 
 class ProtocolConfig(ConfigModel):

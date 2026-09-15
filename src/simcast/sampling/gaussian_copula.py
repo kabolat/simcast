@@ -1,8 +1,9 @@
-"""Same-lead Gaussian-copula sampling with fixed discrete marginals."""
+"""Same-lead Gaussian-copula sampling with fixed finite-quantile marginals."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 import torch
 
@@ -74,6 +75,7 @@ def generate_scenarios(
     generator: torch.Generator | None = None,
     base_normals: torch.Tensor | None = None,
     jitter: float = 1e-6,
+    marginal_mode: Literal["discretized", "linear_interpolation"] = "discretized",
 ) -> ScenarioBatch:
     """Generate spatial entity scenarios and their aggregate sums."""
 
@@ -88,6 +90,7 @@ def generate_scenarios(
         uniforms,
         quantile_predictions,
         quantile_levels,
+        mode=marginal_mode,
         return_indices=True,
     )
     return ScenarioBatch(

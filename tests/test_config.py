@@ -10,6 +10,7 @@ from simcast.config import (
     ConditionalKernelMethodConfig,
     ConditionalLowRankMethodConfig,
     IndependentMethodConfig,
+    PitConfig,
     SetAwareLowRankMethodConfig,
     StaticGaussianMethodConfig,
     base_fingerprint,
@@ -40,6 +41,13 @@ def test_base_contains_only_the_common_scientific_design() -> None:
     assert not hasattr(base, "features")
     assert not hasattr(base, "training")
     assert not hasattr(base, "dependence")
+
+
+def test_linear_interpolation_is_a_valid_consistent_pit_mode() -> None:
+    pit = PitConfig(mode="linear_interpolation")
+    assert pit.mode == "linear_interpolation"
+    with pytest.raises(ValidationError, match="training_frequency is defined only for discretized PIT cells"):
+        PitConfig(mode="linear_interpolation", dependence_transform="training_frequency")
 
 
 @pytest.mark.parametrize(
@@ -200,8 +208,12 @@ def test_cache_fingerprint_ignores_runtime_and_evaluation_but_not_marginal_desig
         }
     )
     changed_pit = base.model_copy(update={"pit": base.pit.model_copy(update={"eps": 1.0e-6})})
+    changed_mode = base.model_copy(
+        update={"pit": base.pit.model_copy(update={"mode": "linear_interpolation"})}
+    )
     assert base_fingerprint(base) == base_fingerprint(operational)
     assert base_fingerprint(base) != base_fingerprint(changed_pit)
+    assert base_fingerprint(base) != base_fingerprint(changed_mode)
 
 
 def test_override_parser_and_deep_merge() -> None:

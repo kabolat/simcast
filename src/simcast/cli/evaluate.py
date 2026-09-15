@@ -258,6 +258,7 @@ def _sample_and_evaluate(
             levels.to(device),
             num_samples=sample_count,
             base_normals=base_normals,
+            marginal_mode=config.pit.mode,
         )
         aggregate[positions] = scenarios.aggregate_samples.cpu()
         if compute_joint:
@@ -458,7 +459,12 @@ def _plots(
     plot_entity_load_traces(dataset["true_y"].values, ids, figures / "dataset_load_traces.png")
     plot_missingness(dataset["true_y"].values, ids, figures / "dataset_missingness.png")
     tune = dataset.where(dataset["split"] != "test", drop=True)
-    plot_pit_histogram(tune["pit_u"].values, figures / "marginal_pit.png")
+    plot_pit_histogram(
+        tune["pit_u"].values,
+        figures / "marginal_pit.png",
+        quantile_levels=dataset["quantile"].values,
+        mode=config.pit.mode,
+    )
     plot_quantile_coverage(
         tune["true_y"].values,
         tune["quantile_prediction"].values,
@@ -657,6 +663,7 @@ def evaluate_from_config(
         "chronos_source_revision": config.chronos.source_revision,
         "chronos_model_revision": config.chronos.model_revision,
         "dependence_pit_transform": config.pit.dependence_transform,
+        "pit_mode": config.pit.mode,
         "model_sha256": {
             name: sha256_file(
                 path

@@ -38,3 +38,23 @@ def test_marginal_diagnostics_never_interpolate_interval_endpoints() -> None:
             np.full_like(truth, 0.5),
             interval_levels=[0.5],
         )
+
+
+def test_interpolated_pit_diagnostics_use_continuous_probability_bins() -> None:
+    truth = np.array([[[0.0]], [[1.0]], [[2.0]], [[3.0]]])
+    predictions = np.broadcast_to(np.array([[[[0.0, 1.0, 2.0]]]]), (4, 1, 1, 3))
+    pit = np.array([[[0.0]], [[0.3]], [[0.7]], [[1.0]]])
+
+    report = compute_marginal_diagnostics(
+        truth,
+        predictions,
+        np.array([0.1, 0.5, 0.9]),
+        pit,
+        interval_levels=(0.8,),
+        pit_mode="linear_interpolation",
+    )
+
+    assert sum(report.overall.pit_histogram["counts"]) == 4
+    assert len(report.overall.pit_histogram["locations"]) == 20
+    assert report.overall.lower_tail_fraction == pytest.approx(0.25)
+    assert report.overall.upper_tail_fraction == pytest.approx(0.25)
