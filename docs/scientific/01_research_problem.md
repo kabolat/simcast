@@ -11,11 +11,10 @@ Simcast studies whether spatial aggregate forecasts improve when residual
 cross-entity forecast dependence is modeled explicitly while the
 foundation-model-derived marginal quantile grids are held fixed.
 
-Chronos-2 remains frozen. For most Liander groups the fixed grid is the raw
-Chronos-2 native quantile output. For solar parks, raw crossings are substantial,
-so a deterministic isotonic monotonicity repair is first applied. The resulting
-repaired solar grid is then fixed across every dependence method. No dependence
-model can change any marginal quantile value.
+Chronos-2 remains frozen. Three supplied Liander bases use the raw native
+quantile grid. The solar and transformer bases declare deterministic isotonic
+monotonicity repair; the resulting repaired grid is fixed across every
+dependence method. No dependence model can change any marginal quantile value.
 
 This is a controlled predictive comparison of copulas. It is not a causal
 experiment and does not claim novelty for joint probabilistic energy
@@ -152,8 +151,11 @@ y_{k,\tau}^{(i)},
 \right).
 $$
 
-The implementation assigns the observation to one of $Q+1$ cells. It does not
-interpolate or reconstruct a continuous predictive CDF. Gaussianized scores are
+The base configuration fixes the finite-quantile map
+$f^{\mathrm{PIT}}$. The default assigns the observation to one of $Q+1$
+probability cells and uses its midpoint. The alternative inverts a
+piecewise-linear quantile function between adjacent native quantiles, with
+explicit endpoint atoms and no tail extrapolation. Gaussianized scores are
 
 $$
 z_{k,\tau}^{(i)}=\Phi^{-1}\!\left(u_{k,\tau}^{(i)}\right),
@@ -239,7 +241,7 @@ Not modeled:
 - trajectory-level temporal copulas;
 - mixed-type Liander groups;
 - Chronos fine-tuning or new foundation models;
-- continuous CDF interpolation or tail extrapolation;
+- parametric tail extrapolation beyond the lowest and highest native quantiles;
 - causal effects or operational decisions.
 
 M2--M4 remain mathematically capable of accepting other cardinalities, but this
@@ -247,7 +249,7 @@ is an architectural property only and is not evaluated in the full-group study.
 
 ## Scientific assumptions
 
-1. Gaussianized finite-cell PIT scores provide a useful approximation to
+1. Gaussianized finite-quantile PIT scores provide a useful approximation to
    residual rank dependence.
 2. A Gaussian copula is an adequate first family despite excluding asymmetric
    and tail-specific dependence.
@@ -255,8 +257,8 @@ is an architectural property only and is not evaluated in the full-group study.
 4. Each homogeneous metadata-defined entity group is scientifically meaningful.
 5. Complete-case filtering does not invalidate the intended full-group
    interpretation; its possible selection effect remains a limitation.
-6. The discrete fixed marginal approximation is acceptable for a controlled
-   method comparison.
+6. The configured finite-quantile marginal approximation is acceptable for a
+   controlled method comparison.
 7. Target measurement timestamps and weather vintages correctly represent
    $\mathcal I^{(i)}$ for leakage-safe configurations.
 

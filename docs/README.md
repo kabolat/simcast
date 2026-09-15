@@ -12,9 +12,9 @@ Simcast asks one narrow question:
 > sampling with a learned same-lead cross-entity copula?
 
 The distinction between *marginal forecasting* and *dependence modelling* is
-fundamental. Chronos-2 supplies the native quantile grid; solar receives a
-deterministic isotonic monotonicity repair. The resulting FM-derived grid is
-then fixed across M0--M4. Dependence models change only which marginal outcomes
+fundamental. Chronos-2 supplies the native quantile grid; the current solar and
+transformer bases declare deterministic isotonic monotonicity repair. The
+resulting FM-derived grid is then fixed across M0--M4. Dependence models change only which marginal outcomes
 occur together. They do not fine-tune Chronos, alter the fixed grid, or model
 dependence between different forecast leads.
 
@@ -72,8 +72,9 @@ Liander targets + point-in-time weather + entity metadata
              v
         native quantiles [N,K,H,Q]
              |
-             +--> realized values --> discrete PIT --> Gaussian scores z
-             |                                      (train/validation labels)
+             +--> realized values --> configured finite-quantile PIT
+             |                         --> Gaussian scores z
+             |                             (train/validation labels)
              |
              +--> fixed feature construction <------ embeddings + location
                            |
@@ -84,7 +85,7 @@ Liander targets + point-in-time weather + entity metadata
           same-lead Gaussian-copula uniforms [M,K]
                            |
                            v
-       nearest-native-quantile projection (identical marginals)
+       matching configured marginal projection (identical marginals)
                            |
                            v
            entity scenarios --> spatial sum --> test scores

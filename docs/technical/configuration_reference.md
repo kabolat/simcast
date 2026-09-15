@@ -113,19 +113,28 @@ Source and model revisions determine the statistical forecast and enter the
 fingerprint. Device and batch size are operational and do not. Cross-entity
 attention in the foundation model is forbidden by the literal `false` field.
 
-### 2.5 Finite pseudo-PIT
+### 2.5 Finite-quantile marginal law and PIT
 
 | Key | YAML type and admissible values | Default | Meaning |
 |---|---|---|---|
-| `pit.mode` | literal string `discretized` | `discretized` | the only implemented PIT construction: deterministic $Q+1$ cells, with no CDF interpolation |
+| `pit.mode` | `discretized` or `linear_interpolation` | `discretized` | fixes both historical PIT construction and scenario projection; `discretized` uses $Q+1$ cell midpoints and nearest native values, while `linear_interpolation` is piecewise linear between native quantiles with constant boundary segments |
 | `pit.monotone_repair` | `none` or `isotonic` | `none` | `none` invalidates a crossed row; `isotonic` applies least-squares monotone repair before PIT construction and projection |
 | `pit.dependence_transform` | `nominal_cells` or `training_frequency` | `nominal_cells` | `nominal_cells` Gaussianizes declared cell midpoints; `training_frequency` replaces each midpoint by its training-only empirical cell-mass midpoint before Gaussianization |
 | `pit.eps` | real number strictly between 0 and 0.5 | `1.0e-7` | clamp used before $\Phi^{-1}$ |
 
-If native levels are $q_1<\cdots<q_Q$, the predictive value thresholds divide
-the real line into $Q+1$ cells. An observation receives the midpoint of its
-cell's probability interval. Solar declares `isotonic`; its repaired grid is
-used consistently for historical cells and scenario projection. See
+With `discretized`, the predictive thresholds divide the real line into $Q+1$
+cells and an observation receives its cell's probability midpoint. With
+`linear_interpolation`, probabilities and values are linearly related between
+adjacent native quantiles; the map remains constant below $q_1$ and above
+$q_Q$, so it does not extrapolate unsupported tails. At endpoint or tied-value
+atoms, the forward PIT uses the atom's probability midpoint. Isotonic repair,
+when declared, is applied before either map and the same repaired grid is used
+for historical PITs and scenario projection.
+
+`training_frequency` is admissible only with `pit.mode: discretized`, because
+it estimates masses for the named $Q+1$ cells. The configuration validator
+rejects it with `linear_interpolation`. Changing `pit.mode` changes the
+scientific marginal fingerprint and therefore selects a different cache. See
 [Chapter 3](../scientific/03_chronos_and_pit.md) for equations and numerical examples.
 
 ### 2.6 Sampling and estimands
@@ -135,7 +144,7 @@ used consistently for historical cells and scenario projection. See
 | `sampling.num_samples` | positive integer | `4096` | aggregate scenarios $M$ per valid case |
 | `sampling.evaluation_seed` | non-negative integer | `2027` | scenario randomness |
 | `sampling.common_random_numbers` | Boolean | `true` | case-keyed Gaussian draws shared across methods |
-| `sampling.empirical_quantile_method` | literal string `nearest` | `nearest` | finite-ensemble order-statistic convention |
+| `sampling.empirical_quantile_method` | literal string `nearest` | `nearest` | order-statistic convention for aggregate quantiles after Monte Carlo sampling; it does not control entity-level marginal projection |
 | `evaluation.quantile_levels` | sorted, unique non-empty list in $(0,1)$ | `[.05,.10,.25,.50,.75,.90,.95]` | reported aggregate quantiles |
 | `evaluation.interval_levels` | sorted, unique non-empty list in $(0,1)$ | `[.50,.80,.90]` | central interval levels |
 | `evaluation.energy_score` | Boolean | `true` | evaluate empirical all-pairs Energy Score |

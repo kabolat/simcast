@@ -42,7 +42,7 @@ The xarray schema is `simcast.pit_library`, version 1.
 | `quantile_prediction` | `[N,K,H,Q]` | float32 | fixed native marginal; never test-masked |
 | `crossing_{origin,entity,lead}_index` | `[C]` | int64 | coordinates of the `C` raw quantile rows that cross, retained only with isotonic repair |
 | `crossing_raw_quantile_prediction` | `[C,Q]` | float32 | raw Chronos values for those crossed rows; the matching repaired row is addressed in `quantile_prediction` by its stored coordinates |
-| `pit_u` | `[N,K,H]` | float32 | discrete PIT; test slice masked publicly |
+| `pit_u` | `[N,K,H]` | float32 | configured finite-quantile PIT; test slice masked publicly |
 | `pit_z` | `[N,K,H]` | float32 | Gaussian score; test slice masked publicly |
 | `forecast_embedding` | `[N,K,P,D]` | float16 | frozen output-patch representation |
 | `pit_valid` | `[N,H]` | bool | complete-vector gate |
@@ -140,7 +140,7 @@ the current evaluator always writes this table.
 | `correlations` | `[N_test,H,K,K]` | evaluated copula correlations |
 | `energy_score` | `[N_test,H]` | empirical all-pairs score on the selected joint ensemble, or NaN |
 | `variogram_score` | `[N_test,H]` | score or NaN |
-| `pseudo_nll` | `[N_test,H]` | finite-cell Gaussian-copula pseudo-NLL or NaN |
+| `pseudo_nll` | `[N_test,H]` | finite-quantile Gaussian-copula pseudo-NLL or NaN |
 | `valid` | `[N_test,H]` | common evaluation mask |
 
 Entity-level and aggregate Monte Carlo samples are not persisted, which keeps
@@ -152,7 +152,7 @@ must regenerate them.
 `evaluation_manifest.json` records cache path, method-run paths, methods,
 test-origin/case counts, the complete ordered group and $K_g$, full-group
 protocol flags, scenario and selected joint ensemble sizes, common-random-number
-status, evaluation seed, revisions, config/model hashes, PIT transform,
+status, evaluation seed, revisions, config/model hashes, PIT mode and dependence transform,
 confirmatory labels, Git commit, and time.
 `scientific_summary.json` gives six
 machine-readable descriptive answers; it is not a substitute for inspecting

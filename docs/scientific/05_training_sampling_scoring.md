@@ -61,7 +61,7 @@ $$
 $$
 
 It is a pseudo-likelihood because the marginal transformation uses
-deterministic finite-cell pseudo-PIT values and because $R$ may be predicted
+deterministic finite-quantile PIT values and because $R$ may be predicted
 from the same forecast information. The loss may be negative; M0 gives zero
 before stabilization for every vector.
 
@@ -101,7 +101,7 @@ For every valid $(g,i,\tau)$ and method:
 3. draw $M=4096$ base normals $\eta^{(m)}\in\mathbb R^{K_g}$;
 4. form copula uniforms
    $u_{k,\tau}^{(i,m)}=\Phi([L_{g,\tau}^{(i)}\eta^{(m)}]_k)$;
-5. project each uniform to one fixed FM-derived quantile value, producing
+5. project each uniform through the configured fixed marginal law, producing
    $\widetilde Y_{k,\tau}^{(i,m)}$;
 6. sum the complete group:
 
@@ -118,18 +118,19 @@ that adds a stable method-specific seed offset.
 
 The test Gaussian-copula pseudo-NLL is also evaluated case by case under each
 predicted correlation. It is a direct dependence diagnostic, not an aggregate
-forecast score, and remains a pseudo-likelihood because PITs occupy finitely
-many deterministic cells.
+forecast score, and remains a pseudo-likelihood because PITs are inferred from
+a finite native quantile grid rather than an analytic predictive CDF.
 
 Confirmatory uncertainty is computed after averaging valid leads within each
 origin. Neural seeds are averaged within method/origin before the primary
 non-circular moving-block bootstrap. Daily block length seven is primary;
 lengths three and fourteen are sensitivity analyses.
 
-## Finite marginal projection
+## Finite-quantile marginal projection
 
-Scenario projection is not the historical PIT mapping. Given native levels
-$q_1<\cdots<q_Q$, it defines nearest-level boundaries
+Scenario projection is the inverse-direction counterpart of historical PIT
+construction. `pit.mode` fixes both operations. Under the default
+`discretized` mode, nearest-level boundaries are
 
 $$
 b_0=0,
@@ -139,10 +140,19 @@ $$
 
 Each uniform is assigned to exactly one native quantile value
 $\hat y_{k,\tau,q_j}^{(i)}$. There is no value interpolation or tail
-extrapolation. Because Gaussian-copula components are marginally uniform, M0,
-M1, M2, and M3 have the same discrete entity-wise marginal masses. For solar,
-the values are the persisted isotonic-repaired grid; for other groups they are
-the raw native grid.
+extrapolation.
+
+Under `linear_interpolation`, the inverse marginal is constant below $q_1$,
+linear between adjacent pairs $(q_j,\hat y_{q_j})$, and constant above $q_Q$.
+Consequently, it retains endpoint atoms of masses $q_1$ and $1-q_Q$ and does
+not invent unsupported tails. Equal adjacent values, including ties introduced
+by isotonic repair, also form atoms.
+
+Because Gaussian-copula components are marginally uniform, M0--M4 have the
+same configured entity-wise marginal law. For any given base, the same raw or
+isotonic-repaired grid and the same projection mode are held fixed across all
+methods. See [Chapter 3](03_chronos_and_pit.md#7-probability-space-projection-for-scenarios)
+for the formal maps and a numerical comparison.
 
 Aggregate quantiles are nearest empirical order statistics of the $M$
 full-group aggregate samples. They are not sums of equally labeled marginal

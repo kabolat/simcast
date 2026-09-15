@@ -114,11 +114,11 @@ uv run python -m simcast.cli.build_cache \
 ```
 
 This creates the Chronos native quantile grids, output-patch representations,
-and finite-cell PIT pseudo-observations declared by the base. The compatible
+and finite-quantile PIT observations declared by the base. The compatible
 canonical cache location is determined by the base's marginal fingerprint.
 Before interpreting or changing a PIT-related option, read
-[Chapter 3](../scientific/03_chronos_and_pit.md): the cache stores a finite
-quantile approximation, not an interpolated predictive CDF.
+[Chapter 3](../scientific/03_chronos_and_pit.md): the cache stores the
+configured finite-quantile law, which may be discretized or piecewise linear.
 Choose a specific directory only when needed:
 
 ```bash
@@ -434,10 +434,20 @@ Examples:
 
 ```bash
 --set chronos.device=cpu
+--set pit.mode=linear_interpolation
 --set sampling.num_samples=2048
 --set evaluation.energy_score=false
 --set covariates.future_weather_source=oracle
 ```
+
+`pit.mode=linear_interpolation` changes both historical PIT construction and
+entity-scenario projection, so it changes the marginal fingerprint and uses a
+different cache. It cannot be combined with
+`pit.dependence_transform=training_frequency`, which is defined only for the
+default discretized cells. The mathematical distinction is derived in
+[Chapter 3](../scientific/03_chronos_and_pit.md#4-two-finite-quantile-pit-constructions),
+and every PIT option is enumerated in the
+[configuration reference](configuration_reference.md#25-finite-quantile-marginal-law-and-pit).
 
 For a method field, use a command or composite entry that resolves that method;
 for example, `model.latent_rank=8` is valid for M2/M3 and invalid for M4.

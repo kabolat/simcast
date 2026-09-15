@@ -147,29 +147,33 @@ isotonic least squares, the conflicting pair is pooled, yielding
 $(20,33.5,33.5)$. The repaired row is nondecreasing, although two quantiles are
 tied. Ties are valid and are treated deterministically.
 
-The solar data provide the important empirical example: night-time forecasts
-contain many raw crossings. The configured solar analysis applies isotonic
-repair before both historical PIT construction and future scenario projection.
+The solar data provide an important empirical example: night-time forecasts
+contain many raw crossings. The current solar and transformer bases apply
+isotonic repair before both historical PIT construction and future scenario
+projection. The other supplied bases declare `none`.
 
 ### Configuration and implementation
 
 | Behaviour | Configuration | Function |
 |---|---|---|
-| reject crossed rows | `pit.monotone_repair: none` | `discretized_pit` |
+| reject crossed rows | `pit.monotone_repair: none` | `discretized_pit`, `interpolated_pit` |
 | least-squares repair | `pit.monotone_repair: isotonic` | `repair_quantiles_isotonic` |
 | crossing summaries | no additional argument | `quantile_crossings`, `crossing_diagnostics` |
 
 All functions are in `src/simcast/fm/pit.py`. Raw crossing diagnostics are
 computed before repair so the intervention remains visible.
 
-## 4. Why there are $Q+1$ PIT cells
+## 4. Two finite-quantile PIT constructions
 
 ### Theory
 
 If a complete CDF $F$ were known, the probability integral transform (PIT) of
 an observation $y$ would be $u=F(y)$. Under a continuous calibrated predictive
 distribution, $U$ would be uniform on $(0,1)$. Here only $Q$ quantile values are
-known, so $F(y)$ cannot be evaluated exactly without inventing interpolation.
+known. A rule is therefore required to define the distribution between and
+beyond those values. `pit.mode` makes that scientific choice explicit.
+
+### Discretized midpoint mode
 
 The $Q$ predicted quantiles partition the real line into $Q+1$ intervals:
 
@@ -195,7 +199,37 @@ c_j=\frac{a_j+a_{j+1}}2.
 $$
 
 The resulting $u=c_j$ is called a **pseudo-PIT**: it is a deterministic,
-finite approximation to $F(y)$ rather than the exact continuous PIT.
+finite approximation to $F(y)$ rather than the exact continuous PIT. This is
+the default `pit.mode: discretized` construction.
+
+### Piecewise-linear interpolation mode
+
+The alternative `pit.mode: linear_interpolation` defines a quantile function
+directly from the same repaired native grid. Write
+$x_j=\widetilde y_{q_j}$ for a valid nondecreasing row. Its inverse marginal map
+is
+
+$$
+\widetilde Q(u)=
+\begin{cases}
+x_1, & 0\le u\le q_1,\\
+x_j+\dfrac{u-q_j}{q_{j+1}-q_j}(x_{j+1}-x_j),
+&q_j<u<q_{j+1},\\
+x_Q, &q_Q\le u\le1.
+\end{cases}
+$$
+
+Thus the distribution is linear in probability between adjacent native
+quantiles. It is constant outside their probability range: $x_1$ has boundary
+mass $q_1$ and $x_Q$ has boundary mass $1-q_Q$. This conservative convention
+does not invent lower or upper tails. If isotonic repair makes several adjacent
+values equal, that flat segment creates an additional atom.
+
+The corresponding forward PIT is the inverse of each strictly increasing
+segment. At an atom, a realized value does not identify one unique probability,
+so the deterministic transform uses the midpoint of the atom's probability
+interval. Values below $x_1$ receive zero and values above $x_Q$ receive one;
+`pit.eps` subsequently keeps $\Phi^{-1}$ finite.
 
 ### Numerical example
 
@@ -215,8 +249,7 @@ There are four cells, not three:
 | $30<y\le50$ | $I_2$ | $(0.5,0.9)$ | $0.70$ |
 | $y>50$ | $I_3$ | $(0.9,1)$ | $0.95$ |
 
-If the realized value is $y=36$, only the statement
-$0.5<F(36)\le0.9$ is justified by the finite grid. Simcast records its midpoint
+If the realized value is $y=36$, discretized mode records the cell midpoint
 $u=0.70$, then Gaussianizes it:
 
 $$
@@ -226,17 +259,29 @@ $$
 This value says the realization lies above the forecast median but below the
 forecast 90% quantile. It does not claim that the exact CDF value is 0.70.
 
+In linear-interpolation mode, the same realization gives
+
+$$
+u=0.5+\frac{36-30}{50-30}(0.9-0.5)=0.62.
+$$
+
+For an observation exactly equal to the lower endpoint 20, the interpolated
+law has an atom spanning probability interval $[0,0.1]$, so the deterministic
+mid-PIT is 0.05. An observation below 20 receives zero.
+
 ### Configuration and implementation
 
 | Behaviour | Configuration | Function |
 |---|---|---|
 | finite-cell construction | `pit.mode: discretized` | `discretized_pit` |
+| piecewise-linear construction | `pit.mode: linear_interpolation` | `interpolated_pit` |
 | Gaussian clipping | `pit.eps` | `gaussianize_pit` |
-| group-level construction | `pit.monotone_repair`, `pit.eps` | `build_group_pit` |
+| group-level construction | `pit.mode`, `pit.monotone_repair`, `pit.eps` | `build_group_pit` |
 
 Equality with a predicted quantile enters the interval ending at that quantile
-because `discretized_pit` uses a left-sided search. No CDF interpolation or tail
-extrapolation is performed.
+in discretized mode because `discretized_pit` uses a left-sided search. Linear
+mode interpolates only between supported native quantiles and never
+extrapolates a tail.
 
 ## 5. Complete spatial pseudo-observations
 
@@ -282,7 +327,7 @@ complete-vector rule and returns `valid_origin_lead`. `PITLibrary` stores all
 invalid group scores as missing values so every dependence method receives the
 same scientific sample.
 
-## 6. Training-frequency PIT sensitivity
+## 6. Training-frequency sensitivity for discretized cells
 
 ### Theory
 
@@ -298,6 +343,11 @@ $$
 This map is estimated from training origins only and then frozen. It changes the
 pseudo-scores used to estimate dependence; it does not change marginal
 quantiles or scenario projection.
+
+This transform is defined only for `pit.mode: discretized`, because it estimates
+the probabilities of the $Q+1$ named cells. It is rejected with
+`linear_interpolation`, whose non-atomic interior values do not belong to a
+finite set of cells.
 
 ### Example
 
@@ -317,12 +367,13 @@ frequencies. This avoids validation/test leakage.
 
 ### Theory
 
-Historical PIT construction maps an observed target $y$ to a probability cell.
+Historical PIT construction maps an observed target $y$ to probability space.
 Scenario projection is the opposite-direction operation: it maps a simulated
-uniform probability $U$ to one of the fixed marginal quantile values. These are
-different maps.
+uniform probability $U$ through the configured inverse marginal map. The two
+operations have different directions but use the same scientific definition
+selected by `pit.mode`.
 
-For native levels $q_1<\cdots<q_Q$, nearest-level boundaries are
+Under `discretized`, nearest-level boundaries are
 
 $$
 b_0=0,\qquad b_j=\frac{q_j+q_{j+1}}2, \qquad b_Q=1.
@@ -330,8 +381,12 @@ $$
 
 Every $U\in(0,1)$ is assigned to one native level, and the scenario value is
 exactly the corresponding $\hat y_{q_j}$. There is no interpolation between
-values. Because every Gaussian-copula component has a uniform marginal, all
-dependence methods preserve the same finite marginal masses.
+values. Under `linear_interpolation`, scenario values follow
+$\widetilde Q(U)$ from Section 4: they vary linearly between adjacent quantile
+values, equal the first value for $U\le q_1$, and equal the last for
+$U\ge q_Q$. Because every Gaussian-copula component has a uniform marginal,
+all dependence methods preserve whichever finite-quantile marginal law the
+base declares.
 
 ### Numerical example
 
@@ -341,13 +396,28 @@ $\hat y_{0.5}=30$; draws in $(0.7,1)$ select $\hat y_{0.9}=50$. Therefore a draw
 $U=0.72$ produces 50. Dependence methods change joint combinations such as
 $(20,50,30)$ across entities, not the set of values available to one entity.
 
+Under linear interpolation, the same $U=0.72$ lies between $q_2=0.5$ and
+$q_3=0.9$, so
+
+$$
+\widetilde Q(0.72)
+=30+\frac{0.72-0.5}{0.9-0.5}(50-30)=41.
+$$
+
+The dependence method still changes only the joint combination of marginal
+draws, never the values of the native quantile knots.
+
 ### Configuration and implementation
 
-`sampling.empirical_quantile_method: nearest` selects the finite projection.
+`pit.mode` selects both historical PIT construction and scenario projection.
 `project_uniforms_to_quantiles` in
 `src/simcast/sampling/quantile_projection.py` performs it, and
 `GaussianCopulaSampler` combines it with correlated uniforms. The configured
 isotonic-repaired grid, when applicable, is the grid projected here.
+
+`sampling.empirical_quantile_method: nearest` is unrelated to this choice: it
+selects how a reported aggregate quantile is extracted from the finite Monte
+Carlo ensemble after entity scenarios have been summed.
 
 ## 8. Features for conditional dependence
 

@@ -172,7 +172,7 @@ claim rather than merely reproduce a number:
    list and $K_g$, the forecast-origin population, and the complete-vector
    validity rule. These establish what the result describes.
 2. **Fixed marginal experiment.** State the Chronos revision, the weather
-   information policy, any solar isotonic repair, finite-cell PIT rule, and
+   information policy, any isotonic repair, configured finite-quantile PIT law, and
    common scenario design. These are properties of the base, not of the
    winning method.
 3. **Dependence alternatives.** State the exact M0--M4 entries, conditional

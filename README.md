@@ -40,11 +40,13 @@ training partition, chronological validation, and explicitly configured
 optimization budgets. A reduced laboratory budget is a property of a
 composite experiment, not of a method.
 
-FM-derived marginal grids are fixed across all five methods. Most entity groups
-use raw native Chronos-2 quantiles. Solar uses deterministic isotonic repair
-because its raw quantiles cross substantially; the repaired grid is then fixed
-for every method. Historical pseudo-PITs use the finite $Q+1$-cell rule and do
-not interpolate a continuous CDF.
+FM-derived marginal grids are fixed across all five methods. Three entity groups
+use raw native Chronos-2 quantiles. The transformer and solar bases use
+deterministic isotonic repair; each repaired grid is then fixed for every
+method. The base configuration chooses one finite-quantile marginal
+law: the default discretized midpoint construction or piecewise-linear
+interpolation between native quantiles. The same law is used for historical PIT
+construction and scenario projection.
 
 ## Configuration as scientific design
 

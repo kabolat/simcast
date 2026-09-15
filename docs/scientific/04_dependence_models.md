@@ -31,10 +31,12 @@ L_{g,\tau}^{(i)}L_{g,\tau}^{(i)\mathsf T}=R_{g,\tau}^{(i)},
 u_{k,\tau}^{(i,m)}=\Phi(x_k^{(i,m)}).
 $$
 
-The uniforms are projected through the same fixed FM-derived discrete marginal
-grid for every method. The grid is the raw Chronos-2 native grid for most
-groups and the deterministically repaired Chronos grid for solar. No dependence
-model changes any marginal quantile value.
+The uniforms are projected through the same configured finite-quantile
+marginal law for every method. Its knots are the raw Chronos-2 native grid for
+most groups and the deterministically repaired Chronos grid where isotonic
+repair is declared. The base selects discretized or piecewise-linear
+projection; no dependence model changes that selection or any marginal
+quantile value.
 
 Every correlation matrix is symmetric, positive definite after stabilization,
 has unit diagonal, and covers the complete ordered $\mathcal E_g$.
