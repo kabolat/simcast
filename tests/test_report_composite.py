@@ -91,9 +91,14 @@ def test_report_composite_supports_alternate_metrics_and_explicit_output_dir(tmp
     assert set(summary["metric"]) == {"mean_pinball", "crps"}
 
 
-def test_report_composite_rejects_unknown_metric(tmp_path: Path) -> None:
+def test_report_composite_rejects_unknown_metric_without_writing_anything(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
     run_root = _synthetic_run_root(tmp_path)
     config_path = _write_report_config(tmp_path / "report.yaml", run_root, metrics=["not_a_real_metric"])
 
     with pytest.raises(ValueError, match="not_a_real_metric"):
         report_composite(config_path)
+
+    assert not (tmp_path / "reports").exists()

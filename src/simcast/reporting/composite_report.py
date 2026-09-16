@@ -31,7 +31,6 @@ def write_composite_report(
 ) -> None:
     """Write pooled per-origin metrics, paired effects, and per-metric figures."""
 
-    report_dir.mkdir(parents=True, exist_ok=True)
     origin_frames: list[pd.DataFrame] = []
     comparisons: set[tuple[str, str, str, str]] = set()
     for cell in cells:
@@ -49,11 +48,12 @@ def write_composite_report(
             (str(cell["base_id"]), str(cell["experiment_id"]), primary_family, reference_family)
         )
     per_origin = pd.concat(origin_frames, ignore_index=True)
-    per_origin.to_parquet(report_dir / "per_origin_metrics.parquet", index=False)
-
     unknown_metrics = [metric for metric in metrics if metric not in per_origin.columns]
     if unknown_metrics:
         raise ValueError(f"metrics {unknown_metrics} are not columns of per_origin_metrics.parquet")
+
+    report_dir.mkdir(parents=True, exist_ok=True)
+    per_origin.to_parquet(report_dir / "per_origin_metrics.parquet", index=False)
 
     summary_frames = []
     effect_rows: list[dict[str, object]] = []
