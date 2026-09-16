@@ -341,7 +341,9 @@ a UTC timestamp or an explicit lowercase safe slug.
 
 ## 6. Cache fingerprint
 
-`base_fingerprint` hashes precisely the base fields that determine the frozen
+See [usage guide §8](usage_guide.md#8-cache-compatibility) for the SHA-256
+definition and compatibility rule; this section lists only its field-level
+consequences. `base_fingerprint` hashes precisely the base fields that determine the frozen
 marginal/PIT record. It excludes the local data path, Chronos device and batch
 size, sampling, evaluation, runtime, method, composite, venue, and reporting.
 `locate_compatible_cache` verifies metadata, not a user-supplied cache label.

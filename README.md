@@ -65,10 +65,11 @@ lists bases, method variants, repetitions, and paired analyses; no hidden
 Cartesian grid is generated.
 
 The marginal cache is identified by a SHA-256 fingerprint of the scientific
-inputs that determine it: ordered group, data revision, forecast protocol,
-covariates, split, Chronos revision, and PIT construction. Method, venue,
-evaluation, and report settings do not enter this fingerprint. Cache directory
-names are never trusted without compatible metadata.
+inputs that determine it, so method, venue, evaluation, and report settings
+never invalidate it. Cache directory names are never trusted without
+compatible metadata; see
+[docs/technical/usage_guide.md](docs/technical/usage_guide.md#8-cache-compatibility)
+for the exact fingerprinted fields and compatibility rule.
 
 ## Setup with uv
 
