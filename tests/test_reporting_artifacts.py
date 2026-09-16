@@ -3,9 +3,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from simcast.cli.run_composite import _write_report
 from simcast.config import load_composite_config
-from simcast.reporting import read_evaluation_artifacts
+from simcast.reporting import read_evaluation_artifacts, write_composite_report
 
 
 def test_current_and_legacy_evaluation_manifests_are_read_without_rewriting(tmp_path: Path) -> None:
@@ -48,7 +47,7 @@ def test_generic_composite_report_includes_m4(tmp_path: Path) -> None:
     ]
 
     report = tmp_path / "report"
-    _write_report(report, cells, config)
+    write_composite_report(report, cells, config)
 
     summary = pd.read_csv(report / "method_summary.csv")
     effects = pd.read_csv(report / "paired_effects.csv")
