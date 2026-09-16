@@ -351,3 +351,34 @@ size, sampling, evaluation, runtime, method, composite, venue, and reporting.
 Example: changing `evaluation.joint_score_num_samples` reuses the same marginal
 cache. Changing `pit.monotone_repair`, ordered entity IDs, weather source,
 forecast horizon, or Chronos model revision requires a different cache.
+
+## 7. Report configuration
+
+A `report` document regenerates a composite's report from an already-completed
+`runs/<venue>/<composite>/<run-id>/` directory, without re-fitting or
+re-evaluating anything. See
+[usage guide §15](usage_guide.md#15-regenerating-or-customizing-a-report) for
+when and how to use it; this section lists its fields.
+
+```yaml
+kind: report
+run_root: runs/powertech2027/main/2026-09-16_093812
+metrics: [mean_pinball, crps]
+analysis:
+  reference: m0
+  bootstrap_replicates: 10000
+  primary_block_length: 7
+```
+
+| Key | YAML type and admissible values | Default | Meaning |
+|---|---|---|---|
+| `kind` | literal string `report` | **required** | declares a standalone report-regeneration document |
+| `run_root` | path to an existing `runs/<venue>/<composite>/<run-id>/` directory | **required** | source of already-computed per-cell evaluation records |
+| `metrics` | non-empty list of unique column names from `per_origin_metrics.parquet` | `[mean_pinball]` | which metrics get a summary, paired-effect table, and figure |
+| `analysis` | a composite `analysis` block (§4) | **required** | reference, bootstrap replicates, and block lengths for this report only |
+| `output_dir` | path | derived from `run_root` (see §15) | where the regenerated report is written |
+
+`metrics` accepts any column already present in `per_origin_metrics.parquet`
+(for example `mean_pinball`, `crps`, `weighted_interval_score`,
+`coverage_0.9`, `energy_score`, `variogram_score`); an unknown name fails
+validation at report time rather than silently being ignored.

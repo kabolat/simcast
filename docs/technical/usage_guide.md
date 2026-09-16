@@ -310,12 +310,14 @@ evaluation, and report schemas are listed in the
 [artifact reference](artifact_reference.md).
 
 For a current composite, begin in
-`reports/<venue>/<composite>/<run-id>/`: `method_summary.csv` gives the primary
-aggregate pinball summaries; `paired_effects.csv` contains the declared
-moving-block contrasts; `per_origin_metrics.parquet` is the origin-level input
-to those contrasts; and `method_comparison.png`/`.pdf` visualize the primary
-summary. Each is a report of the resolved composite, not a free-standing
-result. Their exact columns and retained identifiers are defined in the
+`reports/<venue>/<composite>/<run-id>/`: `method_summary.csv` gives the
+aggregate summary for each configured metric; `paired_effects.csv` contains
+the declared moving-block contrasts; `per_origin_metrics.parquet` is the
+origin-level input to those contrasts; and one `method_comparison_<metric>.png`/
+`.pdf` pair per configured metric visualizes that summary. `report_summary.md`
+lists and describes every file the directory contains. Each is a report of
+the resolved composite, not a free-standing result. Their exact columns and
+retained identifiers are defined in the
 [artifact reference](artifact_reference.md#composite-experiment-and-report-roots).
 
 ### Reading a completed report
@@ -463,6 +465,36 @@ Unknown fields and cross-method fields fail validation.
 | Hugging Face unauthenticated warning | public retrieval is permitted but rate-limited; optionally set `HF_TOKEN` |
 | No crossing figure in notebook 02 | the selected cache has no representative crossing; this is a valid result |
 | Configuration rejected | consult [Configuration reference](configuration_reference.md); unknown or cross-method fields are invalid |
+
+## 15. Regenerating or customizing a report
+
+`run_composite` always writes a report as its last step, using mean aggregate
+pinball as the only metric. That coupling means the report was previously the
+one part of a composite you could not iterate on without a full re-fit; see
+[Chapter 6 §7](../scientific/06_scientific_workflow.md#7-composite-transformation)
+for why fitting and evaluation must stay immutable under `--resume`, and note
+that reporting has no such reason to be.
+
+`simcast.cli.report_composite` regenerates a report from an existing
+`runs/<venue>/<composite>/<run-id>/composite_manifest.json` alone. It reads
+only already-completed cells' `per_origin_metrics.parquet` files; it never
+calls Chronos, a dependence fitter, or the evaluator, so it is cheap to rerun
+repeatedly while iterating on which metrics, bootstrap settings, or figures to
+produce.
+
+```bash
+uv run python -m simcast.cli.report_composite \
+  --config configs/reports/powertech2027_main.yaml
+```
+
+A report document (§7 of the [configuration reference](configuration_reference.md#7-report-configuration))
+names the source `run_root`, the `metrics` to summarize, and its own
+`analysis` block (reference, bootstrap replicates, block lengths). Unless
+`output_dir` is set explicitly (in the YAML or via `--output-dir`), the report
+is written under `reports/<venue>/<composite>/<run-id>/<report-config-stem>/`,
+so a custom report never overwrites the one `run_composite` already wrote.
+Running it twice with different `metrics` produces independent, comparable
+report directories from the same fitted models and evaluations.
 
 ## 14. Scientific validation without experiments
 

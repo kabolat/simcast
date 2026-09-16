@@ -1,0 +1,8 @@
+kind: report
+run_root: runs/powertech2027/main/2026-09-16_093812
+metrics: [mean_pinball]
+analysis:
+  reference: m0
+  bootstrap_replicates: 10000
+  primary_block_length: 7
+  sensitivity_block_lengths: [3, 14]

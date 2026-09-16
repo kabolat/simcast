@@ -200,11 +200,20 @@ the files.
 The current generic report root contains:
 
 ```text
-per_origin_metrics.parquet  concatenated origin-level records
-method_summary.csv          primary aggregate pinball summary by method entry and seed
-paired_effects.csv          declared paired moving-block bootstrap effects
-method_comparison.png/.pdf  graphical view of the primary metric
+per_origin_metrics.parquet          concatenated origin-level records
+method_summary.csv                  mean value per (base, experiment, method, seed), one row per metric
+paired_effects.csv                  paired moving-block bootstrap effects, one row per metric/comparison
+method_comparison_<metric>.png/.pdf graphical view of one configured metric
+report_summary.md                   plain-text index describing every file above
 ```
+
+`run_composite` always writes this report using only `mean_pinball`.
+`simcast.cli.report_composite` regenerates the same four data files plus
+`report_summary.md` from an existing `composite_manifest.json`, for any
+configured `metrics` list and `analysis` settings, without re-fitting or
+re-evaluating; see
+[usage guide §15](usage_guide.md#15-regenerating-or-customizing-a-report) and
+[configuration reference §7](configuration_reference.md#7-report-configuration).
 
 The report fields retain `base_id`, `experiment_id`, `method`, and configured
 seed so that a displayed comparison can be traced to its resolved declaration.
