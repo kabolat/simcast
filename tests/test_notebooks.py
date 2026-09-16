@@ -65,9 +65,20 @@ def test_notebook_examples_match_cache_and_group_interfaces() -> None:
     assert "ds.attrs['output_patch_size']" in cache_source
 
 
+def test_report_walkthrough_notebook_reads_without_regenerating_by_default() -> None:
+    source = _source(NOTEBOOKS / "reporting/01_report_walkthrough.ipynb")
+    assert "report_composite" in source
+    assert "REPORT_DIR" in source and "report_summary.md" in source
+    assert "REGENERATE = False" in source
+
+
 def test_local_markdown_links_resolve() -> None:
     link_pattern = re.compile(r"\[[^]]+\]\(([^)#]+)(?:#[^)]+)?\)")
-    for path in [*NOTEBOOKS.glob("*.ipynb"), *(NOTEBOOKS / "dependency_methods").glob("*.ipynb")]:
+    for path in [
+        *NOTEBOOKS.glob("*.ipynb"),
+        *(NOTEBOOKS / "dependency_methods").glob("*.ipynb"),
+        *(NOTEBOOKS / "reporting").glob("*.ipynb"),
+    ]:
         for target in link_pattern.findall(_source(path)):
             if "://" not in target:
                 assert (path.parent / target).resolve().exists(), f"broken link in {path}: {target}"

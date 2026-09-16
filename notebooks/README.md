@@ -38,6 +38,13 @@ The second path consists of independent mathematical monographs in
 `dependency_methods/`. Each restarts the notation and can be read without
 running notebooks 00--04.
 
+`reporting/01_report_walkthrough.ipynb` is a third, independent notebook: the
+interactive counterpart to a report's `report_summary.md`. It reads an
+already-generated `reports/<venue>/<composite>/<run-id>/` directory and
+displays its tables and figures; it does not fit, evaluate, or write anything
+unless its regeneration cell is explicitly enabled. See
+[the usage guide](../docs/technical/usage_guide.md#15-regenerating-or-customizing-a-report).
+
 The workflow notebooks accept a base file; each method monograph accepts a base
 and exactly one method file. Their separate override lists use the same dotted
 `key=value` syntax understood by the corresponding loaders. For example:
@@ -58,6 +65,7 @@ The stages map directly to the CLI:
 | `02_chronos_cache_and_features.ipynb` | `simcast.cli.build_cache.build_cache_from_config` |
 | `03_dependence_models.ipynb` | `simcast.cli.train_dependence.train_from_config` |
 | `04_evaluation_reporting_and_visualisation.ipynb` | `load_composite_config` and read-only result interpretation |
+| `reporting/01_report_walkthrough.ipynb` | `simcast.cli.report_composite.report_composite` (only when its regeneration cell is enabled) |
 
 The cache grants only training/validation labels unless explicitly opened with
 `access="evaluation"`; the evaluation notebook makes that boundary visible.
