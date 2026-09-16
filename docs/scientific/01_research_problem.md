@@ -20,6 +20,37 @@ This is a controlled predictive comparison of copulas. It is not a causal
 experiment and does not claim novelty for joint probabilistic energy
 forecasting as a general topic.
 
+## Notation quick-reference
+
+Every chapter reuses this symbol set; each row names the chapter that gives
+the full definition. Purely chapter-local symbols (for example M4's kernel
+length scale $\ell$) are defined only where they are used and are not repeated
+here.
+
+| Symbol | Meaning | Defined in |
+|---|---|---|
+| $N$, $i\in[N]$, $t^{(i)}$ | forecast instance count, index, UTC origin time | Ch. 1 |
+| $g\in[G]$, $\mathcal E_g$, $K_g$ | static entity group, its ordered entity set, its cardinality | Ch. 1 |
+| $\tau\in[H]$, $\Delta$ | one-based forecast lead, sampling interval | Ch. 1 |
+| $Y_{k,\tau}^{(i)}$, $y_{k,\tau}^{(i)}$ | future target random variable, its observed realization | Ch. 1 |
+| $\mathcal I^{(i)}$ | information available at origin $t^{(i)}$ | Ch. 1, Ch. 2 |
+| $F_{k,\tau}^{(i)}$ | entity-wise predictive marginal CDF | Ch. 1 |
+| $\hat y_{k,\tau,q_j}^{(i)}$, $q_j$, $Q$ | native quantile value, probability level, quantile count | Ch. 1, Ch. 3 |
+| $A_{g,\tau}^{(i)}$, $a_{g,\tau}^{(i)}$ | random spatial aggregate, its observed value | Ch. 1 |
+| $C_{g,\tau}^{(i)}$ | cross-entity copula | Ch. 1 |
+| $R_{g,\tau}^{(i)}$ | Gaussian-copula correlation matrix | Ch. 1, Ch. 4 |
+| $u_{k,\tau}^{(i)}$, $z_{k,\tau}^{(i)}$ | finite-quantile PIT pseudo-observation, its Gaussianized score | Ch. 1, Ch. 3 |
+| $\mathbf z_{g,\tau}^{(i)}$ | complete group score vector | Ch. 1 |
+| $V_{k,\tau}^{(i)}$, $V_{g,\tau}^{(i)}$ | entity-level and group-level complete-vector validity indicators | Ch. 3 |
+| $\Lambda_{g,\tau}^{(i)}$, $\lambda_{k,\tau}^{(i)}$, $r$ | low-rank loading matrix, one entity's loading vector, factor rank | Ch. 4 |
+| $\sigma_{k,\tau}^{(i)}$ | entity idiosyncratic (uniqueness) scale | Ch. 4 |
+| $X_{g,\tau}^{(i)}$ | dependence-fitting feature matrix (distinct from validity $V$) | Ch. 5 |
+| $M$, $\eta^{(m)}$, $\widetilde A_{g,\tau}^{(i,m)}$ | scenario count, base normal draw, sampled scenario aggregate | Ch. 5 |
+| $S$, $d_{a,b,g}^{(i)}$ | proper score, paired method-vs-reference contrast | Ch. 1, Ch. 7 |
+
+$\Lambda$ always denotes low-rank factor loadings; $A$ always denotes the
+random aggregate. The two are never used interchangeably.
+
 ## Indices and static groups
 
 For a positive integer $n$, write $[n]=\{1,\ldots,n\}$.

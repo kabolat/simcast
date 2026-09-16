@@ -98,10 +98,14 @@ This is a research proof of concept, not a production forecasting service. Its
 strongest safeguards are scientific: exact upstream revision pins, chronological
 splits, point-in-time availability, physically sealed test labels, fixed
 marginals across methods, saved resolved configurations, and explicit model and
-evaluation artifacts. Existing archived results remain historical exploratory
-evidence. The current composite protocol declares all five methods, multi-seed
+evaluation artifacts. Any historical runs or reports predating this
+configuration system, where still present on disk, are exploratory evidence
+only, not current results. The current composite protocol declares all five
+methods, multi-seed
 fitting for M2--M4, and origin-block uncertainty, but it still cannot establish
 external validity from one year.
 
 All notation used across the documentation is defined in
-[01_research_problem.md](scientific/01_research_problem.md#indices-and-static-groups).
+[01_research_problem.md](scientific/01_research_problem.md#indices-and-static-groups),
+with a consolidated cross-chapter
+[notation quick-reference](scientific/01_research_problem.md#notation-quick-reference).
