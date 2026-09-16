@@ -47,11 +47,13 @@ def test_generic_composite_report_includes_m4(tmp_path: Path) -> None:
     ]
 
     report = tmp_path / "report"
-    write_composite_report(report, cells, config)
+    write_composite_report(report, cells, config.analysis)
 
     summary = pd.read_csv(report / "method_summary.csv")
     effects = pd.read_csv(report / "paired_effects.csv")
     assert set(summary["method"]) == {"independent", "conditional_kernel"}
     assert set(effects["method"]) == {"conditional_kernel"}
-    assert (report / "method_comparison.png").is_file()
-    assert (report / "method_comparison.pdf").is_file()
+    assert (report / "method_comparison_mean_pinball.png").is_file()
+    assert (report / "method_comparison_mean_pinball.pdf").is_file()
+    assert (report / "report_summary.md").is_file()
+    assert "method_summary.csv" in (report / "report_summary.md").read_text(encoding="utf-8")

@@ -492,6 +492,27 @@ class CompositeExperimentConfig(ConfigModel):
         return self
 
 
+class ReportConfig(ConfigModel):
+    """Regenerate a composite report from an existing ``runs/`` directory.
+
+    Unlike a composite, this is never hashed against fitted/evaluated cells:
+    it only reads already-computed ``per_origin_metrics.parquet`` records.
+    """
+
+    kind: Literal["report"]
+    run_root: Path
+    metrics: list[str] = Field(default_factory=lambda: ["mean_pinball"], min_length=1)
+    analysis: CompositeAnalysisConfig
+    output_dir: Path | None = None
+
+    @field_validator("metrics")
+    @classmethod
+    def unique_metrics(cls, value: list[str]) -> list[str]:
+        if any(not item.strip() for item in value) or len(value) != len(set(value)):
+            raise ValueError("report.metrics must be non-empty, unique metric names")
+        return value
+
+
 _ENV_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-(.*?))?\}")
 
 
@@ -616,6 +637,12 @@ def load_composite_config(path: str | Path, overrides: Sequence[str] = ()) -> Co
             f"composite venue {config.venue!r} does not match its directory {directory_venue!r}"
         )
     return config
+
+
+def load_report_config(path: str | Path, overrides: Sequence[str] = ()) -> ReportConfig:
+    """Load a standalone report-regeneration configuration."""
+
+    return ReportConfig.model_validate(_load_role_values(path, overrides))
 
 
 def marginal_fingerprint(values: Mapping[str, Any]) -> str:

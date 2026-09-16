@@ -264,7 +264,7 @@ def run_composite(
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
         LOGGER.info("completed %s", cell_id)
 
-    write_composite_report(report_root, cells, config)
+    write_composite_report(report_root, cells, config.analysis)
     manifest["status"] = "complete"
     manifest["report_path"] = str(report_root)
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
