@@ -126,12 +126,13 @@ factor rank to M4 or conditional features to M0.
 
 ## 7. Status of historical results
 
-Existing `runs/`, `reports/`, and tracked result files predate this
-configuration migration and are intentionally unchanged. Some historical
-neural results were produced with random entity-subset augmentation. They are
-legacy exploratory evidence and must not be presented as results of the
-current complete-group composites. Their original manifests remain readable,
-but they are not silently relabeled or regenerated.
+Any existing `runs/` and `reports/` directories that predate this
+configuration migration are untouched, read-only history, not evidence for the
+current composites. The tracked `results/` directory of pre-migration
+exploratory summaries has been retired: some of its neural results were
+produced with random entity-subset augmentation and were never full-group
+evidence. It remains recoverable from Git history for audit purposes, but it
+is not restored, relabeled, or regenerated.
 
 No empirical experiment or report was run as part of the configuration
 refactor. Consequently this chapter does not invent a new numerical headline

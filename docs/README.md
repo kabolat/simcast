@@ -47,9 +47,10 @@ states the statistical object and links to the relevant configuration or
 artifact reference. A technical document links back to the chapter that
 defines the estimand or method it operationalizes.
 
-Historical tracked summaries may describe earlier exploratory configurations.
-They are not silently relabeled as results of the current role-separated
-composites; [Chapter 7](scientific/07_experiments_and_results.md) states the admissibility
+Earlier exploratory result summaries that predated this configuration system
+have been retired from the tracked tree; they remain recoverable from Git
+history but are not restored or relabeled as evidence for the current
+role-separated composites. [Chapter 7](scientific/07_experiments_and_results.md) states the admissibility
 criteria for new numerical claims and the evidence required for reporting them.
 
 The [interactive notebook guide](../notebooks/README.md) provides a third,
