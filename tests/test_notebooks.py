@@ -35,11 +35,25 @@ def test_each_method_notebook_accepts_one_base_and_one_method() -> None:
     assert len(paths) == 5
     for path in paths:
         source = _source(path)
+        compact_source = source.replace(" ", "")
         assert "BASE_FILE" in source and "METHOD_FILE" in source
         assert "load_base_config" in source and "load_method_config" in source
         assert "resolve_run_config" in source and "locate_compatible_cache" in source
         assert "train_from_config" in source and "evaluate_from_config" in source
+        assert "CACHE_ROOT=PROJECT_ROOT/'artifacts'/'cache'" in compact_source
+        assert "output.cache_dir={CACHE_ROOT}" in source
+        assert "FIT_IF_MISSING" in source and "RUN_EVALUATION" in source
+        assert "TRAIN_IF_MISSING" not in source
         assert "smoke" not in source.lower()
+
+
+def test_method_notebooks_trace_dependence_into_scenarios() -> None:
+    for path in sorted((NOTEBOOKS / "dependency_methods").glob("0[1-4]_*.ipynb")):
+        source = _source(path)
+        assert "dependence_pit_scores" in source
+        assert "sample_gaussian_uniforms" in source
+        assert "generate_scenarios" in source
+        assert "aggregate_samples" in source
 
 
 def test_notebook_examples_match_cache_and_group_interfaces() -> None:
