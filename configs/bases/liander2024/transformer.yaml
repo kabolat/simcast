@@ -3,6 +3,8 @@ kind: base
 id: liander2024_transformer
 data:
   entity_type: transformer
+pit:
+  monotone_repair: isotonic
 protocol:
   entity_count: 15
   ordered_entity_ids:
