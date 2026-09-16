@@ -20,6 +20,7 @@ from simcast.cli.train_dependence import _cache_path, _dependence_scores
 from simcast.config import ResolvedExperimentConfig
 from simcast.dependence import IndependentCopula, StaticGaussianCopula
 from simcast.evaluation.aggregate import AggregateEvaluation, evaluate_aggregate_ensemble
+from simcast.evaluation.metrics import energy_score, variogram_score
 from simcast.evaluation.plots import (
     plot_aggregate_fan,
     plot_correlation_heatmap,
@@ -181,19 +182,6 @@ def _valid_pairs(truth: torch.Tensor, predictions: torch.Tensor) -> torch.Tensor
     return finite & ~crossing
 
 
-def _joint_scores(samples: torch.Tensor, truth: torch.Tensor, power: float) -> tuple[torch.Tensor, torch.Tensor]:
-    first = torch.linalg.vector_norm(samples - truth[:, None, :], dim=-1).mean(dim=-1)
-    pair_sum = samples.new_zeros(samples.shape[0])
-    for start in range(0, samples.shape[1], 128):
-        pair_sum += torch.cdist(samples[:, start : start + 128], samples).sum(dim=(-2, -1))
-    energy = first - pair_sum / (2.0 * samples.shape[1] ** 2)
-    left, right = torch.triu_indices(samples.shape[-1], samples.shape[-1], offset=1, device=samples.device)
-    observed = torch.abs(truth[:, left] - truth[:, right]).pow(power)
-    predicted = torch.abs(samples[:, :, left] - samples[:, :, right]).pow(power).mean(dim=1)
-    variogram = (observed - predicted).square().sum(dim=-1)
-    return energy, variogram
-
-
 def _base_normal_draws(
     positions: torch.Tensor,
     num_samples: int,
@@ -264,13 +252,11 @@ def _sample_and_evaluate(
         if compute_joint:
             joint_count = min(sample_count, config.evaluation.joint_score_num_samples)
             joint_samples = scenarios.entity_samples[:, :joint_count]
-            batch_energy, batch_variogram = _joint_scores(
-                joint_samples,
-                realized.index_select(0, positions).to(device),
-                config.evaluation.variogram_power,
-            )
-            energy[positions] = batch_energy.cpu()
-            variogram[positions] = batch_variogram.cpu()
+            joint_truth = realized.index_select(0, positions).to(device)
+            energy[positions] = energy_score(joint_samples, joint_truth, pair_chunk_size=128).cpu()
+            variogram[positions] = variogram_score(
+                joint_samples, joint_truth, power=config.evaluation.variogram_power
+            ).cpu()
         if flattened_z is not None:
             pseudo_nll[positions] = gaussian_copula_pseudo_nll(
                 flattened_z.index_select(0, positions).to(device),

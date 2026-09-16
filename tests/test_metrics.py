@@ -1,7 +1,6 @@
 import pytest
 import torch
 
-from simcast.cli.evaluate import _joint_scores
 from simcast.evaluation.aggregate import evaluate_aggregate_ensemble
 from simcast.evaluation.metrics import (
     crps_ensemble,
@@ -41,15 +40,18 @@ def test_energy_and_variogram_scores_are_zero_for_perfect_ensemble() -> None:
     assert variogram_score(samples, truth).item() == pytest.approx(0.0)
 
 
-def test_evaluator_energy_score_is_the_empirical_all_pairs_estimator() -> None:
+def test_energy_and_variogram_scores_support_batched_ensembles() -> None:
     torch.manual_seed(17)
     samples = torch.randn(3, 11, 4)
     truth = torch.randn(3, 4)
-    actual, _ = _joint_scores(samples, truth, power=0.5)
-    expected = torch.stack(
+    expected_energy = torch.stack(
         [energy_score(sample, observation) for sample, observation in zip(samples, truth, strict=True)]
     )
-    torch.testing.assert_close(actual, expected, atol=1e-6, rtol=1e-6)
+    expected_variogram = torch.stack(
+        [variogram_score(sample, observation, power=0.5) for sample, observation in zip(samples, truth, strict=True)]
+    )
+    torch.testing.assert_close(energy_score(samples, truth), expected_energy, atol=1e-6, rtol=1e-6)
+    torch.testing.assert_close(variogram_score(samples, truth, power=0.5), expected_variogram, atol=1e-6, rtol=1e-6)
 
 
 def test_aggregate_evaluation_reports_overall_and_one_based_leads() -> None:

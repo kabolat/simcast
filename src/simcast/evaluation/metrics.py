@@ -118,20 +118,24 @@ def energy_score(
     beta: float = 1.0,
     pair_chunk_size: int = 512,
 ) -> torch.Tensor:
-    """Energy score for one multivariate ensemble ``[M, K]``."""
+    """Energy score for one or more multivariate ensembles ``[..., M, K]``.
+
+    Leading batch dimensions, if any, are preserved in the returned tensor.
+    """
 
     draws = torch.as_tensor(samples)
     truth = torch.as_tensor(observation, dtype=draws.dtype, device=draws.device)
-    if draws.ndim != 2 or truth.shape != (draws.shape[1],) or draws.shape[0] == 0:
-        raise ValueError("expected samples [num_samples, entities] and observation [entities]")
+    if draws.ndim < 2 or truth.shape != draws.shape[:-2] + draws.shape[-1:] or draws.shape[-2] == 0:
+        raise ValueError("expected samples [..., num_samples, entities] and observation [..., entities]")
     if not 0 < beta <= 2 or pair_chunk_size <= 0:
         raise ValueError("beta must be in (0, 2] and pair_chunk_size must be positive")
-    first = torch.linalg.vector_norm(draws - truth, dim=-1).pow(beta).mean()
-    pair_sum = draws.new_zeros(())
-    for start in range(0, draws.shape[0], pair_chunk_size):
-        distances = torch.cdist(draws[start : start + pair_chunk_size], draws, p=2).pow(beta)
-        pair_sum = pair_sum + distances.sum()
-    second = pair_sum / (2.0 * draws.shape[0] ** 2)
+    num_samples = draws.shape[-2]
+    first = torch.linalg.vector_norm(draws - truth.unsqueeze(-2), dim=-1).pow(beta).mean(dim=-1)
+    pair_sum = draws.new_zeros(draws.shape[:-2])
+    for start in range(0, num_samples, pair_chunk_size):
+        distances = torch.cdist(draws[..., start : start + pair_chunk_size, :], draws, p=2).pow(beta)
+        pair_sum = pair_sum + distances.sum(dim=(-2, -1))
+    second = pair_sum / (2.0 * num_samples**2)
     return torch.as_tensor(first - second)
 
 
@@ -142,15 +146,18 @@ def variogram_score(
     power: float = 0.5,
     weights: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """Variogram score summed over unique entity pairs for one ensemble."""
+    """Variogram score over unique entity pairs for one or more ensembles ``[..., M, K]``.
+
+    Leading batch dimensions, if any, are preserved in the returned tensor.
+    """
 
     draws = torch.as_tensor(samples)
     truth = torch.as_tensor(observation, dtype=draws.dtype, device=draws.device)
-    if draws.ndim != 2 or truth.shape != (draws.shape[1],) or draws.shape[1] < 2:
-        raise ValueError("expected samples [num_samples, K] and observation [K], with K >= 2")
+    if draws.ndim < 2 or truth.shape != draws.shape[:-2] + draws.shape[-1:] or draws.shape[-1] < 2:
+        raise ValueError("expected samples [..., num_samples, K] and observation [..., K], with K >= 2")
     if not 0 < power <= 2:
         raise ValueError("power must lie in (0, 2]")
-    entities = draws.shape[1]
+    entities = draws.shape[-1]
     if weights is None:
         pair_weights = torch.ones((entities, entities), dtype=draws.dtype, device=draws.device)
     else:
@@ -158,6 +165,6 @@ def variogram_score(
         if pair_weights.shape != (entities, entities):
             raise ValueError("weights must have shape [K, K]")
     row, column = torch.triu_indices(entities, entities, offset=1, device=draws.device)
-    observed = torch.abs(truth[row] - truth[column]).pow(power)
-    predicted = torch.abs(draws[:, row] - draws[:, column]).pow(power).mean(dim=0)
-    return (pair_weights[row, column] * (observed - predicted).square()).sum()
+    observed = torch.abs(truth[..., row] - truth[..., column]).pow(power)
+    predicted = torch.abs(draws[..., row] - draws[..., column]).pow(power).mean(dim=-2)
+    return (pair_weights[row, column] * (observed - predicted).square()).sum(dim=-1)
