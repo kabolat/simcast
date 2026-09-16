@@ -639,7 +639,11 @@ def marginal_fingerprint(values: Mapping[str, Any]) -> str:
             for key, value in chronos.items()
             if key not in {"device", "batch_size"}
         },
-        "pit": values["pit"],
+        "pit": {
+            key: value
+            for key, value in values["pit"].items()
+            if key != "dependence_transform"
+        },
     }
     return canonical_json_hash(payload)
 

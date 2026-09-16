@@ -211,7 +211,11 @@ def test_cache_fingerprint_ignores_runtime_and_evaluation_but_not_marginal_desig
     changed_mode = base.model_copy(
         update={"pit": base.pit.model_copy(update={"mode": "linear_interpolation"})}
     )
+    changed_dependence_transform = base.model_copy(
+        update={"pit": base.pit.model_copy(update={"dependence_transform": "nominal_cells"})}
+    )
     assert base_fingerprint(base) == base_fingerprint(operational)
+    assert base_fingerprint(base) == base_fingerprint(changed_dependence_transform)
     assert base_fingerprint(base) != base_fingerprint(changed_pit)
     assert base_fingerprint(base) != base_fingerprint(changed_mode)
 

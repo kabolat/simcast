@@ -3,8 +3,6 @@ kind: base
 id: liander2024_solar_park
 data:
   entity_type: solar_park
-pit:
-  monotone_repair: isotonic
 protocol:
   entity_count: 5
   ordered_entity_ids:

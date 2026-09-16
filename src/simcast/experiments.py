@@ -60,6 +60,16 @@ def _cache_fingerprint(path: Path) -> str | None:
         return None
 
 
+def _cache_dependence_transform(path: Path) -> str | None:
+    metadata_path = path / "metadata.json"
+    if not metadata_path.is_file():
+        return None
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    resolved = metadata.get("base_config") or metadata.get("resolved_config")
+    pit = resolved.get("pit") if isinstance(resolved, dict) else None
+    return pit.get("dependence_transform") if isinstance(pit, dict) else None
+
+
 def locate_compatible_cache(base: BaseExperimentConfig) -> Path:
     """Return the canonical or unique metadata-compatible marginal cache path."""
 
@@ -76,5 +86,12 @@ def locate_compatible_cache(base: BaseExperimentConfig) -> Path:
         else []
     )
     if len(compatible) > 1:
+        preferred = [
+            path
+            for path in compatible
+            if _cache_dependence_transform(path) == base.pit.dependence_transform
+        ]
+        if len(preferred) == 1:
+            return preferred[0]
         raise ValueError(f"multiple compatible caches found for {base.id}: {compatible}")
     return compatible[0] if compatible else canonical
