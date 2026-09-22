@@ -104,3 +104,18 @@ def test_report_composite_rejects_unknown_metric_without_writing_anything(
         report_composite(config_path)
 
     assert not (tmp_path / "reports").exists()
+
+
+def test_report_composite_plots_noncovering_bootstrap_interval(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    run_root = _synthetic_run_root(tmp_path)
+    config_path = _write_report_config(tmp_path / "report.yaml", run_root, metrics=["mean_pinball"])
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8").replace("bootstrap_replicates: 200", "bootstrap_replicates: 1"),
+        encoding="utf-8",
+    )
+    report_composite(config_path)
+
+    assert (tmp_path / "reports" / "lab" / "quick_all_methods" / "fixed" / "report").is_dir()

@@ -7,6 +7,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 import matplotlib
+import numpy as np
 import pandas as pd
 
 matplotlib.use("Agg")
@@ -141,8 +142,12 @@ def write_composite_report(
                         continue
                     labels = [f"{row.experiment_id}\n{row.method}" for row in block_effects.itertuples()]
                     improvements = -block_effects["percentage_difference"].to_numpy()
-                    lower_errors = improvements + block_effects["percentage_ci_upper"].to_numpy()
-                    upper_errors = -block_effects["percentage_ci_lower"].to_numpy() - improvements
+                    lower_errors = np.maximum(
+                        improvements + block_effects["percentage_ci_upper"].to_numpy(), 0.0
+                    )
+                    upper_errors = np.maximum(
+                        -block_effects["percentage_ci_lower"].to_numpy() - improvements, 0.0
+                    )
                     axis.errorbar(
                         [index + (block_index - (len(block_lengths) - 1) / 2) * jitter
                          for index in range(len(block_effects))],
