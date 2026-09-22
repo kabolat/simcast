@@ -207,6 +207,12 @@ method_comparison_<metric>.png/.pdf graphical view of one configured metric
 report_summary.md                   plain-text index describing every file above
 ```
 
+`per_origin_metrics.parquet` retains the complete evaluation rows, including
+reference-method rows repeated inside a primary method's evaluation. The
+`method_summary.csv` and `method_comparison_<metric>` figures include only the
+primary method declared by each experiment entry; reference rows are retained
+for `paired_effects.csv` but are not shown as duplicate method bars.
+
 `run_composite` always writes this report using only `mean_pinball`.
 `simcast.cli.report_composite` regenerates the same four data files plus
 `report_summary.md` from an existing `composite_manifest.json`, for any

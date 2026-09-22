@@ -39,6 +39,14 @@ def test_generic_composite_report_includes_m4(tmp_path: Path) -> None:
         {
             "evaluation_path": str(evaluation),
             "base_id": "transformer",
+            "experiment_id": "m0",
+            "seed": None,
+            "method_family": "independent",
+            "reference_family": "independent",
+        },
+        {
+            "evaluation_path": str(evaluation),
+            "base_id": "transformer",
             "experiment_id": "m4",
             "seed": 42,
             "method_family": "conditional_kernel",
@@ -52,6 +60,7 @@ def test_generic_composite_report_includes_m4(tmp_path: Path) -> None:
     summary = pd.read_csv(report / "method_summary.csv")
     effects = pd.read_csv(report / "paired_effects.csv")
     assert set(summary["method"]) == {"independent", "conditional_kernel"}
+    assert set(summary["experiment_id"]) == {"m0", "m4"}
     assert set(effects["method"]) == {"conditional_kernel"}
     assert (report / "method_comparison_mean_pinball.png").is_file()
     assert (report / "method_comparison_mean_pinball.pdf").is_file()

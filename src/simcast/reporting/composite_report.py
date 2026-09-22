@@ -32,6 +32,7 @@ def write_composite_report(
     """Write pooled per-origin metrics, paired effects, and per-metric figures."""
 
     origin_frames: list[pd.DataFrame] = []
+    primary_frames: list[pd.DataFrame] = []
     comparisons: set[tuple[str, str, str, str]] = set()
     for cell in cells:
         evaluation = Path(str(cell["evaluation_path"]))
@@ -41,6 +42,7 @@ def write_composite_report(
         frame["configured_seed"] = "deterministic" if cell["seed"] is None else str(cell["seed"])
         origin_frames.append(frame)
         primary_family = str(cell["method_family"])
+        primary_frames.append(frame[frame["method"] == primary_family])
         reference_family = str(cell["reference_family"])
         if primary_family == reference_family:
             continue
@@ -54,11 +56,12 @@ def write_composite_report(
 
     report_dir.mkdir(parents=True, exist_ok=True)
     per_origin.to_parquet(report_dir / "per_origin_metrics.parquet", index=False)
+    primary_origin = pd.concat(primary_frames, ignore_index=True)
 
     summary_frames = []
     effect_rows: list[dict[str, object]] = []
     for metric in metrics:
-        frame = per_origin.groupby(
+        frame = primary_origin.groupby(
             ["base_id", "experiment_id", "method", "configured_seed"], dropna=False, as_index=False
         ).agg(value=(metric, "mean"))
         frame.insert(0, "metric", metric)
