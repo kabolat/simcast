@@ -204,7 +204,7 @@ per_origin_metrics.parquet          concatenated origin-level records
 method_summary.csv                  mean value per (base, experiment, method, seed), one row per metric
 paired_effects.csv                  paired moving-block bootstrap effects, one row per metric/comparison
 method_comparison_<metric>.png      base-panel absolute score bar charts for one metric
-paired_effect_<metric>.png          base-panel relative-improvement plot with bootstrap intervals
+paired_effect_<metric>.png          vertical base-panel relative-improvement plot for all block lengths
 report_summary.md                   plain-text index describing every file above
 ```
 

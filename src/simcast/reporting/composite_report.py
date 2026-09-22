@@ -20,7 +20,7 @@ _FIXED_FILE_DESCRIPTIONS = {
     "method_summary.csv": "mean value per (base, experiment, method, seed), one row per metric",
     "paired_effects.csv": "moving-block bootstrap paired contrasts vs. the reference, one row per metric/comparison",
     "paired_effect_<metric>.png": (
-        "base-panel relative-improvement plot with bootstrap interval and zero reference line"
+        "vertical base panels with relative-improvement intervals for all block lengths"
     ),
     "report_summary.md": "this file",
 }
@@ -108,8 +108,8 @@ def write_composite_report(
     for metric in metrics:
         figure_data = method_summary[method_summary["metric"] == metric]
         base_ids = list(figure_data["base_id"].drop_duplicates())
-        figure, axes = plt.subplots(1, len(base_ids), squeeze=False, figsize=(7.0 * len(base_ids), 4.5))
-        for axis, base_id in zip(axes[0], base_ids, strict=True):
+        figure, axes = plt.subplots(len(base_ids), 1, squeeze=False, figsize=(7.0, 4.5 * len(base_ids)))
+        for axis, base_id in zip(axes[:, 0], base_ids, strict=True):
             base_data = figure_data[figure_data["base_id"] == base_id]
             axis.bar(
                 [f"{row.experiment_id}\n{row.method}" for row in base_data.itertuples()],
@@ -129,28 +129,36 @@ def write_composite_report(
         ]
         if not primary_effects.empty:
             base_ids = list(primary_effects["base_id"].drop_duplicates())
-            figure, axes = plt.subplots(1, len(base_ids), squeeze=False, figsize=(7.0 * len(base_ids), 4.5))
-            for axis, base_id in zip(axes[0], base_ids, strict=True):
+            block_lengths = [analysis.primary_block_length, *analysis.sensitivity_block_lengths]
+            markers = ["o", "s", "^", "D", "P", "X"]
+            figure, axes = plt.subplots(len(base_ids), 1, squeeze=False, figsize=(7.0, 4.5 * len(base_ids)))
+            for axis, base_id in zip(axes[:, 0], base_ids, strict=True):
                 base_effects = primary_effects[primary_effects["base_id"] == base_id]
-                improvements = -base_effects["percentage_difference"].to_numpy()
-                lower_errors = improvements + base_effects["percentage_ci_upper"].to_numpy()
-                upper_errors = -base_effects["percentage_ci_lower"].to_numpy() - improvements
-                axis.errorbar(
-                    range(len(base_effects)),
-                    improvements,
-                    yerr=[lower_errors, upper_errors],
-                    fmt="o",
-                    capsize=4,
-                )
+                comparison_keys = base_effects[["experiment_id", "method"]].drop_duplicates()
+                for marker, block_length in zip(markers, block_lengths, strict=False):
+                    block_effects = base_effects[base_effects["block_length"] == block_length].merge(
+                        comparison_keys, on=["experiment_id", "method"], how="inner"
+                    )
+                    if block_effects.empty:
+                        continue
+                    labels = [f"{row.experiment_id}\n{row.method}" for row in block_effects.itertuples()]
+                    improvements = -block_effects["percentage_difference"].to_numpy()
+                    lower_errors = improvements + block_effects["percentage_ci_upper"].to_numpy()
+                    upper_errors = -block_effects["percentage_ci_lower"].to_numpy() - improvements
+                    axis.errorbar(
+                        range(len(block_effects)),
+                        improvements,
+                        yerr=[lower_errors, upper_errors],
+                        fmt=marker,
+                        capsize=4,
+                        label=f"block {block_length}",
+                    )
+                    if block_length == analysis.primary_block_length:
+                        axis.set_xticks(range(len(block_effects)), labels, rotation=45, ha="right")
                 axis.axhline(0.0, color="black", linewidth=1.0)
-                axis.set_xticks(
-                    range(len(base_effects)),
-                    [f"{row.experiment_id}\n{row.method}" for row in base_effects.itertuples()],
-                    rotation=45,
-                    ha="right",
-                )
                 axis.set_title(str(base_id))
                 axis.set_ylabel("relative improvement vs reference (%)")
+                axis.legend()
             figure.suptitle(f"Paired relative improvement ({analysis.primary_block_length}-origin block)")
             figure.tight_layout()
             figure.savefig(report_dir / f"paired_effect_{metric}.png", dpi=180)
@@ -185,6 +193,6 @@ def _write_report_summary(report_dir: Path, metrics: Sequence[str], analysis: Co
             description = f"base-panel bar charts of `{metric}` per experiment/method (png)"
         if not description and path.stem.startswith("paired_effect_"):
             metric = path.stem.removeprefix("paired_effect_")
-            description = f"base-panel relative-improvement plot of `{metric}` with bootstrap intervals (png)"
+            description = f"vertical base-panel relative-improvement plot of `{metric}` for all block lengths (png)"
         lines.append(f"| `{path.name}` | {description} |")
     (report_dir / "report_summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
