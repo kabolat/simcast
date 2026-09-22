@@ -203,8 +203,8 @@ The current generic report root contains:
 per_origin_metrics.parquet          concatenated origin-level records
 method_summary.csv                  mean value per (base, experiment, method, seed), one row per metric
 paired_effects.csv                  paired moving-block bootstrap effects, one row per metric/comparison
-method_comparison_<metric>.png      absolute score bar chart for one configured metric
-paired_effect_<metric>.png          primary-block paired-effect plot with bootstrap intervals
+method_comparison_<metric>.png      base-panel absolute score bar charts for one metric
+paired_effect_<metric>.png          base-panel relative-improvement plot with bootstrap intervals
 report_summary.md                   plain-text index describing every file above
 ```
 
@@ -212,7 +212,11 @@ report_summary.md                   plain-text index describing every file above
 reference-method rows repeated inside a primary method's evaluation. The
 `method_summary.csv` and `method_comparison_<metric>` figures include only the
 primary method declared by each experiment entry; reference rows are retained
-for `paired_effects.csv` but are not shown as duplicate method bars.
+for `paired_effects.csv` but are not shown as duplicate method bars. Each
+visual uses one panel per base, because absolute score scales are not
+comparable across entity types. `paired_effect_<metric>.png` plots positive
+relative improvement, $-100d/\bar S_{reference}$, so upward values favor the
+tested method.
 
 `run_composite` always writes this report using only `mean_pinball`.
 `simcast.cli.report_composite` regenerates the same four data files plus

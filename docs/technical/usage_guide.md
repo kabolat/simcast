@@ -314,8 +314,9 @@ For a current composite, begin in
 aggregate summary for each configured metric; `paired_effects.csv` contains
 the declared moving-block contrasts; `per_origin_metrics.parquet` is the
 origin-level input to those contrasts; one `method_comparison_<metric>.png`
-shows absolute scores; and one `paired_effect_<metric>.png` shows the primary
-paired effect with its bootstrap interval. `report_summary.md`
+shows base-specific absolute scores; and one `paired_effect_<metric>.png`
+shows base-specific relative improvement over the reference with its bootstrap
+interval. `report_summary.md`
 lists and describes every file the directory contains. Each is a report of
 the resolved composite, not a free-standing result. Their exact columns and
 retained identifiers are defined in the
