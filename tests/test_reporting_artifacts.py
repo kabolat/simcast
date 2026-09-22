@@ -63,6 +63,7 @@ def test_generic_composite_report_includes_m4(tmp_path: Path) -> None:
     assert set(summary["experiment_id"]) == {"m0", "m4"}
     assert set(effects["method"]) == {"conditional_kernel"}
     assert (report / "method_comparison_mean_pinball.png").is_file()
-    assert (report / "method_comparison_mean_pinball.pdf").is_file()
+    assert (report / "paired_effect_mean_pinball.png").is_file()
+    assert not (report / "method_comparison_mean_pinball.pdf").exists()
     assert (report / "report_summary.md").is_file()
     assert "method_summary.csv" in (report / "report_summary.md").read_text(encoding="utf-8")

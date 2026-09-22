@@ -203,7 +203,8 @@ The current generic report root contains:
 per_origin_metrics.parquet          concatenated origin-level records
 method_summary.csv                  mean value per (base, experiment, method, seed), one row per metric
 paired_effects.csv                  paired moving-block bootstrap effects, one row per metric/comparison
-method_comparison_<metric>.png/.pdf graphical view of one configured metric
+method_comparison_<metric>.png      absolute score bar chart for one configured metric
+paired_effect_<metric>.png          primary-block paired-effect plot with bootstrap intervals
 report_summary.md                   plain-text index describing every file above
 ```
 

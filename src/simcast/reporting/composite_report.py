@@ -19,6 +19,7 @@ _FIXED_FILE_DESCRIPTIONS = {
     "per_origin_metrics.parquet": "concatenated per-origin, per-method evaluation records; input to every file below",
     "method_summary.csv": "mean value per (base, experiment, method, seed), one row per metric",
     "paired_effects.csv": "moving-block bootstrap paired contrasts vs. the reference, one row per metric/comparison",
+    "paired_effect_<metric>.png": "primary-block paired-effect plot with bootstrap interval and zero reference line",
     "report_summary.md": "this file",
 }
 
@@ -113,8 +114,39 @@ def write_composite_report(
         axis.tick_params(axis="x", rotation=45)
         figure.tight_layout()
         figure.savefig(report_dir / f"method_comparison_{metric}.png", dpi=180)
-        figure.savefig(report_dir / f"method_comparison_{metric}.pdf")
         plt.close(figure)
+
+        primary_effects = pd.DataFrame(effect_rows)
+        primary_effects = primary_effects[
+            (primary_effects["metric"] == metric)
+            & (primary_effects["block_length"] == analysis.primary_block_length)
+        ]
+        if not primary_effects.empty:
+            labels = [
+                f"{row.base_id}\n{row.experiment_id}\n{row.method}"
+                for row in primary_effects.itertuples()
+            ]
+            means = primary_effects["mean_difference"].to_numpy()
+            lower_errors = means - primary_effects["ci_lower"].to_numpy()
+            upper_errors = primary_effects["ci_upper"].to_numpy() - means
+            figure, axis = plt.subplots(figsize=(max(7.0, 0.7 * len(labels)), 4.5))
+            axis.errorbar(
+                range(len(labels)),
+                means,
+                yerr=[lower_errors, upper_errors],
+                fmt="o",
+                capsize=4,
+            )
+            axis.axhline(0.0, color="black", linewidth=1.0)
+            axis.set_xticks(range(len(labels)), labels, rotation=45, ha="right")
+            axis.set_ylabel(f"{metric} difference vs reference")
+            axis.set_title(f"Paired effect ({analysis.primary_block_length}-origin block)")
+            figure.tight_layout()
+            figure.savefig(report_dir / f"paired_effect_{metric}.png", dpi=180)
+            plt.close(figure)
+
+    for old_pdf in report_dir.glob("method_comparison_*.pdf"):
+        old_pdf.unlink()
 
     _write_report_summary(report_dir, metrics, analysis)
 
@@ -139,6 +171,9 @@ def _write_report_summary(report_dir: Path, metrics: Sequence[str], analysis: Co
         description = _FIXED_FILE_DESCRIPTIONS.get(path.name, "")
         if not description and path.stem.startswith("method_comparison_"):
             metric = path.stem.removeprefix("method_comparison_")
-            description = f"bar chart of `{metric}` per experiment/method ({path.suffix.lstrip('.')})"
+            description = f"bar chart of `{metric}` per experiment/method (png)"
+        if not description and path.stem.startswith("paired_effect_"):
+            metric = path.stem.removeprefix("paired_effect_")
+            description = f"primary-block paired-effect plot of `{metric}` with bootstrap intervals (png)"
         lines.append(f"| `{path.name}` | {description} |")
     (report_dir / "report_summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")

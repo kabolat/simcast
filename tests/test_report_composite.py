@@ -70,6 +70,7 @@ def test_report_composite_only_reads_completed_cells_and_defaults_output_under_r
 
     assert destination == tmp_path / "reports" / "lab" / "quick_all_methods" / "fixed" / "report"
     assert (destination / "method_comparison_mean_pinball.png").is_file()
+    assert (destination / "paired_effect_mean_pinball.png").is_file()
     assert (destination / "report_summary.md").is_file()
     per_origin = pd.read_parquet(destination / "per_origin_metrics.parquet")
     assert len(per_origin) == 16  # only the one completed cell's rows, not the "running" one
@@ -87,6 +88,7 @@ def test_report_composite_supports_alternate_metrics_and_explicit_output_dir(tmp
     assert destination == output_dir
     assert (destination / "method_comparison_mean_pinball.png").is_file()
     assert (destination / "method_comparison_crps.png").is_file()
+    assert (destination / "paired_effect_crps.png").is_file()
     summary = pd.read_csv(destination / "method_summary.csv")
     assert set(summary["metric"]) == {"mean_pinball", "crps"}
 
