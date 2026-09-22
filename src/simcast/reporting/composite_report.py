@@ -128,11 +128,12 @@ def write_composite_report(
             base_ids = list(primary_effects["base_id"].drop_duplicates())
             block_lengths = [analysis.primary_block_length, *analysis.sensitivity_block_lengths]
             markers = ["o", "s", "^", "D", "P", "X"]
+            jitter = 0.12
             figure, axes = plt.subplots(len(base_ids), 1, squeeze=False, figsize=(7.0, 4.5 * len(base_ids)))
             for axis, base_id in zip(axes[:, 0], base_ids, strict=True):
                 base_effects = primary_effects[primary_effects["base_id"] == base_id]
                 comparison_keys = base_effects[["experiment_id", "method"]].drop_duplicates()
-                for marker, block_length in zip(markers, block_lengths, strict=False):
+                for block_index, (marker, block_length) in enumerate(zip(markers, block_lengths, strict=False)):
                     block_effects = base_effects[base_effects["block_length"] == block_length].merge(
                         comparison_keys, on=["experiment_id", "method"], how="inner"
                     )
@@ -143,7 +144,8 @@ def write_composite_report(
                     lower_errors = improvements + block_effects["percentage_ci_upper"].to_numpy()
                     upper_errors = -block_effects["percentage_ci_lower"].to_numpy() - improvements
                     axis.errorbar(
-                        range(len(block_effects)),
+                        [index + (block_index - (len(block_lengths) - 1) / 2) * jitter
+                         for index in range(len(block_effects))],
                         improvements,
                         yerr=[lower_errors, upper_errors],
                         fmt=marker,
