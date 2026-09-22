@@ -123,10 +123,7 @@ def write_composite_report(
         plt.close(figure)
 
         primary_effects = pd.DataFrame(effect_rows)
-        primary_effects = primary_effects[
-            (primary_effects["metric"] == metric)
-            & (primary_effects["block_length"] == analysis.primary_block_length)
-        ]
+        primary_effects = primary_effects[primary_effects["metric"] == metric]
         if not primary_effects.empty:
             base_ids = list(primary_effects["base_id"].drop_duplicates())
             block_lengths = [analysis.primary_block_length, *analysis.sensitivity_block_lengths]
@@ -159,7 +156,7 @@ def write_composite_report(
                 axis.set_title(str(base_id))
                 axis.set_ylabel("relative improvement vs reference (%)")
                 axis.legend()
-            figure.suptitle(f"Paired relative improvement ({analysis.primary_block_length}-origin block)")
+            figure.suptitle("Paired relative improvement by bootstrap block length")
             figure.tight_layout()
             figure.savefig(report_dir / f"paired_effect_{metric}.png", dpi=180)
             plt.close(figure)
