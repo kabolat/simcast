@@ -459,6 +459,17 @@ class EvaluationDocumentConfig(ConfigModel):
 
     kind: Literal["evaluation"]
     id: Slug
+    metrics: list[str] = Field(
+        default_factory=lambda: [
+            "mean_pinball",
+            "crps",
+            "weighted_interval_score",
+            "energy_score",
+            "variogram_score",
+            "test_pseudo_nll",
+        ],
+        min_length=1,
+    )
     sampling: SamplingConfig = Field(default_factory=SamplingConfig)
     evaluation: EvaluationConfig = Field(default_factory=EvaluationConfig)
     base_ids: list[Slug] = Field(default_factory=list)
@@ -470,6 +481,13 @@ class EvaluationDocumentConfig(ConfigModel):
     def unique_selection_values(cls, value: list[str]) -> list[str]:
         if len(value) != len(set(value)):
             raise ValueError("evaluation selections must be unique")
+        return value
+
+    @field_validator("metrics")
+    @classmethod
+    def unique_metrics(cls, value: list[str]) -> list[str]:
+        if any(not item.strip() for item in value) or len(value) != len(set(value)):
+            raise ValueError("evaluation.metrics must be non-empty, unique metric names")
         return value
 
 
@@ -570,7 +588,7 @@ class ReportConfig(ConfigModel):
 
     kind: Literal["report"]
     reference: Slug
-    metrics: list[str] = Field(default_factory=lambda: ["mean_pinball"], min_length=1)
+    metrics: list[str] = Field(default_factory=list)
     evaluation_ids: list[str] = Field(default_factory=list)
     analysis: CompositeAnalysisConfig
     output_dir: Path | None = None

@@ -1,5 +1,6 @@
 kind: evaluation
 id: standard
+metrics: [mean_pinball, crps, weighted_interval_score, energy_score, variogram_score, test_pseudo_nll]
 sampling:
   num_samples: 4096
   evaluation_seed: 2027

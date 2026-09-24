@@ -76,6 +76,7 @@ have $K_g=5$. The group is invalid at $(i,\tau)$ if any member is invalid.
 | `covariates.calendar.enabled` | Boolean | `true` | include calendar covariates as a block |
 | `covariates.calendar.include_hour` | Boolean | `true` | hour-of-day coordinates |
 | `covariates.calendar.include_day_of_week` | Boolean | `true` | weekday coordinates |
+| `metrics` | non-empty list of unique metric names to compute and persist | `[mean_pinball, crps, weighted_interval_score, energy_score, variogram_score, test_pseudo_nll]` | authoritative metric declaration for this evaluation |
 | `covariates.calendar.include_is_weekend` | Boolean | `true` | binary Saturday/Sunday indicator |
 | `covariates.epex.enabled` | Boolean | `false` | request optional EPEX covariate input |
 | `covariates.profiles.enabled` | Boolean | `false` | request optional profile covariate input |
@@ -391,9 +392,13 @@ target fits:
 ```yaml
 kind: evaluation
 id: variogram_power_1
+metrics: [mean_pinball, crps, energy_score, variogram_score]
 evaluation:
   variogram_power: 1.0
 ```
+
+The evaluation document's `metrics` list is the authoritative set of metrics
+computed and persisted for that evaluation.
 
 A `kind: report` document regenerates a report from an already-completed run's
 recorded evaluations, without re-fitting or re-evaluating anything. See
@@ -413,12 +418,11 @@ analysis:
 | Key | YAML type and admissible values | Default | Meaning |
 |---|---|---|---|
 | `kind` | literal string `report` | **required** | declares a standalone report-regeneration document |
-| `metrics` | non-empty list of unique column names from `per_origin_metrics.parquet` | `[mean_pinball]` | which metrics get a summary, paired-effect table, and figure |
+| `metrics` | list of unique names declared by the selected evaluations | `[]` | optional presentation subset; empty means all declared evaluation metrics |
 | `evaluation_ids` | list of known evaluation IDs recorded in the run's manifest | `[]` | which recorded evaluations to report on; empty means every evaluation in the manifest |
 | `analysis` | a composite `analysis` block (§4) | **required** | bootstrap replicates and block lengths for this report only |
 | `output_dir` | path | `<run_root>/reports/<report-id>` | where the regenerated report is written |
 
-`metrics` accepts any column already present in `per_origin_metrics.parquet`
-(for example `mean_pinball`, `crps`, `weighted_interval_score`,
-`coverage_0.9`, `energy_score`, `variogram_score`); an unknown name fails
-validation at report time rather than silently being ignored.
+Evaluation `metrics` is authoritative: the evaluator records it in
+`evaluation_manifest.json`. Report `metrics` is only a presentation filter;
+it cannot request a metric that the selected evaluations did not declare.

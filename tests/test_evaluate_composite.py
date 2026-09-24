@@ -63,12 +63,14 @@ def _synthetic_run_root(tmp_path: Path) -> Path:
 def _patch_evaluate(monkeypatch: pytest.MonkeyPatch) -> dict[str, int]:
     calls = {"evaluate": 0}
 
-    def fake_evaluate(config, *, methods, method_runs, cache_dir, output_dir):
+    def fake_evaluate(config, *, methods, metrics, method_runs, cache_dir, output_dir):
         del config, methods, method_runs, cache_dir
         calls["evaluate"] += 1
         path = Path(output_dir)
         path.mkdir(parents=True)
-        (path / "evaluation_manifest.json").write_text("{}\n", encoding="utf-8")
+        (path / "evaluation_manifest.json").write_text(
+            json.dumps({"metrics": list(metrics)}) + "\n", encoding="utf-8"
+        )
         return path
 
     monkeypatch.setattr(evaluate_composite_module, "evaluate_from_config", fake_evaluate)

@@ -26,7 +26,7 @@ def test_singular_fits_only_selected_method_and_explicit_reference(
         fitted.append(config.dependence.method)
         return path
 
-    def fake_evaluate(config, *, methods, method_runs, cache_dir, output_dir):
+    def fake_evaluate(config, *, methods, metrics=None, method_runs, cache_dir, output_dir):
         del config, method_runs
         assert cache_dir == cache
         evaluated.extend(methods)
@@ -115,13 +115,15 @@ def test_resume_preserves_validated_completed_cells(
         (path / "run_metadata.json").write_text("{}\n", encoding="utf-8")
         return path
 
-    def fake_evaluate(config, *, methods, method_runs, cache_dir, output_dir):
-        del config, methods, method_runs
+    def fake_evaluate(config, *, methods, metrics, method_runs, cache_dir, output_dir):
+        del config, methods, metrics, method_runs
         assert cache_dir == cache
         calls["evaluate"] += 1
         path = Path(output_dir)
         path.mkdir(parents=True)
-        (path / "evaluation_manifest.json").write_text("{}\n", encoding="utf-8")
+        (path / "evaluation_manifest.json").write_text(
+            json.dumps({"metrics": ["mean_pinball"]}) + "\n", encoding="utf-8"
+        )
         return path
 
     monkeypatch.setattr(composite_module, "locate_compatible_cache", lambda _base: cache)

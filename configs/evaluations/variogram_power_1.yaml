@@ -1,4 +1,5 @@
 kind: evaluation
 id: variogram_power_1
+metrics: [mean_pinball, crps, weighted_interval_score, energy_score, variogram_score, test_pseudo_nll]
 evaluation:
   variogram_power: 1.0

@@ -213,6 +213,7 @@ def _run_evaluations(
                     evaluate_from_config(
                         runtime,
                         methods=methods,
+                        metrics=document.metrics,
                         method_runs=method_runs,
                         cache_dir=Path(str(fit["cache_path"])),
                         output_dir=evaluation_dir,

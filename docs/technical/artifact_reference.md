@@ -211,6 +211,11 @@ for one method only. A fit's directory is independent of any
 evaluation IDs without retraining (`simcast.cli.evaluate_composite`, [usage guide
 §14](usage_guide.md#14-re-evaluating-a-completed-run)).
 
+Each `evaluation_manifest.json` records the evaluation document's `metrics`
+list. This is the authoritative set of metrics computed for that evaluation;
+report configurations may select a subset for presentation but cannot add
+metrics afterward.
+
 The current generic report root contains:
 
 ```text

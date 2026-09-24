@@ -564,6 +564,7 @@ def evaluate_from_config(
     config: ResolvedExperimentConfig,
     *,
     methods: Sequence[str] = CORE_METHODS,
+    metrics: Sequence[str] | None = None,
     method_runs: Mapping[str, str | Path] | None = None,
     cache_dir: str | Path | None = None,
     output_dir: str | Path | None = None,
@@ -575,6 +576,14 @@ def evaluate_from_config(
         raise ValueError(f"unknown methods: {sorted(unknown)}")
     if not methods or len(methods) != len(set(methods)):
         raise ValueError("methods must be non-empty and unique")
+    declared_metrics = list(metrics or [
+        "mean_pinball",
+        "crps",
+        "weighted_interval_score",
+        "energy_score",
+        "variogram_score",
+        "test_pseudo_nll",
+    ])
     cache_path = _cache_path(config, cache_dir)
     library = load_pit_library(cache_path, access="evaluation")
     runs = _resolve_runs(config, methods, method_runs)
@@ -600,12 +609,14 @@ def evaluate_from_config(
             valid,
             config,
             dependence_z=test_z,
-            compute_joint=config.evaluation.energy_score or config.evaluation.variogram_score,
+            compute_joint=bool({"energy_score", "variogram_score"} & set(declared_metrics)),
         )
         for name, item in prepared.items()
     }
-    metrics = {name: _save_method_result(output, result, valid) for name, result in results.items()}
-    (output / "metrics.json").write_text(json.dumps(metrics, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    result_metrics = {name: _save_method_result(output, result, valid) for name, result in results.items()}
+    (output / "metrics.json").write_text(
+        json.dumps(result_metrics, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     pd.concat([_lead_table(result) for result in results.values()], ignore_index=True).to_csv(
         output / "metrics_by_lead.csv", index=False
     )
@@ -617,7 +628,7 @@ def evaluate_from_config(
 
     _plots(output, library, prepared, results, truth, predictions, valid, config)
     _, off_diagonal = _training_correlations(library)
-    summary = _scientific_summary(metrics, float(np.mean(np.abs(off_diagonal))))
+    summary = _scientific_summary(result_metrics, float(np.mean(np.abs(off_diagonal))))
     (output / "scientific_summary.json").write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
@@ -625,6 +636,7 @@ def evaluate_from_config(
         "cache_path": str(cache_path),
         "method_runs": {name: str(path) for name, path in runs.items()},
         "methods": list(methods),
+        "metrics": declared_metrics,
         "test_origin_count": int(truth.shape[0]),
         "valid_origin_lead_count": int(valid.sum()),
         "entity_ids": entity_ids,

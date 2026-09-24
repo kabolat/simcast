@@ -114,6 +114,20 @@ def _write_report(
     ]
     if not cells:
         raise ValueError(f"{manifest_path} records no complete evaluation cells to report on")
+    declared_metrics = {
+        metric
+        for cell in cells
+        for metric in _cell_metrics(cell)
+    }
+    if config.metrics:
+        if declared_metrics and not set(config.metrics).issubset(declared_metrics):
+            missing = sorted(set(config.metrics) - declared_metrics)
+            raise ValueError(f"report metrics were not declared by the selected evaluations: {missing}")
+        metrics = config.metrics
+    else:
+        metrics = sorted(declared_metrics)
+        if not metrics:
+            raise ValueError("selected evaluations do not record declared metrics")
 
     if output_dir is not None:
         destination = Path(output_dir).expanduser().resolve()
@@ -126,9 +140,17 @@ def _write_report(
         cells,
         config.analysis,
         reference=config.reference,
-        metrics=config.metrics,
+        metrics=metrics,
     )
     return destination
+
+
+def _cell_metrics(cell: dict[str, object]) -> list[str]:
+    path = Path(str(cell["evaluation_path"])) / "evaluation_manifest.json"
+    if not path.is_file():
+        return []
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return [str(metric) for metric in payload.get("metrics", [])]
 
 
 def main(
