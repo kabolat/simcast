@@ -72,5 +72,9 @@ def main(
     typer.echo(path)
 
 
+def cli() -> None:
+    typer.run(main)
+
+
 if __name__ == "__main__":
     typer.run(main)

@@ -1,7 +1,8 @@
 extends: common.yaml
 kind: base
 id: liander2024_wind_park
-data: {entity_type: wind_park}
+data: 
+  entity_type: wind_park
 protocol:
   entity_count: 5
   ordered_entity_ids:

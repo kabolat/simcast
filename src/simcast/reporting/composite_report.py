@@ -18,7 +18,7 @@ from simcast.evaluation.uncertainty import paired_moving_block_bootstrap
 
 _FIXED_FILE_DESCRIPTIONS = {
     "per_origin_metrics.parquet": "concatenated per-origin, per-method evaluation records; input to every file below",
-    "method_summary.csv": "mean value per (base, experiment, method, seed), one row per metric",
+    "method_summary.csv": "mean value per (base, evaluated method, seed), one row per metric",
     "paired_effects.csv": "moving-block bootstrap paired contrasts vs. the reference, one row per metric/comparison",
     "paired_effect_<metric>.png": (
         "vertical base panels with relative-improvement intervals for all block lengths"
@@ -42,7 +42,7 @@ def write_composite_report(
         evaluation = Path(str(cell["evaluation_path"]))
         frame = pd.read_parquet(evaluation / "per_origin_metrics.parquet")
         frame["base_id"] = str(cell["base_id"])
-        frame["experiment_id"] = str(cell["experiment_id"])
+        frame["method_id"] = str(cell["method_id"])
         frame["configured_seed"] = "deterministic" if cell["seed"] is None else str(cell["seed"])
         origin_frames.append(frame)
         primary_family = str(cell["method_family"])
@@ -51,7 +51,7 @@ def write_composite_report(
         if primary_family == reference_family:
             continue
         comparisons.add(
-            (str(cell["base_id"]), str(cell["experiment_id"]), primary_family, reference_family)
+            (str(cell["base_id"]), str(cell["method_id"]), primary_family, reference_family)
         )
     per_origin = pd.concat(origin_frames, ignore_index=True)
     unknown_metrics = [metric for metric in metrics if metric not in per_origin.columns]
@@ -66,14 +66,14 @@ def write_composite_report(
     effect_rows: list[dict[str, object]] = []
     for metric in metrics:
         frame = primary_origin.groupby(
-            ["base_id", "experiment_id", "method", "configured_seed"], dropna=False, as_index=False
+            ["base_id", "method_id", "method", "configured_seed"], dropna=False, as_index=False
         ).agg(value=(metric, "mean"))
         frame.insert(0, "metric", metric)
         summary_frames.append(frame)
 
-        for base_id, experiment_id, primary_family, reference_family in sorted(comparisons):
+        for base_id, method_id, primary_family, reference_family in sorted(comparisons):
             comparison = per_origin[
-                (per_origin["base_id"] == base_id) & (per_origin["experiment_id"] == experiment_id)
+                (per_origin["base_id"] == base_id) & (per_origin["method_id"] == method_id)
             ]
             # Averaging here treats optimization seeds as repeated fits, not as
             # additional test observations. Repeated deterministic reference rows
@@ -96,7 +96,7 @@ def write_composite_report(
                     {
                         "metric": metric,
                         "base_id": base_id,
-                        "experiment_id": experiment_id,
+                        "method_id": method_id,
                         "method": primary_family,
                         "reference": reference_family,
                         **asdict(effect),
@@ -113,7 +113,7 @@ def write_composite_report(
         for axis, base_id in zip(axes[:, 0], base_ids, strict=True):
             base_data = figure_data[figure_data["base_id"] == base_id]
             axis.bar(
-                [f"{row.experiment_id}\n{row.method}" for row in base_data.itertuples()],
+                [f"{row.method_id}\n{row.method}" for row in base_data.itertuples()],
                 base_data["value"],
             )
             axis.set_title(str(base_id))
@@ -133,14 +133,14 @@ def write_composite_report(
             figure, axes = plt.subplots(len(base_ids), 1, squeeze=False, figsize=(7.0, 4.5 * len(base_ids)))
             for axis, base_id in zip(axes[:, 0], base_ids, strict=True):
                 base_effects = primary_effects[primary_effects["base_id"] == base_id]
-                comparison_keys = base_effects[["experiment_id", "method"]].drop_duplicates()
+                comparison_keys = base_effects[["method_id", "method"]].drop_duplicates()
                 for block_index, (marker, block_length) in enumerate(zip(markers, block_lengths, strict=False)):
                     block_effects = base_effects[base_effects["block_length"] == block_length].merge(
-                        comparison_keys, on=["experiment_id", "method"], how="inner"
+                        comparison_keys, on=["method_id", "method"], how="inner"
                     )
                     if block_effects.empty:
                         continue
-                    labels = [f"{row.experiment_id}\n{row.method}" for row in block_effects.itertuples()]
+                    labels = [f"{row.method_id}\n{row.method}" for row in block_effects.itertuples()]
                     improvements = -block_effects["percentage_difference"].to_numpy()
                     lower_errors = np.maximum(
                         improvements + block_effects["percentage_ci_upper"].to_numpy(), 0.0

@@ -5,7 +5,7 @@ import pytest
 
 import simcast.cli.run_composite as composite_module
 import simcast.cli.run_singular as singular_module
-from simcast.cli.run_composite import expand_composite, run_composite
+from simcast.cli.run_composite import expand_methods, run_composite
 from simcast.config import load_composite_config
 
 CONFIGS = Path(__file__).parents[1] / "configs"
@@ -63,7 +63,7 @@ def test_composite_expansion_is_exact_and_includes_full_m4() -> None:
     principal_venue = next(path for path in (CONFIGS / "venues").iterdir() if path.name != "lab")
     path = principal_venue / "main.yaml"
     composite = load_composite_config(path)
-    cells = expand_composite(path, composite)
+    cells = expand_methods(path, composite)
     counts: dict[str, int] = {}
     for cell in cells:
         counts[cell.method.id] = counts.get(cell.method.id, 0) + 1
@@ -75,7 +75,7 @@ def test_composite_expansion_is_exact_and_includes_full_m4() -> None:
 def test_lab_budget_is_an_equal_composite_override() -> None:
     path = CONFIGS / "venues/lab/quick_all_methods.yaml"
     composite = load_composite_config(path)
-    cells = expand_composite(path, composite)
+    cells = expand_methods(path, composite)
     optimized = [cell for cell in cells if cell.method.id in {"m2", "m3", "m4"}]
     assert [cell.method.optimization.epochs for cell in optimized] == [2, 2, 2]  # type: ignore[union-attr]
     assert [cell.method.optimization.patience for cell in optimized] == [1, 1, 1]  # type: ignore[union-attr]
@@ -87,7 +87,7 @@ def test_resume_rejects_changed_composite_before_any_execution(
     monkeypatch.chdir(tmp_path)
     manifest = tmp_path / "runs/lab/quick_all_methods/fixed/composite_manifest.json"
     manifest.parent.mkdir(parents=True)
-    manifest.write_text('{"configuration_sha256": "different", "cells": []}\n', encoding="utf-8")
+    manifest.write_text('{"configuration_sha256": "different", "fits": []}\n', encoding="utf-8")
     with pytest.raises(ValueError, match="resolved composite configuration has changed"):
         run_composite(CONFIGS / "venues/lab/quick_all_methods.yaml", run_id="fixed", resume=True)
 

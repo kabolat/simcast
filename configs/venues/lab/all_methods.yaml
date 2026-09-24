@@ -2,10 +2,13 @@ kind: composite
 name: quick_all_methods
 venue: lab
 bases:
-  - {id: transformer, config: ../../bases/liander2024/transformer.yaml}
-experiments:
-  - {id: m0, method: ../../methods/m0_independent.yaml}
-  - {id: m1, method: ../../methods/m1_static_gaussian.yaml}
+  - id: transformer
+    config: ../../bases/liander2024/transformer.yaml
+methods:
+  - id: m0
+    method: ../../methods/m0_independent.yaml
+  - id: m1
+    method: ../../methods/m1_static_gaussian.yaml
   - id: m2
     method: ../../methods/m2_conditional_low_rank.yaml
   - id: m3
@@ -15,4 +18,4 @@ experiments:
 evaluations:
   - id: standard
     config: ../../evaluations/standard.yaml
-    experiment_ids: [m0, m1, m2, m3, m4]
+    method_ids: [m0, m1, m2, m3, m4]

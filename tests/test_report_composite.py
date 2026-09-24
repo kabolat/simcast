@@ -10,7 +10,7 @@ from simcast.cli.report_composite import report_composite
 
 def _synthetic_run_root(tmp_path: Path) -> Path:
     run_root = tmp_path / "runs" / "lab" / "quick_all_methods" / "fixed"
-    evaluation = run_root / "transformer" / "m4" / "seed_1" / "evaluation"
+    evaluation = run_root / "evaluations" / "standard" / "transformer" / "m4" / "seed_1"
     evaluation.mkdir(parents=True)
     rows = [
         {"method": method, "origin": origin, "mean_pinball": 1.0 + offset, "crps": 2.0 + offset}
@@ -19,28 +19,31 @@ def _synthetic_run_root(tmp_path: Path) -> Path:
     ]
     pd.DataFrame(rows).to_parquet(evaluation / "per_origin_metrics.parquet", index=False)
     manifest = {
-        "cells": [
-            {
-                "cell_id": "transformer/m4/seed_1",
-                "base_id": "transformer",
-                "experiment_id": "m4",
-                "seed": 1,
-                "method_family": "conditional_kernel",
-                "reference_family": "independent",
-                "evaluation_path": str(evaluation),
-                "status": "complete",
-            },
-            {
-                "cell_id": "transformer/m4/seed_2",
-                "base_id": "transformer",
-                "experiment_id": "m4",
-                "seed": 2,
-                "method_family": "conditional_kernel",
-                "reference_family": "independent",
-                "evaluation_path": str(evaluation),
-                "status": "running",
-            },
-        ]
+        "fits": [],
+        "evaluations": {
+            "standard": [
+                {
+                    "base_id": "transformer",
+                    "method_id": "m4",
+                    "seed": 1,
+                    "method_family": "conditional_kernel",
+                    "reference_method_id": "m0",
+                    "reference_family": "independent",
+                    "evaluation_path": str(evaluation),
+                    "status": "complete",
+                },
+                {
+                    "base_id": "transformer",
+                    "method_id": "m4",
+                    "seed": 2,
+                    "method_family": "conditional_kernel",
+                    "reference_method_id": "m0",
+                    "reference_family": "independent",
+                    "evaluation_path": str(evaluation),
+                    "status": "running",
+                },
+            ]
+        },
     }
     (run_root / "composite_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     return run_root
@@ -51,6 +54,7 @@ def _write_report_config(path: Path, run_root: Path, *, metrics: list[str], outp
         "kind": "report",
         "run_root": str(run_root),
         "metrics": metrics,
+        "evaluation_ids": ["standard"],
         "analysis": {"reference": "independent", "bootstrap_replicates": 200, "primary_block_length": 3},
     }
     if output_dir is not None:
@@ -59,7 +63,7 @@ def _write_report_config(path: Path, run_root: Path, *, metrics: list[str], outp
     return path
 
 
-def test_report_composite_only_reads_completed_cells_and_defaults_output_under_reports(
+def test_report_composite_only_reads_completed_cells_and_defaults_output_under_run_root(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(tmp_path)
@@ -68,7 +72,7 @@ def test_report_composite_only_reads_completed_cells_and_defaults_output_under_r
 
     destination = report_composite(config_path)
 
-    assert destination == tmp_path / "reports" / "lab" / "quick_all_methods" / "fixed" / "report"
+    assert destination == run_root / "reports" / "report"
     assert (destination / "method_comparison_mean_pinball.png").is_file()
     assert (destination / "paired_effect_mean_pinball.png").is_file()
     assert (destination / "report_summary.md").is_file()
@@ -103,7 +107,7 @@ def test_report_composite_rejects_unknown_metric_without_writing_anything(
     with pytest.raises(ValueError, match="not_a_real_metric"):
         report_composite(config_path)
 
-    assert not (tmp_path / "reports").exists()
+    assert not (run_root / "reports").exists()
 
 
 def test_report_composite_plots_noncovering_bootstrap_interval(
@@ -118,4 +122,5 @@ def test_report_composite_plots_noncovering_bootstrap_interval(
     )
     report_composite(config_path)
 
-    assert (tmp_path / "reports" / "lab" / "quick_all_methods" / "fixed" / "report").is_dir()
+    assert (run_root / "reports" / "report").is_dir()
+

@@ -26,8 +26,10 @@ covariates:
     include_day_of_week: true
     include_is_weekend: true
   future_weather_source: vintage
-  epex: {enabled: false}
-  profiles: {enabled: false}
+  epex: 
+    enabled: false
+  profiles: 
+    enabled: false
 
 split:
   tune_fraction: 0.80

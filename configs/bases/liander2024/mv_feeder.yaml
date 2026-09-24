@@ -1,7 +1,8 @@
 extends: common.yaml
 kind: base
 id: liander2024_mv_feeder
-data: {entity_type: mv_feeder}
+data: 
+  entity_type: mv_feeder
 protocol:
   entity_count: 15
   ordered_entity_ids:

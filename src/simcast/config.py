@@ -434,7 +434,7 @@ class CompositeBaseEntry(ConfigModel):
     overrides: dict[str, Any] = Field(default_factory=dict)
 
 
-class CompositeExperimentEntry(ConfigModel):
+class CompositeMethodEntry(ConfigModel):
     id: Slug
     method: Path
     seeds: list[NonNegativeInt] = Field(default_factory=list)
@@ -450,20 +450,38 @@ class CompositeExperimentEntry(ConfigModel):
 
 
 class EvaluationDocumentConfig(ConfigModel):
+    """A reusable evaluation design: sampling, scoring, and its deterministic reference.
+
+    ``run_root``, ``base_ids``, ``method_ids``, and ``output_dir`` are used only
+    when this document is run standalone against an already-fitted run; a
+    composite evaluation entry supplies its own selection instead.
+    """
+
     kind: Literal["evaluation"]
     id: Slug
     reference: Slug
     sampling: SamplingConfig = Field(default_factory=SamplingConfig)
     evaluation: EvaluationConfig = Field(default_factory=EvaluationConfig)
+    run_root: Path | None = None
+    base_ids: list[Slug] = Field(default_factory=list)
+    method_ids: list[Slug] = Field(default_factory=list)
+    output_dir: Path | None = None
+
+    @field_validator("base_ids", "method_ids")
+    @classmethod
+    def unique_selection_values(cls, value: list[str]) -> list[str]:
+        if len(value) != len(set(value)):
+            raise ValueError("evaluation selections must be unique")
+        return value
 
 
 class CompositeEvaluationEntry(ConfigModel):
     id: Slug
     config: Path
     base_ids: list[Slug] = Field(default_factory=list)
-    experiment_ids: list[Slug] = Field(default_factory=list)
+    method_ids: list[Slug] = Field(default_factory=list)
 
-    @field_validator("base_ids", "experiment_ids")
+    @field_validator("base_ids", "method_ids")
     @classmethod
     def unique_selection_values(cls, value: list[str]) -> list[str]:
         if len(value) != len(set(value)):
@@ -499,35 +517,44 @@ class CompositeAnalysisConfig(ConfigModel):
 
 
 class CompositeExperimentConfig(ConfigModel):
+    """An explicit study: compulsory bases/methods, optional evaluations/reports.
+
+    Evaluations depend on bases and methods; reports depend on evaluations.
+    Declaring ``reports`` without ``evaluations`` is rejected rather than
+    silently doing nothing.
+    """
+
     kind: Literal["composite"]
     name: Slug
     venue: Slug
     bases: list[CompositeBaseEntry] = Field(min_length=1)
-    experiments: list[CompositeExperimentEntry] = Field(min_length=1)
-    evaluations: list[CompositeEvaluationEntry] = Field(min_length=1)
+    methods: list[CompositeMethodEntry] = Field(min_length=1)
+    evaluations: list[CompositeEvaluationEntry] = Field(default_factory=list)
     reports: list[CompositeReportEntry] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_references(self) -> Self:
         base_ids = [entry.id for entry in self.bases]
-        experiment_ids = [entry.id for entry in self.experiments]
+        method_ids = [entry.id for entry in self.methods]
         evaluation_ids = [entry.id for entry in self.evaluations]
         report_ids = [entry.id for entry in self.reports]
-        if len(base_ids) != len(set(base_ids)) or len(experiment_ids) != len(set(experiment_ids)):
-            raise ValueError("composite base and experiment IDs must be unique")
+        if len(base_ids) != len(set(base_ids)) or len(method_ids) != len(set(method_ids)):
+            raise ValueError("composite base and method IDs must be unique")
         if len(evaluation_ids) != len(set(evaluation_ids)) or len(report_ids) != len(set(report_ids)):
             raise ValueError("composite evaluation and report IDs must be unique")
+        if self.reports and not self.evaluations:
+            raise ValueError("composite reports require at least one evaluation entry")
         known = set(base_ids)
-        for experiment in self.experiments:
-            unknown = set(experiment.base_ids) - known
+        for method in self.methods:
+            unknown = set(method.base_ids) - known
             if unknown:
-                raise ValueError(f"experiment {experiment.id!r} references unknown bases: {sorted(unknown)}")
-        known_experiments = set(experiment_ids)
+                raise ValueError(f"method {method.id!r} references unknown bases: {sorted(unknown)}")
+        known_methods = set(method_ids)
         for evaluation in self.evaluations:
             if set(evaluation.base_ids) - known:
                 raise ValueError(f"evaluation {evaluation.id!r} references unknown bases")
-            if set(evaluation.experiment_ids) - known_experiments:
-                raise ValueError(f"evaluation {evaluation.id!r} references unknown experiments")
+            if set(evaluation.method_ids) - known_methods:
+                raise ValueError(f"evaluation {evaluation.id!r} references unknown methods")
         known_evaluations = set(evaluation_ids)
         for report in self.reports:
             if set(report.evaluation_ids) - known_evaluations:
@@ -540,11 +567,14 @@ class ReportConfig(ConfigModel):
 
     Unlike a composite, this is never hashed against fitted/evaluated cells:
     it only reads already-computed ``per_origin_metrics.parquet`` records.
+    ``run_root`` may be left unset here and supplied instead via ``--run-root``,
+    so the same report document can be reused across different runs.
     """
 
     kind: Literal["report"]
-    run_root: Path
+    run_root: Path | None = None
     metrics: list[str] = Field(default_factory=lambda: ["mean_pinball"], min_length=1)
+    evaluation_ids: list[str] = Field(default_factory=list)
     analysis: CompositeAnalysisConfig
     output_dir: Path | None = None
 

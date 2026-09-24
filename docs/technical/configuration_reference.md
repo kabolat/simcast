@@ -140,9 +140,11 @@ scientific marginal fingerprint and therefore selects a different cache. See
 ### 2.6 Evaluation settings
 
 Sampling and score settings are no longer valid base fields. They belong to
-the compulsory `kind: evaluation` documents referenced by composite
-evaluation entries. The legacy table below is retained only as a field
-reference for those evaluation documents; it must not be copied into a base.
+the optional `kind: evaluation` documents referenced by composite evaluation
+entries (or run standalone against an existing run; see
+[usage guide §14](usage_guide.md#14-re-evaluating-a-completed-run)). The
+legacy table below is retained only as a field reference for those evaluation
+documents; it must not be copied into a base.
 
 | Key | YAML type and admissible values | Default | Meaning |
 |---|---|---|---|
@@ -294,6 +296,11 @@ budgets explicitly and validation then applies to that method type.
 
 ## 4. Composite configuration
 
+A composite has two compulsory sections (`bases`, `methods`) and two optional
+ones (`evaluations`, `reports`). Evaluations depend on bases and methods;
+reports depend on evaluations. Declaring `reports` without `evaluations` fails
+validation rather than silently doing nothing.
+
 | Key | YAML type and admissible values | Default | Meaning |
 |---|---|---|---|
 | `kind` | literal string `composite` | **required** | declares an explicit collection of comparisons |
@@ -303,55 +310,62 @@ budgets explicitly and validation then applies to that method type.
 | `bases[].id` | safe slug, unique within `bases` | **required** | local base reference |
 | `bases[].config` | relative or absolute YAML path | **required** | base configuration file |
 | `bases[].overrides` | mapping of valid base fields to YAML values | `{}` | explicit base variant; invalid fields fail validation |
-| `experiments` | non-empty list of method entries | **required** | explicitly declared method comparisons |
-| `experiments[].id` | safe slug, unique within `experiments` | **required** | local method-entry reference |
-| `experiments[].method` | relative or absolute YAML path | **required** | one M0--M4 method configuration |
-| `experiments[].seeds` | list of unique non-negative integers | `[]` | repetitions for conditional methods; forbidden for deterministic M0/M1 entries |
-| `experiments[].base_ids` | list of unique existing base-entry IDs | `[]` | restrict this method entry to selected bases; an empty list means every listed base |
-| `experiments[].overrides` | mapping of valid fields for that method family | `{}` | explicit method variant; cross-method fields fail validation |
-| `evaluations` | non-empty list of evaluation entries | **required** | explicit post-fit evaluation designs |
+| `methods` | non-empty list of method entries | **required** | explicitly declared method fits |
+| `methods[].id` | safe slug, unique within `methods` | **required** | local method-entry reference |
+| `methods[].method` | relative or absolute YAML path | **required** | one M0--M4 method configuration |
+| `methods[].seeds` | list of unique non-negative integers | `[]` | repetitions for conditional methods; forbidden for deterministic M0/M1 entries |
+| `methods[].base_ids` | list of unique existing base-entry IDs | `[]` | restrict this method entry to selected bases; an empty list means every listed base |
+| `methods[].overrides` | mapping of valid fields for that method family | `{}` | explicit method variant; cross-method fields fail validation |
+| `evaluations` | list of evaluation entries | `[]` | optional post-fit evaluation designs, run immediately after fitting |
 | `evaluations[].id` | safe slug, unique within `evaluations` | **required** | evaluation identity |
 | `evaluations[].config` | evaluation YAML path | **required** | sampling, score, and evaluation settings |
 | `evaluations[].base_ids` | list of known base IDs | `[]` | bases to evaluate; empty means every base |
-| `evaluations[].experiment_ids` | list of known experiment IDs | `[]` | fitted methods to evaluate; empty means every experiment |
+| `evaluations[].method_ids` | list of known method IDs | `[]` | fitted methods to evaluate; empty means every non-reference method |
 | `reports` | list of report entries | `[]` | optional explicit post-evaluation reports |
 | `reports[].id` | safe slug, unique within `reports` | **required** | report identity |
 | `reports[].config` | report YAML path | **required** | report metrics and uncertainty settings |
 | `reports[].evaluation_ids` | non-empty list of known evaluation IDs | **required** | evaluations selected for the report |
 
 `bases` assigns local IDs to base files and optional valid base overrides.
-`experiments` assigns distinct IDs to method files, optional base selections,
-optional conditional seeds, and role-valid method overrides. `evaluations`
-assigns explicit post-fit evaluation designs to selected base/experiment
-combinations. `reports` is optional and only declares which report designs
-refer to which evaluations. Expansion is the literal nested sequence of each
-entry's selected bases, experiments, evaluations, and seeds.
+`methods` assigns distinct IDs to method files, optional base selections,
+optional conditional seeds, and role-valid method overrides. `evaluations`,
+when declared, assigns post-fit evaluation designs to selected base/method
+combinations and runs immediately after fitting completes in the same
+`simcast.cli.run_composite` invocation. `reports` only declares which report
+designs refer to which evaluations; reports are never generated automatically
+and must be run explicitly with `simcast.cli.report_composite`.
 
 Deterministic M0/M1 entries cannot declare repeated seeds. Conditional entries
 without `seeds` use their method file's optimization seed. Each evaluation
-document names its deterministic M0/M1 reference. Bootstrap replicate count and
-block lengths belong to a report, not to fitting or evaluation. Composite
-execution creates only `runs/`; reports are explicit follow-up work.
+document names its deterministic M0/M1-family reference, which must resolve to
+exactly one deterministic fit per base. Bootstrap replicate count and block
+lengths belong to a report, not to fitting or evaluation. A run's fits are
+independent of any `sampling`/`evaluation` settings, so a new evaluation
+design can be applied to an existing run without retraining, using
+`simcast.cli.evaluate_composite` (see
+[usage guide §14](usage_guide.md#14-re-evaluating-a-completed-run)).
 The scientific purpose of this declaration and the resulting claim discipline
 are explained in [Chapters 6](../scientific/06_scientific_workflow.md) and
 [7](../scientific/07_experiments_and_results.md); the executable command is in
 the [usage guide](usage_guide.md#6-composite-experiment).
 
 Example: five bases, two deterministic entries, and three conditional entries
-with ten seeds expand to $5+5+50+50+50=160$ cells.
+with ten seeds expand to $5+5+50+50+50=160$ fits.
 
 ## 5. Venue and path validity
 
 A composite at `configs/venues/<venue>/study.yaml` must declare the same safe
-slug in `venue`. The output roots are fixed:
+slug in `venue`. Every artifact of a run nests under one output root:
 
 ```text
-runs/<venue>/<composite>/<run-id>/
-reports/<venue>/<composite>/<run-id>/
+runs/<venue>/<composite>/<run-id>/<base-id>/<method-id>/<seed-label>/
+runs/<venue>/<composite>/<run-id>/evaluations/<evaluation-id>/<base-id>/<method-id>/<seed-label>/
+runs/<venue>/<composite>/<run-id>/reports/<report-id>/
 ```
 
 This rule makes a venue cloneable and prevents path escape. `run-id` is either
-a UTC timestamp or an explicit lowercase safe slug.
+a UTC timestamp or an explicit lowercase safe slug. `seed-label` is
+`deterministic` for M0/M1 fits or `seed_<N>` for a repeated conditional fit.
 
 ## 6. Cache fingerprint
 
@@ -366,11 +380,24 @@ Example: changing `evaluation.joint_score_num_samples` reuses the same marginal
 cache. Changing `pit.monotone_repair`, ordered entity IDs, weather source,
 forecast horizon, or Chronos model revision requires a different cache.
 
-## 7. Report configuration
+## 7. Evaluation and report configuration
 
-A `report` document regenerates a composite's report from an already-completed
-`runs/<venue>/<composite>/<run-id>/` directory, without re-fitting or
-re-evaluating anything. See
+A `kind: evaluation` document (§2.6) can also be run standalone against an
+already-completed run, without a composite `evaluations` entry, using
+`simcast.cli.evaluate_composite`. In that mode its own `run_root`, `base_ids`,
+and `method_ids` fields select the target run and fits directly:
+
+```yaml
+kind: evaluation
+id: variogram_power_1
+reference: m0
+evaluation:
+  variogram_power: 1.0
+run_root: runs/lab/quick_shot/2026-09-16_093812
+```
+
+A `kind: report` document regenerates a report from an already-completed run's
+recorded evaluations, without re-fitting or re-evaluating anything. See
 [usage guide §15](usage_guide.md#15-regenerating-or-customizing-a-report) for
 when and how to use it; this section lists its fields.
 
@@ -378,6 +405,7 @@ when and how to use it; this section lists its fields.
 kind: report
 run_root: runs/powertech2027/main/2026-09-16_093812
 metrics: [mean_pinball, crps]
+evaluation_ids: [standard]
 analysis:
   reference: m0
   bootstrap_replicates: 10000
@@ -387,10 +415,11 @@ analysis:
 | Key | YAML type and admissible values | Default | Meaning |
 |---|---|---|---|
 | `kind` | literal string `report` | **required** | declares a standalone report-regeneration document |
-| `run_root` | path to an existing `runs/<venue>/<composite>/<run-id>/` directory | **required** | source of already-computed per-cell evaluation records |
+| `run_root` | path to an existing `runs/<venue>/<composite>/<run-id>/` directory | `null` (must be given here or via `--run-root`) | source of already-computed evaluation records |
 | `metrics` | non-empty list of unique column names from `per_origin_metrics.parquet` | `[mean_pinball]` | which metrics get a summary, paired-effect table, and figure |
+| `evaluation_ids` | list of known evaluation IDs recorded in the run's manifest | `[]` | which recorded evaluations to report on; empty means every evaluation in the manifest |
 | `analysis` | a composite `analysis` block (§4) | **required** | reference, bootstrap replicates, and block lengths for this report only |
-| `output_dir` | path | derived from `run_root` (see §15) | where the regenerated report is written |
+| `output_dir` | path | `<run_root>/reports/<report-id>` | where the regenerated report is written |
 
 `metrics` accepts any column already present in `per_origin_metrics.parquet`
 (for example `mean_pinball`, `crps`, `weighted_interval_score`,

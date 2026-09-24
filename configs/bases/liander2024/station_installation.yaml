@@ -1,7 +1,8 @@
 extends: common.yaml
 kind: base
 id: liander2024_station_installation
-data: {entity_type: station_installation}
+data:
+  entity_type: station_installation
 protocol:
   entity_count: 15
   ordered_entity_ids:

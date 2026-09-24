@@ -181,26 +181,41 @@ defined the dependence hypothesis.
 
 ## Composite experiment and report roots
 
-Composite output follows:
+Every composite artifact nests under one run root:
 
 ```text
-runs/<venue>/<composite>/<run-id>/
-reports/<venue>/<composite>/<run-id>/
+runs/<venue>/<composite>/<run-id>/<base-id>/<method-id>/<seed-label>/
+runs/<venue>/<composite>/<run-id>/evaluations/<evaluation-id>/<base-id>/<method-id>/<seed-label>/
+runs/<venue>/<composite>/<run-id>/reports/<report-id>/
 ```
 
-The run root contains the resolved composite, exact expansion manifest,
-environment and Git record, base/method/evaluation hashes, composite log,
-shared M0/M1 fits, seed-specific M2--M4 fits, evaluation directories, and
-completion state. It does not contain a report unless the explicit reporting
-command is run later. The [usage guide](usage_guide.md#10-outputs-and-interpretation)
-gives the practical inspection order; this reference defines the meaning and
-location of the files.
+The run root contains the resolved composite (`resolved_composite.yaml`), the
+manifest (`composite_manifest.json`, schema `simcast.composite.v3`),
+environment and Git record, one fitted directory per declared base/method/seed
+combination, and (only if `evaluations` was declared) one evaluation
+directory per evaluated base/method/seed combination. It never contains a
+report unless the explicit reporting command is run later, and it never
+contains an evaluation unless either `run_composite` declared `evaluations` or
+`simcast.cli.evaluate_composite` was run afterward. The
+[usage guide](usage_guide.md#10-outputs-and-interpretation) gives the
+practical inspection order; this reference defines the meaning and location
+of the files.
+
+The manifest's `"fits"` list records each fit's `fit_id`, `base_id`,
+`method_id`, `seed`, `method_family`, base/marginal/method hashes, cache and
+fit paths, and status. Its `"evaluations"` mapping keys each declared
+evaluation ID to a list of cells recording `base_id`, `method_id`, `seed`,
+`method_family`, `reference_method_id`, `reference_family`, `evaluation_path`,
+and status. A fit's directory is independent of any `sampling`/`evaluation`
+setting, so the same fit can appear under multiple evaluation IDs without
+retraining (`simcast.cli.evaluate_composite`, [usage guide
+§14](usage_guide.md#14-re-evaluating-a-completed-run)).
 
 The current generic report root contains:
 
 ```text
 per_origin_metrics.parquet          concatenated origin-level records
-method_summary.csv                  mean value per (base, experiment, method, seed), one row per metric
+method_summary.csv                  mean value per (base, evaluated method, seed), one row per metric
 paired_effects.csv                  paired moving-block bootstrap effects, one row per metric/comparison
 method_comparison_<metric>.png      base-panel absolute score bar charts for one metric
 paired_effect_<metric>.png          vertical base-panel relative-improvement plot for all block lengths
@@ -210,25 +225,26 @@ report_summary.md                   plain-text index describing every file above
 `per_origin_metrics.parquet` retains the complete evaluation rows, including
 reference-method rows repeated inside a primary method's evaluation. The
 `method_summary.csv` and `method_comparison_<metric>` figures include only the
-primary method declared by each experiment entry; reference rows are retained
+primary method declared by each method entry; reference rows are retained
 for `paired_effects.csv` but are not shown as duplicate method bars. Each
 visual uses one panel per base, because absolute score scales are not
 comparable across entity types. `paired_effect_<metric>.png` plots positive
 relative improvement, $-100d/\bar S_{reference}$, so upward values favor the
 tested method.
 
-`run_composite` does not write this report. `simcast.cli.report_composite`
-generates the data files below from an existing completed run, using the
-configured metrics and analysis settings, without re-fitting or re-evaluating;
-see
+`run_composite` never writes this report. `simcast.cli.report_composite`
+generates the data files below from an existing run's recorded evaluations,
+using the configured metrics, `evaluation_ids` selection, and analysis
+settings, without re-fitting or re-evaluating; see
 [usage guide §15](usage_guide.md#15-regenerating-or-customizing-a-report) and
-[configuration reference §7](configuration_reference.md#7-report-configuration).
+[configuration reference §7](configuration_reference.md#7-evaluation-and-report-configuration).
+Its default output directory is `<run_root>/reports/<report-id>/`.
 
-The report fields retain `base_id`, `experiment_id`, `method`, and configured
+The report fields retain `base_id`, `method_id`, `method`, and configured
 seed so that a displayed comparison can be traced to its resolved declaration.
 
 Resume compares the stored composite SHA-256 digest with the newly resolved
-declaration. A mismatch is rejected; a validated complete cell is preserved.
+declaration. A mismatch is rejected; a validated complete fit is preserved.
 Artifact paths may be absolute in manifests, so archival releases should
 package the complete referenced tree or provide stable remapping metadata.
 

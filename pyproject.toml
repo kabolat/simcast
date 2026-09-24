@@ -24,6 +24,14 @@ dependencies = [
   "zarr>=2.18,<3",
 ]
 
+[project.scripts]
+composite = "simcast.cli.run_composite:cli"
+evaluate = "simcast.cli.evaluate_composite:cli"
+report = "simcast.cli.report_composite:cli"
+cache = "simcast.cli.build_cache:cli"
+download-data = "simcast.cli.download_data:cli"
+singular = "simcast.cli.run_singular:cli"
+
 [dependency-groups]
 dev = [
   "ipywidgets>=8.1,<9",

@@ -447,7 +447,7 @@ Chronos embedding describes its internal forecast context.
 ### Configuration and implementation
 
 The conditional method's `features.use_*` arguments include or remove each
-component; `features.shape_eps` controls $\epsilon_s`; and
+component; `features.shape_eps` controls $\epsilon_s$; and
 `features.standardize_scalar_features` controls train-only standardization.
 `FeatureBuilder` in `src/simcast/fm/feature_builder.py` defines the ordering,
 fits training statistics, and applies the frozen transformation.

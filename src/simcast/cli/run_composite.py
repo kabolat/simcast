@@ -1,4 +1,9 @@
-"""Execute an explicit venue-scoped collection of scientific experiments."""
+"""Execute an explicit venue-scoped collection of scientific experiments.
+
+A composite run only fits declared methods. Evaluations, if declared, run
+immediately afterward reusing those same fits. Reports are never generated
+here; run ``simcast.cli.report_composite`` explicitly against a completed run.
+"""
 
 from __future__ import annotations
 
@@ -18,7 +23,6 @@ from simcast.config import (
     CompositeExperimentConfig,
     ConditionalKernelMethodConfig,
     ConditionalLowRankMethodConfig,
-    EvaluationDocumentConfig,
     MethodConfig,
     SetAwareLowRankMethodConfig,
     base_fingerprint,
@@ -40,14 +44,12 @@ LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
-class ExpandedExperiment:
+class ExpandedFit:
     base: BaseExperimentConfig
     base_entry_id: str
-    experiment_id: str
+    method_id: str
     method: MethodConfig
     seed: int | None
-    evaluation_id: str
-    evaluation: EvaluationDocumentConfig
 
 
 def _resolve_path(source: Path, value: Path) -> Path:
@@ -61,22 +63,26 @@ def _is_optimized(method: MethodConfig) -> bool:
     )
 
 
-def expand_composite(source: Path, config: CompositeExperimentConfig) -> list[ExpandedExperiment]:
-    bases = {
+def _load_bases(source: Path, config: CompositeExperimentConfig) -> dict[str, BaseExperimentConfig]:
+    return {
         entry.id: update_base(load_base_config(_resolve_path(source, entry.config)), entry.overrides)
         for entry in config.bases
     }
-    evaluations = {
-        entry.id: load_evaluation_config(_resolve_path(source, entry.config)) for entry in config.evaluations
-    }
-    for evaluation_id, evaluation in evaluations.items():
-        if evaluation.reference not in {entry.id for entry in config.experiments}:
-            raise ValueError(f"evaluation {evaluation_id!r} references unknown experiment {evaluation.reference!r}")
-    expanded: list[ExpandedExperiment] = []
-    for entry in config.experiments:
+
+
+def expand_methods(source: Path, config: CompositeExperimentConfig) -> list[ExpandedFit]:
+    """Expand every declared base x method (x seed) fit cell.
+
+    Independent of any declared evaluation: fitting never depends on
+    sampling or scoring settings.
+    """
+
+    bases = _load_bases(source, config)
+    expanded: list[ExpandedFit] = []
+    for entry in config.methods:
         method = update_method(load_method_config(_resolve_path(source, entry.method)), entry.overrides)
         if entry.seeds and not _is_optimized(method):
-            raise ValueError(f"deterministic experiment {entry.id!r} must not declare repeated seeds")
+            raise ValueError(f"deterministic method {entry.id!r} must not declare repeated seeds")
         if isinstance(
             method,
             (ConditionalLowRankMethodConfig, SetAwareLowRankMethodConfig, ConditionalKernelMethodConfig),
@@ -86,28 +92,21 @@ def expand_composite(source: Path, config: CompositeExperimentConfig) -> list[Ex
             seeds = [None]
         selected_bases = entry.base_ids or list(bases)
         expanded.extend(
-            ExpandedExperiment(bases[base_id], base_id, entry.id, method, seed, evaluation_entry.id, evaluation)
-            for evaluation_entry in config.evaluations
-            if not evaluation_entry.experiment_ids or entry.id in evaluation_entry.experiment_ids
-            for evaluation in [evaluations[evaluation_entry.id]]
-            for base_id in (evaluation_entry.base_ids or selected_bases)
+            ExpandedFit(bases[base_id], base_id, entry.id, method, seed)
+            for base_id in selected_bases
             for seed in seeds
         )
     return expanded
+
+
+def _seed_label(seed: int | None) -> str:
+    return "deterministic" if seed is None else f"seed_{seed}"
 
 
 def _fit_is_complete(path: Path, family: str) -> bool:
     conditional = {"conditional_low_rank", "set_aware_low_rank", "conditional_kernel"}
     model = "best.pt" if family in conditional else "model.npz"
     return (path / model).is_file() and (path / "run_metadata.json").is_file()
-
-
-def _cell_is_complete(cell: dict[str, object]) -> bool:
-    return (
-        cell.get("status") == "complete"
-        and _fit_is_complete(Path(str(cell["fit_path"])), str(cell["method_family"]))
-        and (Path(str(cell["evaluation_path"])) / "evaluation_manifest.json").is_file()
-    )
 
 
 def _reject_partial(path: Path, *, expected_file: str) -> None:
@@ -121,6 +120,132 @@ def _configure_log(path: Path) -> None:
     logging.getLogger().addHandler(handler)
 
 
+def _run_fits(
+    run_root: Path,
+    expanded: list[ExpandedFit],
+    *,
+    rebuild_cache: bool,
+    fits_by_id: dict[str, dict[str, object]],
+) -> None:
+    rebuilt_caches: set[Path] = set()
+    for item in expanded:
+        fit_id = f"{item.base_entry_id}/{item.method_id}/{_seed_label(item.seed)}"
+        if fit_id in fits_by_id:
+            continue
+        cache = locate_compatible_cache(item.base)
+        runtime = resolve_run_config(item.base, item.method, seed=item.seed)
+        if rebuild_cache and cache not in rebuilt_caches:
+            build_cache_from_config(runtime, output_dir=cache, overwrite=True)
+            rebuilt_caches.add(cache)
+        elif not cache.is_dir():
+            build_cache_from_config(runtime, output_dir=cache, overwrite=False)
+        fit_dir = run_root / item.base_entry_id / item.method_id / _seed_label(item.seed)
+        if fit_dir.exists() and not _fit_is_complete(fit_dir, item.method.family):
+            raise RuntimeError(f"refusing to overwrite partial dependence fit: {fit_dir}")
+        if not _fit_is_complete(fit_dir, item.method.family):
+            train_from_config(runtime, cache_dir=cache, output_dir=fit_dir)
+        fits_by_id[fit_id] = {
+            "fit_id": fit_id,
+            "base_id": item.base_entry_id,
+            "method_id": item.method_id,
+            "seed": item.seed,
+            "method_family": item.method.family,
+            "base_sha256": canonical_json_hash(item.base.model_dump(mode="json")),
+            "marginal_sha256": base_fingerprint(item.base),
+            "method_sha256": canonical_json_hash(item.method.model_dump(mode="json")),
+            "cache_path": str(cache),
+            "fit_path": str(fit_dir),
+            "status": "complete",
+        }
+        LOGGER.info("fitted %s", fit_id)
+
+
+def _run_evaluations(
+    run_root: Path,
+    source: Path,
+    config: CompositeExperimentConfig,
+    fits_by_id: dict[str, dict[str, object]],
+    evaluations_by_id: dict[str, list[dict[str, object]]],
+) -> None:
+    fits_by_base: dict[str, list[dict[str, object]]] = {}
+    for fit in fits_by_id.values():
+        fits_by_base.setdefault(str(fit["base_id"]), []).append(fit)
+    base_entries = {entry.id: entry for entry in config.bases}
+    method_entries = {entry.id: entry for entry in config.methods}
+
+    for entry in config.evaluations:
+        document = load_evaluation_config(_resolve_path(source, entry.config))
+        if document.reference not in method_entries:
+            raise ValueError(f"evaluation {entry.id!r} references unknown method {document.reference!r}")
+        cells = evaluations_by_id.setdefault(entry.id, [])
+        completed = {(cell["base_id"], cell["method_id"], cell["seed"]) for cell in cells}
+        base_ids = entry.base_ids or list(fits_by_base)
+        for base_id in base_ids:
+            base_fits = fits_by_base.get(base_id, [])
+            reference_fits = [fit for fit in base_fits if fit["method_id"] == document.reference]
+            if len(reference_fits) != 1 or reference_fits[0]["seed"] is not None:
+                raise ValueError(
+                    f"evaluation {entry.id!r} reference {document.reference!r} must be a single "
+                    f"deterministic fit for base {base_id!r}"
+                )
+            reference_fit = reference_fits[0]
+            selected = [
+                fit
+                for fit in base_fits
+                if fit["method_id"] != document.reference
+                and (not entry.method_ids or fit["method_id"] in entry.method_ids)
+            ]
+            for fit in selected:
+                key = (fit["base_id"], fit["method_id"], fit["seed"])
+                if key in completed:
+                    continue
+                fit_seed = fit["seed"] if isinstance(fit["seed"], int) else None
+                evaluation_dir = (
+                    run_root / "evaluations" / entry.id / base_id / str(fit["method_id"]) / _seed_label(fit_seed)
+                )
+                _reject_partial(evaluation_dir, expected_file="evaluation_manifest.json")
+                methods = [str(fit["method_family"])]
+                method_runs: dict[str, Path] = {str(fit["method_family"]): Path(str(fit["fit_path"]))}
+                if reference_fit["method_family"] != fit["method_family"]:
+                    methods.append(str(reference_fit["method_family"]))
+                    method_runs[str(reference_fit["method_family"])] = Path(str(reference_fit["fit_path"]))
+                if not (evaluation_dir / "evaluation_manifest.json").is_file():
+                    base_entry = base_entries[base_id]
+                    base = update_base(
+                        load_base_config(_resolve_path(source, base_entry.config)), base_entry.overrides
+                    )
+                    method_entry = method_entries[str(fit["method_id"])]
+                    method = update_method(
+                        load_method_config(_resolve_path(source, method_entry.method)), method_entry.overrides
+                    )
+                    seed = fit_seed
+                    runtime = resolve_run_config(base, method, seed=seed)
+                    runtime = runtime.model_copy(
+                        update={"sampling": document.sampling, "evaluation": document.evaluation}
+                    )
+                    evaluate_from_config(
+                        runtime,
+                        methods=methods,
+                        method_runs=method_runs,
+                        cache_dir=Path(str(fit["cache_path"])),
+                        output_dir=evaluation_dir,
+                    )
+                cells.append(
+                    {
+                        "base_id": fit["base_id"],
+                        "method_id": fit["method_id"],
+                        "seed": fit["seed"],
+                        "method_family": fit["method_family"],
+                        "reference_method_id": document.reference,
+                        "reference_family": reference_fit["method_family"],
+                        "evaluation_path": str(evaluation_dir),
+                        "status": "complete",
+                    }
+                )
+                completed.add(key)
+                LOGGER.info("evaluated %s under %s", key, entry.id)
+
+
 def run_composite(
     config_path: str | Path,
     *,
@@ -130,29 +255,13 @@ def run_composite(
 ) -> Path:
     source = Path(config_path).expanduser().resolve()
     config = load_composite_config(source)
-    expanded = expand_composite(source, config)
+    expanded = expand_methods(source, config)
+
     identifier = run_id or utc_run_id()
     if not identifier or any(character not in "abcdefghijklmnopqrstuvwxyz0123456789_-" for character in identifier):
         raise ValueError("run_id must be a lowercase safe slug")
     run_root = (Path("runs") / config.venue / config.name / identifier).resolve()
-    dependency_payload = [
-        {
-            "base": item.base.model_dump(mode="json"),
-            "base_sha256": canonical_json_hash(item.base.model_dump(mode="json")),
-            "marginal_sha256": base_fingerprint(item.base),
-            "base_entry_id": item.base_entry_id,
-            "experiment_id": item.experiment_id,
-            "evaluation_id": item.evaluation_id,
-            "evaluation": item.evaluation.model_dump(mode="json"),
-            "method": item.method.model_dump(mode="json"),
-            "method_sha256": canonical_json_hash(item.method.model_dump(mode="json")),
-            "seed": item.seed,
-        }
-        for item in expanded
-    ]
-    configuration_hash = canonical_json_hash(
-        {"composite": config.model_dump(mode="json"), "expanded": dependency_payload}
-    )
+    configuration_hash = canonical_json_hash({"composite": config.model_dump(mode="json")})
     manifest_path = run_root / "composite_manifest.json"
     if resume:
         if not manifest_path.is_file():
@@ -163,125 +272,40 @@ def run_composite(
     else:
         run_root.mkdir(parents=True, exist_ok=False)
         manifest = {
-            "schema": "simcast.composite.v2",
+            "schema": "simcast.composite.v3",
             "venue": config.venue,
             "name": config.name,
             "run_id": identifier,
             "configuration_sha256": configuration_hash,
             "git_commit": git_commit(),
             "status": "running",
-            "cells": [],
+            "fits": [],
+            "evaluations": {},
         }
         write_yaml(run_root / "resolved_composite.yaml", config)
-        (run_root / "expansion_manifest.json").write_text(
-            json.dumps(dependency_payload, indent=2) + "\n", encoding="utf-8"
-        )
         environment = environment_metadata()
-        (run_root / "environment.json").write_text(
-            json.dumps(environment, indent=2) + "\n", encoding="utf-8"
-        )
+        (run_root / "environment.json").write_text(json.dumps(environment, indent=2) + "\n", encoding="utf-8")
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     _configure_log(run_root / "composite.log")
-    recorded_complete = {
-        str(cell["cell_id"]): cell for cell in manifest["cells"] if cell.get("status") == "complete"
-    }
-    invalid = [cell_id for cell_id, cell in recorded_complete.items() if not _cell_is_complete(cell)]
+
+    fits_by_id = {str(fit["fit_id"]): fit for fit in manifest.get("fits", []) if fit.get("status") == "complete"}
+    invalid = [
+        fit_id
+        for fit_id, fit in fits_by_id.items()
+        if not _fit_is_complete(Path(str(fit["fit_path"])), str(fit["method_family"]))
+    ]
     if invalid:
-        raise RuntimeError(f"recorded completed cells have missing or partial outputs: {invalid}")
-    completed = recorded_complete
-    cells: list[dict[str, object]] = list(completed.values())
-    shared_fits: dict[tuple[str, str], Path] = {}
-    rebuilt_caches: set[Path] = set()
+        raise RuntimeError(f"recorded completed fits have missing or partial outputs: {invalid}")
 
-    for item in expanded:
-        seed_label = "deterministic" if item.seed is None else f"seed_{item.seed}"
-        cell_id = f"{item.base_entry_id}/{item.experiment_id}/{item.evaluation_id}/{seed_label}"
-        if cell_id in completed:
-            continue
-        cache = locate_compatible_cache(item.base)
-        runtime = resolve_run_config(item.base, item.method, seed=item.seed)
-        if rebuild_cache and cache not in rebuilt_caches:
-            build_cache_from_config(runtime, output_dir=cache, overwrite=True)
-            rebuilt_caches.add(cache)
-        elif not cache.is_dir():
-            build_cache_from_config(runtime, output_dir=cache, overwrite=False)
-        method_hash = canonical_json_hash(item.method.model_dump(mode="json"))[:12]
-        if _is_optimized(item.method):
-            fit_dir = run_root / item.base_entry_id / item.experiment_id / seed_label / "fit"
-        else:
-            fit_dir = run_root / item.base_entry_id / "shared" / f"{item.method.id}-{method_hash}"
-        fit_key = (item.base_entry_id, f"{method_hash}:{item.seed}")
-        if fit_key not in shared_fits:
-            if fit_dir.exists() and not _fit_is_complete(fit_dir, item.method.family):
-                raise RuntimeError(f"refusing to overwrite partial dependence fit: {fit_dir}")
-            if not _fit_is_complete(fit_dir, item.method.family):
-                train_from_config(runtime, cache_dir=cache, output_dir=fit_dir)
-            shared_fits[fit_key] = fit_dir
+    _run_fits(run_root, expanded, rebuild_cache=rebuild_cache, fits_by_id=fits_by_id)
+    manifest["fits"] = list(fits_by_id.values())
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
-        reference_entry = next(entry for entry in config.experiments if entry.id == item.evaluation.reference)
-        reference = update_method(
-            load_method_config(_resolve_path(source, reference_entry.method)), reference_entry.overrides
-        )
-        if _is_optimized(reference) or reference_entry.seeds:
-            raise ValueError("evaluation references must use a deterministic M0 or M1 experiment")
-        reference_runtime = resolve_run_config(item.base, reference)
-        reference_runtime = reference_runtime.model_copy(
-            update={"sampling": item.evaluation.sampling, "evaluation": item.evaluation.evaluation}
-        )
-        reference_hash = canonical_json_hash(reference.model_dump(mode="json"))[:12]
-        reference_dir = run_root / item.base_entry_id / "shared" / f"{reference.id}-{reference_hash}"
-        reference_key = (item.base_entry_id, f"{reference_hash}:{item.evaluation_id}")
-        if reference_key not in shared_fits:
-            if reference_dir.exists() and not _fit_is_complete(reference_dir, reference.family):
-                raise RuntimeError(f"refusing to overwrite partial dependence fit: {reference_dir}")
-            if not _fit_is_complete(reference_dir, reference.family):
-                train_from_config(reference_runtime, cache_dir=cache, output_dir=reference_dir)
-            shared_fits[reference_key] = reference_dir
-
-        runtime = runtime.model_copy(
-            update={"sampling": item.evaluation.sampling, "evaluation": item.evaluation.evaluation}
-        )
-        cell_dir = run_root / item.base_entry_id / item.evaluation_id / item.experiment_id / seed_label
-        evaluation_dir = cell_dir / "evaluation"
-        cell_dir.mkdir(parents=True, exist_ok=True)
-        write_yaml(cell_dir / "resolved_base.yaml", item.base)
-        write_yaml(cell_dir / "resolved_method.yaml", item.method)
-        methods = [item.method.family]
-        method_runs: dict[str, Path] = {item.method.family: fit_dir}
-        if reference.family != item.method.family:
-            methods.append(reference.family)
-            method_runs[reference.family] = reference_dir
-        _reject_partial(evaluation_dir, expected_file="evaluation_manifest.json")
-        if not (evaluation_dir / "evaluation_manifest.json").is_file():
-            evaluate_from_config(
-                runtime,
-                methods=methods,
-                method_runs=method_runs,
-                cache_dir=cache,
-                output_dir=evaluation_dir,
-            )
-        cell: dict[str, object] = {
-            "cell_id": cell_id,
-            "base_id": item.base_entry_id,
-            "scientific_base_id": item.base.id,
-            "experiment_id": item.experiment_id,
-            "evaluation_id": item.evaluation_id,
-            "method_id": item.method.id,
-            "method_family": item.method.family,
-            "base_sha256": canonical_json_hash(item.base.model_dump(mode="json")),
-            "marginal_sha256": base_fingerprint(item.base),
-            "method_sha256": canonical_json_hash(item.method.model_dump(mode="json")),
-            "reference_family": reference.family,
-            "seed": item.seed,
-            "cache_path": str(cache),
-            "fit_path": str(fit_dir),
-            "evaluation_path": str(evaluation_dir),
-            "status": "complete",
-        }
-        cells.append(cell)
-        manifest["cells"] = cells
+    evaluations_by_id: dict[str, list[dict[str, object]]] = dict(manifest.get("evaluations", {}))
+    if config.evaluations:
+        _run_evaluations(run_root, source, config, fits_by_id, evaluations_by_id)
+        manifest["evaluations"] = evaluations_by_id
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-        LOGGER.info("completed %s", cell_id)
 
     manifest["status"] = "complete"
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
@@ -298,5 +322,10 @@ def main(
     typer.echo(run_composite(config, run_id=run_id, resume=resume, rebuild_cache=rebuild_cache))
 
 
+def cli() -> None:
+    typer.run(main)
+
+
 if __name__ == "__main__":
     typer.run(main)
+

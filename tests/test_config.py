@@ -171,7 +171,7 @@ def test_composite_venue_must_match_its_directory(tmp_path: Path) -> None:
     path.write_text(
         "kind: composite\nname: x\nvenue: paper\n"
         "bases: [{id: x, config: x.yaml}]\n"
-        "experiments: [{id: m0, method: m0.yaml}]\n"
+        "methods: [{id: m0, method: m0.yaml}]\n"
         "evaluations: [{id: standard, config: evaluation.yaml}]\n",
         encoding="utf-8",
     )
@@ -179,18 +179,35 @@ def test_composite_venue_must_match_its_directory(tmp_path: Path) -> None:
         load_composite_config(path)
 
 
-def test_composite_requires_evaluations_but_not_reports(tmp_path: Path) -> None:
+def test_composite_requires_only_bases_and_methods(tmp_path: Path) -> None:
     venue_dir = tmp_path / "configs" / "venues" / "lab"
     venue_dir.mkdir(parents=True)
     path = venue_dir / "study.yaml"
     path.write_text(
         "kind: composite\nname: study\nvenue: lab\n"
         "bases: [{id: x, config: x.yaml}]\n"
-        "experiments: [{id: m0, method: m0.yaml}]\n",
+        "methods: [{id: m0, method: m0.yaml}]\n",
         encoding="utf-8",
     )
-    with pytest.raises(ValidationError, match="evaluations"):
+    composite = load_composite_config(path)
+    assert composite.evaluations == []
+    assert composite.reports == []
+
+
+def test_composite_reports_require_at_least_one_evaluation(tmp_path: Path) -> None:
+    venue_dir = tmp_path / "configs" / "venues" / "lab"
+    venue_dir.mkdir(parents=True)
+    path = venue_dir / "study.yaml"
+    path.write_text(
+        "kind: composite\nname: study\nvenue: lab\n"
+        "bases: [{id: x, config: x.yaml}]\n"
+        "methods: [{id: m0, method: m0.yaml}]\n"
+        "reports: [{id: standard_report, config: report.yaml, evaluation_ids: [standard]}]\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValidationError, match="reports require at least one evaluation"):
         load_composite_config(path)
+
 
 
 def test_runtime_adapter_is_full_group_and_m4_has_full_budget() -> None:
