@@ -150,11 +150,35 @@ def test_composite_mode_resolves_its_single_run(tmp_path: Path, monkeypatch: pyt
         encoding="utf-8",
     )
 
+    destination = evaluate_composite(composite_config_path=composite_path)
+    assert destination == run_root / "evaluations" / "variogram_power_1"
+
+
+def test_composite_mode_requires_evaluation_id_for_multiple_evaluations(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _patch_evaluate(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    run_parent = tmp_path / "runs" / "lab" / "quick_shot" / "fixed"
+    run_parent.mkdir(parents=True)
+    (run_parent / "composite_manifest.json").write_text("{}\n", encoding="utf-8")
+    venue_dir = tmp_path / "configs" / "venues" / "lab"
+    venue_dir.mkdir(parents=True)
+    composite_path = venue_dir / "composite.yaml"
+    composite_path.write_text(
+        "kind: composite\nname: quick_shot\nvenue: lab\n"
+        "bases: [{id: transformer, config: transformer.yaml}]\n"
+        "methods: [{id: m0, method: m0.yaml}]\n"
+        "evaluations: [{id: first, config: first.yaml}, {id: second, config: second.yaml}]\n",
+        encoding="utf-8",
+    )
+    for name in ("first", "second"):
+        (venue_dir / f"{name}.yaml").write_text(
+            yaml.safe_dump({"kind": "evaluation", "id": name}), encoding="utf-8"
+        )
+
     with pytest.raises(ValueError, match="--evaluation-id is required"):
         evaluate_composite(composite_config_path=composite_path)
-
-    destination = evaluate_composite(composite_config_path=composite_path, evaluation_id="variogram_power_1")
-    assert destination == run_root / "evaluations" / "variogram_power_1"
 
 
 def test_composite_mode_rejects_multiple_runs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

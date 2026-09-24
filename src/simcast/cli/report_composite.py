@@ -45,7 +45,9 @@ def report_composite(
         source = Path(composite_config_path).expanduser().resolve()
         composite = load_composite_config(source)
         if report_id is None:
-            raise ValueError("--report-id is required with --composite-config")
+            if len(composite.reports) != 1:
+                raise ValueError("--report-id is required when the composite has multiple reports")
+            report_id = composite.reports[0].id
         entry = next((item for item in composite.reports if item.id == report_id), None)
         if entry is None:
             expected = [item.id for item in composite.reports]

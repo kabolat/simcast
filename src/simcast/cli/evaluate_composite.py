@@ -53,7 +53,9 @@ def evaluate_composite(
         source = Path(composite_config_path).expanduser().resolve()
         composite = load_composite_config(source)
         if evaluation_id is None:
-            raise ValueError("--evaluation-id is required with --composite-config")
+            if len(composite.evaluations) != 1:
+                raise ValueError("--evaluation-id is required when the composite has multiple evaluations")
+            evaluation_id = composite.evaluations[0].id
         entry = next((item for item in composite.evaluations if item.id == evaluation_id), None)
         if entry is None:
             expected = [item.id for item in composite.evaluations]

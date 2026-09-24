@@ -137,3 +137,40 @@ def test_report_composite_plots_noncovering_bootstrap_interval(
 
     assert (run_root / "reports" / "report").is_dir()
 
+
+def test_composite_mode_selects_the_only_report(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    run_root = _synthetic_run_root(tmp_path)
+    venue_dir = tmp_path / "configs" / "venues" / "lab"
+    report_dir = tmp_path / "configs" / "reports"
+    venue_dir.mkdir(parents=True)
+    report_dir.mkdir(parents=True)
+    (report_dir / "main.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "kind": "report",
+                "reference": "m0",
+                "metrics": ["mean_pinball"],
+                "evaluation_ids": ["standard"],
+                "analysis": {"bootstrap_replicates": 10, "primary_block_length": 3},
+            }
+        ),
+        encoding="utf-8",
+    )
+    composite_path = venue_dir / "composite.yaml"
+    composite_path.write_text(
+        "kind: composite\nname: quick_all_methods\nvenue: lab\n"
+        "bases: [{id: transformer, config: transformer.yaml}]\n"
+        "methods: [{id: m0, method: m0.yaml}, {id: m4, method: m4.yaml}]\n"
+        "evaluations: [{id: standard, config: standard.yaml}]\n"
+        "reports: [{id: main, config: ../../reports/main.yaml, evaluation_ids: [standard]}]\n",
+        encoding="utf-8",
+    )
+    (venue_dir / "standard.yaml").write_text(
+        yaml.safe_dump({"kind": "evaluation", "id": "standard"}), encoding="utf-8"
+    )
+
+    destination = report_composite(composite_config_path=composite_path)
+
+    assert destination == run_root / "reports" / "main"
+
