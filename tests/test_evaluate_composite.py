@@ -27,8 +27,8 @@ def _synthetic_run_root(tmp_path: Path) -> Path:
     run_root = tmp_path / "runs" / "lab" / "quick_shot" / "fixed"
     cache = tmp_path / "cache"
     cache.mkdir()
-    m0_dir = run_root / "transformer" / "m0" / "deterministic"
-    m4_dir = run_root / "transformer" / "m4" / "seed_1"
+    m0_dir = run_root / "models" / "transformer" / "m0" / "deterministic"
+    m4_dir = run_root / "models" / "transformer" / "m4" / "seed_1"
     _write_fit(m0_dir, base_file="transformer.yaml", method_file="m0_independent.yaml", seed=None)
     _write_fit(m4_dir, base_file="transformer.yaml", method_file="m4_conditional_kernel.yaml", seed=1)
     manifest = {

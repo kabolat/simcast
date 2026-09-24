@@ -156,7 +156,7 @@ A venue is a reproducible research workspace, not a Python environment.
 Outputs follow:
 
 ```text
-runs/<venue>/<composite>/<run-id>/<base-id>/<method-id>/<seed-label>/
+runs/<venue>/<composite>/<run-id>/models/<base-id>/<method-id>/<seed-label>/
 runs/<venue>/<composite>/<run-id>/evaluations/<evaluation-id>/<base-id>/<method-id>/<seed-label>/
 runs/<venue>/<composite>/<run-id>/reports/<report-id>/
 ```

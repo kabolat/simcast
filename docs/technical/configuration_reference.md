@@ -358,7 +358,7 @@ A composite at `configs/venues/<venue>/study.yaml` must declare the same safe
 slug in `venue`. Every artifact of a run nests under one output root:
 
 ```text
-runs/<venue>/<composite>/<run-id>/<base-id>/<method-id>/<seed-label>/
+runs/<venue>/<composite>/<run-id>/models/<base-id>/<method-id>/<seed-label>/
 runs/<venue>/<composite>/<run-id>/evaluations/<evaluation-id>/<base-id>/<method-id>/<seed-label>/
 runs/<venue>/<composite>/<run-id>/reports/<report-id>/
 ```

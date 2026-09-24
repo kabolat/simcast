@@ -292,7 +292,7 @@ environment. A composite file must be physically located below
 Venue, composite, and run identifiers are safe lowercase slugs.
 
 ```text
-runs/<venue>/<composite>/<run-id>/<base-id>/<method-id>/<seed-label>/
+runs/<venue>/<composite>/<run-id>/models/<base-id>/<method-id>/<seed-label>/
 runs/<venue>/<composite>/<run-id>/evaluations/<evaluation-id>/<base-id>/<method-id>/<seed-label>/
 runs/<venue>/<composite>/<run-id>/reports/<report-id>/
 ```

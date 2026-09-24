@@ -139,7 +139,7 @@ def _run_fits(
             rebuilt_caches.add(cache)
         elif not cache.is_dir():
             build_cache_from_config(runtime, output_dir=cache, overwrite=False)
-        fit_dir = run_root / item.base_entry_id / item.method_id / _seed_label(item.seed)
+        fit_dir = run_root / "models" / item.base_entry_id / item.method_id / _seed_label(item.seed)
         if fit_dir.exists() and not _fit_is_complete(fit_dir, item.method.family):
             raise RuntimeError(f"refusing to overwrite partial dependence fit: {fit_dir}")
         if not _fit_is_complete(fit_dir, item.method.family):
