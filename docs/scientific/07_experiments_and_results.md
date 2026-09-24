@@ -141,8 +141,9 @@ explicit composite is run to completion and its manifest verifies the current
 schema and full-group design.
 
 Implementation: `read_evaluation_artifacts` provides read-only historical
-inspection. `run_composite` creates new venue-scoped artifacts and includes M4
-in its generic summaries, paired effects, and figures.
+inspection. `run_composite` creates the immutable run artifacts; the explicit
+`simcast.cli.report_composite` command creates summaries, paired effects, and
+figures from a completed run.
 
 ## 8. Reading and reporting a completed composite
 

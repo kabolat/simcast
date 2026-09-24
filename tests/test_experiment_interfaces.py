@@ -127,7 +127,6 @@ def test_resume_preserves_validated_completed_cells(
     monkeypatch.setattr(composite_module, "locate_compatible_cache", lambda _base: cache)
     monkeypatch.setattr(composite_module, "train_from_config", fake_train)
     monkeypatch.setattr(composite_module, "evaluate_from_config", fake_evaluate)
-    monkeypatch.setattr(composite_module, "write_composite_report", lambda *_args: None)
     path = CONFIGS / "venues/lab/quick_all_methods.yaml"
 
     composite_module.run_composite(path, run_id="resume_test")

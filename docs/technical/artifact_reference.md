@@ -218,11 +218,10 @@ comparable across entity types. `paired_effect_<metric>.png` plots positive
 relative improvement, $-100d/\bar S_{reference}$, so upward values favor the
 tested method.
 
-`run_composite` always writes this report using only `mean_pinball`.
-`simcast.cli.report_composite` regenerates the same four data files plus
-`report_summary.md` from an existing `composite_manifest.json`, for any
-configured `metrics` list and `analysis` settings, without re-fitting or
-re-evaluating; see
+`run_composite` does not write this report. `simcast.cli.report_composite`
+generates the data files below from an existing completed run, using the
+configured metrics and analysis settings, without re-fitting or re-evaluating;
+see
 [usage guide §15](usage_guide.md#15-regenerating-or-customizing-a-report) and
 [configuration reference §7](configuration_reference.md#7-report-configuration).
 

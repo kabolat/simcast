@@ -304,7 +304,8 @@ A singular directory records the two resolved roles, fitted method(s), one
 evaluation, and its manifest. A composite directory records the resolved
 composite, exact expansion, role hashes, environment and Git metadata,
 shared deterministic fits, seed-specific conditional fits, evaluations,
-completion state, and log. Its report directory contains pooled per-origin
+completion state, and log. It does not create a report directory. Run
+`simcast.cli.report_composite` explicitly when you want pooled per-origin
 records, method summaries, paired effects, and figures. The exact cache, fit,
 evaluation, and report schemas are listed in the
 [artifact reference](artifact_reference.md).
@@ -471,12 +472,9 @@ Unknown fields and cross-method fields fail validation.
 
 ## 15. Regenerating or customizing a report
 
-`run_composite` always writes a report as its last step, using mean aggregate
-pinball as the only metric. That coupling means the report was previously the
-one part of a composite you could not iterate on without a full re-fit; see
-[Chapter 6 §7](../scientific/06_scientific_workflow.md#7-composite-transformation)
-for why fitting and evaluation must stay immutable under `--resume`, and note
-that reporting has no such reason to be.
+`run_composite` stops after fitting, evaluation, and run-manifest finalization.
+It does not report automatically. This keeps immutable experiment outputs
+under `runs/` separate from user-selected reporting choices.
 
 `simcast.cli.report_composite` regenerates a report from an existing
 `runs/<venue>/<composite>/<run-id>/composite_manifest.json` alone. It reads
@@ -494,8 +492,7 @@ A report document (§7 of the [configuration reference](configuration_reference.
 names the source `run_root`, the `metrics` to summarize, and its own
 `analysis` block (reference, bootstrap replicates, block lengths). Unless
 `output_dir` is set explicitly (in the YAML or via `--output-dir`), the report
-is written under `reports/<venue>/<composite>/<run-id>/<report-config-stem>/`,
-so a custom report never overwrites the one `run_composite` already wrote.
+is written under `reports/<venue>/<composite>/<run-id>/<report-config-stem>/`.
 Running it twice with different `metrics` produces independent, comparable
 report directories from the same fitted models and evaluations.
 

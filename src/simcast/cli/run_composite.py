@@ -32,7 +32,6 @@ from simcast.experiments import (
     update_method,
     write_yaml,
 )
-from simcast.reporting.composite_report import write_composite_report
 from simcast.reproducibility import canonical_json_hash, environment_metadata, git_commit, utc_run_id
 
 LOGGER = logging.getLogger(__name__)
@@ -130,7 +129,6 @@ def run_composite(
     if not identifier or any(character not in "abcdefghijklmnopqrstuvwxyz0123456789_-" for character in identifier):
         raise ValueError("run_id must be a lowercase safe slug")
     run_root = (Path("runs") / config.venue / config.name / identifier).resolve()
-    report_root = (Path("reports") / config.venue / config.name / identifier).resolve()
     dependency_payload = [
         {
             "base": item.base.model_dump(mode="json"),
@@ -264,9 +262,7 @@ def run_composite(
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
         LOGGER.info("completed %s", cell_id)
 
-    write_composite_report(report_root, cells, config.analysis)
     manifest["status"] = "complete"
-    manifest["report_path"] = str(report_root)
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return run_root
 
