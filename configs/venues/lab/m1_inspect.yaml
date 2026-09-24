@@ -1,0 +1,13 @@
+kind: composite
+name: m1_inspect
+venue: lab
+bases:
+  - {id: mv_feeder, config: ../../bases/liander2024/mv_feeder.yaml}
+  - {id: wind_park, config: ../../bases/liander2024/wind_park.yaml}
+experiments:
+  - {id: m0, method: ../../methods/m0_independent.yaml}
+  - {id: m1, method: ../../methods/m1_static_gaussian.yaml}
+evaluations:
+  - id: standard
+    config: ../../evaluations/standard.yaml
+    experiment_ids: [m0, m1]

@@ -18,11 +18,13 @@ from simcast.config import (
     CompositeExperimentConfig,
     ConditionalKernelMethodConfig,
     ConditionalLowRankMethodConfig,
+    EvaluationDocumentConfig,
     MethodConfig,
     SetAwareLowRankMethodConfig,
     base_fingerprint,
     load_base_config,
     load_composite_config,
+    load_evaluation_config,
     load_method_config,
     resolve_run_config,
 )
@@ -44,6 +46,8 @@ class ExpandedExperiment:
     experiment_id: str
     method: MethodConfig
     seed: int | None
+    evaluation_id: str
+    evaluation: EvaluationDocumentConfig
 
 
 def _resolve_path(source: Path, value: Path) -> Path:
@@ -62,6 +66,12 @@ def expand_composite(source: Path, config: CompositeExperimentConfig) -> list[Ex
         entry.id: update_base(load_base_config(_resolve_path(source, entry.config)), entry.overrides)
         for entry in config.bases
     }
+    evaluations = {
+        entry.id: load_evaluation_config(_resolve_path(source, entry.config)) for entry in config.evaluations
+    }
+    for evaluation_id, evaluation in evaluations.items():
+        if evaluation.reference not in {entry.id for entry in config.experiments}:
+            raise ValueError(f"evaluation {evaluation_id!r} references unknown experiment {evaluation.reference!r}")
     expanded: list[ExpandedExperiment] = []
     for entry in config.experiments:
         method = update_method(load_method_config(_resolve_path(source, entry.method)), entry.overrides)
@@ -76,8 +86,11 @@ def expand_composite(source: Path, config: CompositeExperimentConfig) -> list[Ex
             seeds = [None]
         selected_bases = entry.base_ids or list(bases)
         expanded.extend(
-            ExpandedExperiment(bases[base_id], base_id, entry.id, method, seed)
-            for base_id in selected_bases
+            ExpandedExperiment(bases[base_id], base_id, entry.id, method, seed, evaluation_entry.id, evaluation)
+            for evaluation_entry in config.evaluations
+            if not evaluation_entry.experiment_ids or entry.id in evaluation_entry.experiment_ids
+            for evaluation in [evaluations[evaluation_entry.id]]
+            for base_id in (evaluation_entry.base_ids or selected_bases)
             for seed in seeds
         )
     return expanded
@@ -118,13 +131,6 @@ def run_composite(
     source = Path(config_path).expanduser().resolve()
     config = load_composite_config(source)
     expanded = expand_composite(source, config)
-    reference_entry = next(entry for entry in config.experiments if entry.id == config.analysis.reference)
-    reference = update_method(
-        load_method_config(_resolve_path(source, reference_entry.method)), reference_entry.overrides
-    )
-    if _is_optimized(reference) or reference_entry.seeds:
-        raise ValueError("the composite reference must be a deterministic M0 or M1 experiment")
-
     identifier = run_id or utc_run_id()
     if not identifier or any(character not in "abcdefghijklmnopqrstuvwxyz0123456789_-" for character in identifier):
         raise ValueError("run_id must be a lowercase safe slug")
@@ -136,6 +142,8 @@ def run_composite(
             "marginal_sha256": base_fingerprint(item.base),
             "base_entry_id": item.base_entry_id,
             "experiment_id": item.experiment_id,
+            "evaluation_id": item.evaluation_id,
+            "evaluation": item.evaluation.model_dump(mode="json"),
             "method": item.method.model_dump(mode="json"),
             "method_sha256": canonical_json_hash(item.method.model_dump(mode="json")),
             "seed": item.seed,
@@ -187,7 +195,7 @@ def run_composite(
 
     for item in expanded:
         seed_label = "deterministic" if item.seed is None else f"seed_{item.seed}"
-        cell_id = f"{item.base_entry_id}/{item.experiment_id}/{seed_label}"
+        cell_id = f"{item.base_entry_id}/{item.experiment_id}/{item.evaluation_id}/{seed_label}"
         if cell_id in completed:
             continue
         cache = locate_compatible_cache(item.base)
@@ -210,10 +218,19 @@ def run_composite(
                 train_from_config(runtime, cache_dir=cache, output_dir=fit_dir)
             shared_fits[fit_key] = fit_dir
 
+        reference_entry = next(entry for entry in config.experiments if entry.id == item.evaluation.reference)
+        reference = update_method(
+            load_method_config(_resolve_path(source, reference_entry.method)), reference_entry.overrides
+        )
+        if _is_optimized(reference) or reference_entry.seeds:
+            raise ValueError("evaluation references must use a deterministic M0 or M1 experiment")
         reference_runtime = resolve_run_config(item.base, reference)
+        reference_runtime = reference_runtime.model_copy(
+            update={"sampling": item.evaluation.sampling, "evaluation": item.evaluation.evaluation}
+        )
         reference_hash = canonical_json_hash(reference.model_dump(mode="json"))[:12]
         reference_dir = run_root / item.base_entry_id / "shared" / f"{reference.id}-{reference_hash}"
-        reference_key = (item.base_entry_id, reference_hash)
+        reference_key = (item.base_entry_id, f"{reference_hash}:{item.evaluation_id}")
         if reference_key not in shared_fits:
             if reference_dir.exists() and not _fit_is_complete(reference_dir, reference.family):
                 raise RuntimeError(f"refusing to overwrite partial dependence fit: {reference_dir}")
@@ -221,7 +238,10 @@ def run_composite(
                 train_from_config(reference_runtime, cache_dir=cache, output_dir=reference_dir)
             shared_fits[reference_key] = reference_dir
 
-        cell_dir = run_root / item.base_entry_id / item.experiment_id / seed_label
+        runtime = runtime.model_copy(
+            update={"sampling": item.evaluation.sampling, "evaluation": item.evaluation.evaluation}
+        )
+        cell_dir = run_root / item.base_entry_id / item.evaluation_id / item.experiment_id / seed_label
         evaluation_dir = cell_dir / "evaluation"
         cell_dir.mkdir(parents=True, exist_ok=True)
         write_yaml(cell_dir / "resolved_base.yaml", item.base)
@@ -245,6 +265,7 @@ def run_composite(
             "base_id": item.base_entry_id,
             "scientific_base_id": item.base.id,
             "experiment_id": item.experiment_id,
+            "evaluation_id": item.evaluation_id,
             "method_id": item.method.id,
             "method_family": item.method.family,
             "base_sha256": canonical_json_hash(item.base.model_dump(mode="json")),

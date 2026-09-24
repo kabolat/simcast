@@ -189,13 +189,12 @@ reports/<venue>/<composite>/<run-id>/
 ```
 
 The run root contains the resolved composite, exact expansion manifest,
-environment and Git record, base/method hashes, composite log, shared M0/M1
-fits, seed-specific M2--M4 fits, evaluations, and completion state. The report
-root contains concatenated per-origin records, method summaries, paired
-effects, and figures. M4 is processed by the same generic traversal as M2 and
-M3. The [usage guide](usage_guide.md#10-outputs-and-interpretation) gives the
-practical inspection order; this reference defines the meaning and location of
-the files.
+environment and Git record, base/method/evaluation hashes, composite log,
+shared M0/M1 fits, seed-specific M2--M4 fits, evaluation directories, and
+completion state. It does not contain a report unless the explicit reporting
+command is run later. The [usage guide](usage_guide.md#10-outputs-and-interpretation)
+gives the practical inspection order; this reference defines the meaning and
+location of the files.
 
 The current generic report root contains:
 

@@ -14,8 +14,6 @@ experiments:
   - id: m4_no_location
     method: ../../methods/m4_conditional_kernel.yaml
     overrides: {features: {use_location: false}, optimization: {epochs: 2, patience: 1}}
-analysis:
-  reference: m0
-  bootstrap_replicates: 200
-  primary_block_length: 7
-  sensitivity_block_lengths: [3]
+evaluations:
+  - id: standard
+    config: ../../evaluations/standard.yaml

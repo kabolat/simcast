@@ -454,6 +454,41 @@ class CompositeExperimentEntry(ConfigModel):
         return value
 
 
+class EvaluationDocumentConfig(ConfigModel):
+    kind: Literal["evaluation"]
+    id: Slug
+    reference: Slug
+    sampling: SamplingConfig = Field(default_factory=SamplingConfig)
+    evaluation: EvaluationConfig = Field(default_factory=EvaluationConfig)
+
+
+class CompositeEvaluationEntry(ConfigModel):
+    id: Slug
+    config: Path
+    base_ids: list[Slug] = Field(default_factory=list)
+    experiment_ids: list[Slug] = Field(default_factory=list)
+
+    @field_validator("base_ids", "experiment_ids")
+    @classmethod
+    def unique_selection_values(cls, value: list[str]) -> list[str]:
+        if len(value) != len(set(value)):
+            raise ValueError("composite evaluation selections must be unique")
+        return value
+
+
+class CompositeReportEntry(ConfigModel):
+    id: Slug
+    config: Path
+    evaluation_ids: list[Slug] = Field(min_length=1)
+
+    @field_validator("evaluation_ids")
+    @classmethod
+    def unique_evaluation_ids(cls, value: list[str]) -> list[str]:
+        if len(value) != len(set(value)):
+            raise ValueError("composite report evaluation IDs must be unique")
+        return value
+
+
 class CompositeAnalysisConfig(ConfigModel):
     reference: Slug
     bootstrap_replicates: PositiveInt = 10_000
@@ -474,21 +509,34 @@ class CompositeExperimentConfig(ConfigModel):
     venue: Slug
     bases: list[CompositeBaseEntry] = Field(min_length=1)
     experiments: list[CompositeExperimentEntry] = Field(min_length=1)
-    analysis: CompositeAnalysisConfig
+    evaluations: list[CompositeEvaluationEntry] = Field(min_length=1)
+    reports: list[CompositeReportEntry] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_references(self) -> Self:
         base_ids = [entry.id for entry in self.bases]
         experiment_ids = [entry.id for entry in self.experiments]
+        evaluation_ids = [entry.id for entry in self.evaluations]
+        report_ids = [entry.id for entry in self.reports]
         if len(base_ids) != len(set(base_ids)) or len(experiment_ids) != len(set(experiment_ids)):
             raise ValueError("composite base and experiment IDs must be unique")
-        if self.analysis.reference not in experiment_ids:
-            raise ValueError("analysis.reference must name an experiment entry")
+        if len(evaluation_ids) != len(set(evaluation_ids)) or len(report_ids) != len(set(report_ids)):
+            raise ValueError("composite evaluation and report IDs must be unique")
         known = set(base_ids)
         for experiment in self.experiments:
             unknown = set(experiment.base_ids) - known
             if unknown:
                 raise ValueError(f"experiment {experiment.id!r} references unknown bases: {sorted(unknown)}")
+        known_experiments = set(experiment_ids)
+        for evaluation in self.evaluations:
+            if set(evaluation.base_ids) - known:
+                raise ValueError(f"evaluation {evaluation.id!r} references unknown bases")
+            if set(evaluation.experiment_ids) - known_experiments:
+                raise ValueError(f"evaluation {evaluation.id!r} references unknown experiments")
+        known_evaluations = set(evaluation_ids)
+        for report in self.reports:
+            if set(report.evaluation_ids) - known_evaluations:
+                raise ValueError(f"report {report.id!r} references unknown evaluations")
         return self
 
 
@@ -637,6 +685,12 @@ def load_composite_config(path: str | Path, overrides: Sequence[str] = ()) -> Co
             f"composite venue {config.venue!r} does not match its directory {directory_venue!r}"
         )
     return config
+
+
+def load_evaluation_config(path: str | Path, overrides: Sequence[str] = ()) -> EvaluationDocumentConfig:
+    """Load one evaluation design for a composite evaluation entry."""
+
+    return EvaluationDocumentConfig.model_validate(_load_role_values(path, overrides))
 
 
 def load_report_config(path: str | Path, overrides: Sequence[str] = ()) -> ReportConfig:

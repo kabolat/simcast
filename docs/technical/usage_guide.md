@@ -203,11 +203,12 @@ experiments:
     method: ../../methods/m4_conditional_kernel.yaml
     seeds: [11, 23, 37]
 
-analysis:
-  reference: m0
-  bootstrap_replicates: 10000
-  primary_block_length: 7
-  sensitivity_block_lengths: [3, 14]
+evaluations:
+  - id: standard
+    config: ../../evaluations/standard.yaml
+    experiment_ids: [m0, m4]
+
+reports: []
 ```
 
 Run it with:
@@ -217,8 +218,9 @@ uv run python -m simcast.cli.run_composite \
   --config configs/venues/<venue>/main.yaml
 ```
 
-If five bases are listed, the M0 entry creates five deterministic cells; an M4
-entry with ten seeds creates fifty fitted cells. Nothing else is generated.
+If five bases are listed, the M0 entry creates five deterministic fitted cells;
+an M4 entry with ten seeds creates fifty fitted cells per selected evaluation.
+No report is generated when `reports` is empty.
 Repeated entries with distinct IDs express feature ablations or sensitivity
 variants. Overrides are validated against the referenced method type, so
 `model.latent_rank` is valid for M2/M3 and invalid for M4.

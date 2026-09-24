@@ -15,8 +15,7 @@ experiments:
   - id: m4
     method: ../../methods/m4_conditional_kernel.yaml
     overrides: {optimization: {epochs: 2, patience: 1}}
-analysis:
-  reference: m0
-  bootstrap_replicates: 200
-  primary_block_length: 7
-  sensitivity_block_lengths: [3]
+evaluations:
+  - id: standard
+    config: ../../evaluations/standard.yaml
+    experiment_ids: [m0, m1, m2, m3, m4]

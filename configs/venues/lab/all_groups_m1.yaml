@@ -1,0 +1,16 @@
+kind: composite
+name: all_groups_m1
+venue: lab
+bases:
+  - {id: mv_feeder, config: ../../bases/liander2024/mv_feeder.yaml}
+  - {id: transformer, config: ../../bases/liander2024/transformer.yaml}
+  - {id: station_installation, config: ../../bases/liander2024/station_installation.yaml}
+  - {id: solar_park, config: ../../bases/liander2024/solar_park.yaml}
+  - {id: wind_park, config: ../../bases/liander2024/wind_park.yaml}
+experiments:
+  - {id: m0, method: ../../methods/m0_independent.yaml}
+  - {id: m1, method: ../../methods/m1_static_gaussian.yaml}
+evaluations:
+  - id: standard
+    config: ../../evaluations/standard.yaml
+    experiment_ids: [m0, m1]

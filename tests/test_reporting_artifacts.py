@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from simcast.config import load_composite_config
+from simcast.config import CompositeAnalysisConfig
 from simcast.reporting import read_evaluation_artifacts, write_composite_report
 
 
@@ -33,8 +33,6 @@ def test_generic_composite_report_includes_m4(tmp_path: Path) -> None:
         for origin in range(12)
     ]
     pd.DataFrame(rows).to_parquet(evaluation / "per_origin_metrics.parquet", index=False)
-    config_path = Path(__file__).parents[1] / "configs/venues/lab/quick_all_methods.yaml"
-    config = load_composite_config(config_path)
     cells: list[dict[str, object]] = [
         {
             "evaluation_path": str(evaluation),
@@ -55,7 +53,8 @@ def test_generic_composite_report_includes_m4(tmp_path: Path) -> None:
     ]
 
     report = tmp_path / "report"
-    write_composite_report(report, cells, config.analysis)
+    analysis = CompositeAnalysisConfig(reference="m0", bootstrap_replicates=200, primary_block_length=7)
+    write_composite_report(report, cells, analysis)
 
     summary = pd.read_csv(report / "method_summary.csv")
     effects = pd.read_csv(report / "paired_effects.csv")

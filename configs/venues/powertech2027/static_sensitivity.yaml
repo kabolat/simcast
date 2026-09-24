@@ -11,3 +11,6 @@ experiments:
   - {id: m0, method: ../../methods/m0_independent.yaml}
   - {id: m1_lead_specific, method: ../../methods/m1_static_gaussian.yaml}
   - {id: m1_pooled, method: ../../methods/m1_static_gaussian.yaml, overrides: {model: {share_across_leads: true}}}
+evaluations:
+  - id: standard
+    config: ../../evaluations/standard.yaml

@@ -304,20 +304,29 @@ budgets explicitly and validation then applies to that method type.
 | `experiments[].seeds` | list of unique non-negative integers | `[]` | repetitions for conditional methods; forbidden for deterministic M0/M1 entries |
 | `experiments[].base_ids` | list of unique existing base-entry IDs | `[]` | restrict this method entry to selected bases; an empty list means every listed base |
 | `experiments[].overrides` | mapping of valid fields for that method family | `{}` | explicit method variant; cross-method fields fail validation |
-| `analysis.reference` | an existing experiment-entry ID | **required** | deterministic M0/M1 reference for paired contrasts |
-| `analysis.bootstrap_replicates` | positive integer | `10000` | paired origin-level bootstrap repetitions |
-| `analysis.primary_block_length` | positive integer | `7` | primary moving-block length in origins |
-| `analysis.sensitivity_block_lengths` | list of unique positive integers | `[3,14]` | additional block lengths for uncertainty sensitivity |
+| `evaluations` | non-empty list of evaluation entries | **required** | explicit post-fit evaluation designs |
+| `evaluations[].id` | safe slug, unique within `evaluations` | **required** | evaluation identity |
+| `evaluations[].config` | evaluation YAML path | **required** | sampling, score, and evaluation settings |
+| `evaluations[].base_ids` | list of known base IDs | `[]` | bases to evaluate; empty means every base |
+| `evaluations[].experiment_ids` | list of known experiment IDs | `[]` | fitted methods to evaluate; empty means every experiment |
+| `reports` | list of report entries | `[]` | optional explicit post-evaluation reports |
+| `reports[].id` | safe slug, unique within `reports` | **required** | report identity |
+| `reports[].config` | report YAML path | **required** | report metrics and uncertainty settings |
+| `reports[].evaluation_ids` | non-empty list of known evaluation IDs | **required** | evaluations selected for the report |
 
 `bases` assigns local IDs to base files and optional valid base overrides.
 `experiments` assigns distinct IDs to method files, optional base selections,
-optional conditional seeds, and role-valid method overrides. Expansion is the
-literal nested sequence of each entry's selected bases and seeds.
+optional conditional seeds, and role-valid method overrides. `evaluations`
+assigns explicit post-fit evaluation designs to selected base/experiment
+combinations. `reports` is optional and only declares which report designs
+refer to which evaluations. Expansion is the literal nested sequence of each
+entry's selected bases, experiments, evaluations, and seeds.
 
 Deterministic M0/M1 entries cannot declare repeated seeds. Conditional entries
-without `seeds` use their method file's optimization seed. `analysis.reference`
-must name a deterministic M0 or M1 entry when executed. Bootstrap replicate
-count and block lengths define the paired origin-level uncertainty calculation.
+without `seeds` use their method file's optimization seed. Each evaluation
+document names its deterministic M0/M1 reference. Bootstrap replicate count and
+block lengths belong to a report, not to fitting or evaluation. Composite
+execution creates only `runs/`; reports are explicit follow-up work.
 The scientific purpose of this declaration and the resulting claim discipline
 are explained in [Chapters 6](../scientific/06_scientific_workflow.md) and
 [7](../scientific/07_experiments_and_results.md); the executable command is in

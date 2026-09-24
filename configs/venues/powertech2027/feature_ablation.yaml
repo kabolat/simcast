@@ -55,4 +55,7 @@ experiments:
   - id: m4_full
     method: ../../methods/m4_conditional_kernel.yaml
     seeds: [11, 23, 37, 42, 59, 71, 83, 97, 101, 131]
+evaluations:
+  - id: standard
+    config: ../../evaluations/standard.yaml
 

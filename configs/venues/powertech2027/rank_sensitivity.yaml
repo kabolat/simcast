@@ -17,3 +17,6 @@ experiments:
   - {id: m3_rank_4, method: ../../methods/m3_set_aware_low_rank.yaml, seeds: [11, 23, 37, 42, 59, 71, 83, 97, 101, 131]}
   - {id: m3_rank_8, method: ../../methods/m3_set_aware_low_rank.yaml, seeds: [11, 23, 37, 42, 59, 71, 83, 97, 101, 131], overrides: {model: {latent_rank: 8}}}
   - {id: m4, method: ../../methods/m4_conditional_kernel.yaml, seeds: [11, 23, 37, 42, 59, 71, 83, 97, 101, 131]}
+evaluations:
+  - id: standard
+    config: ../../evaluations/standard.yaml

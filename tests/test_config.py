@@ -172,10 +172,24 @@ def test_composite_venue_must_match_its_directory(tmp_path: Path) -> None:
         "kind: composite\nname: x\nvenue: paper\n"
         "bases: [{id: x, config: x.yaml}]\n"
         "experiments: [{id: m0, method: m0.yaml}]\n"
-        "analysis: {reference: m0}\n",
+        "evaluations: [{id: standard, config: evaluation.yaml}]\n",
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="does not match"):
+        load_composite_config(path)
+
+
+def test_composite_requires_evaluations_but_not_reports(tmp_path: Path) -> None:
+    venue_dir = tmp_path / "configs" / "venues" / "lab"
+    venue_dir.mkdir(parents=True)
+    path = venue_dir / "study.yaml"
+    path.write_text(
+        "kind: composite\nname: study\nvenue: lab\n"
+        "bases: [{id: x, config: x.yaml}]\n"
+        "experiments: [{id: m0, method: m0.yaml}]\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValidationError, match="evaluations"):
         load_composite_config(path)
 
 
