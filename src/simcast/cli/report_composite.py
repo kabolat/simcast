@@ -12,42 +12,59 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-import yaml  # type: ignore[import-untyped]
 
 from simcast.config import load_composite_config, load_report_config
 from simcast.reporting.composite_report import write_composite_report
 
 
+def _resolve_composite_run(*, venue: str, name: str) -> Path:
+    run_dir = Path("runs") / venue / name
+    candidates = sorted(
+        path for path in run_dir.iterdir() if path.is_dir() and (path / "composite_manifest.json").is_file()
+    ) if run_dir.is_dir() else []
+    if not candidates:
+        raise FileNotFoundError(f"no completed composite run found under {run_dir}")
+    if len(candidates) > 1:
+        raise ValueError(f"multiple composite runs found under {run_dir}; use a single run directory")
+    return candidates[0].resolve()
+
+
 def report_composite(
-    config_path: str | Path,
+    config_path: str | Path | None = None,
     *,
+    composite_config_path: str | Path | None = None,
     report_id: str | None = None,
     run_root: str | Path | None = None,
     output_dir: str | Path | None = None,
 ) -> Path:
-    source = Path(config_path).expanduser().resolve()
-    kind = yaml.safe_load(source.read_text(encoding="utf-8")).get("kind")
-    if kind == "composite":
-        if report_id is None:
-            raise ValueError("--report is required when --config names a composite")
+    if (config_path is None) == (composite_config_path is None):
+        raise ValueError("provide exactly one of --config or --composite-config")
+    if composite_config_path is not None:
+        if run_root is not None:
+            raise ValueError("--run-root is not valid with --composite-config")
+        source = Path(composite_config_path).expanduser().resolve()
         composite = load_composite_config(source)
+        if report_id is None:
+            raise ValueError("--report-id is required with --composite-config")
         entry = next((item for item in composite.reports if item.id == report_id), None)
         if entry is None:
             expected = [item.id for item in composite.reports]
             raise ValueError(f"unknown report {report_id!r}; expected one of {expected}")
         config = load_report_config((source.parent / entry.config).resolve())
         evaluation_ids = entry.evaluation_ids
+        resolved_run_root = _resolve_composite_run(venue=composite.venue, name=composite.name)
     else:
         if report_id is not None:
-            raise ValueError("--report is valid only when --config names a composite")
+            raise ValueError("--report-id is valid only with --composite-config")
+        if config_path is None:
+            raise ValueError("--config is required in standalone mode")
+        source = Path(config_path).expanduser().resolve()
         config = load_report_config(source)
         report_id = None
         evaluation_ids = config.evaluation_ids
-
-    resolved_run_root = Path(run_root).expanduser().resolve() if run_root is not None else config.run_root
-    if resolved_run_root is None:
-        raise ValueError("run_root must be given via --run-root or the report document")
-    resolved_run_root = Path(resolved_run_root).expanduser().resolve()
+        if run_root is None:
+            raise ValueError("--run-root is required with --config")
+        resolved_run_root = Path(run_root).expanduser().resolve()
 
     manifest_path = resolved_run_root / "composite_manifest.json"
     if not manifest_path.is_file():
@@ -69,7 +86,7 @@ def report_composite(
     elif config.output_dir is not None:
         destination = Path(config.output_dir).expanduser().resolve()
     else:
-        destination = resolved_run_root / "reports" / (report_id or Path(config_path).stem)
+        destination = resolved_run_root / "reports" / (report_id or source.stem)
     write_composite_report(
         destination,
         cells,
@@ -82,25 +99,35 @@ def report_composite(
 
 def main(
     config: Annotated[
-        Path,
+        Path | None,
         typer.Option(
             "--config",
             exists=True,
             dir_okay=False,
             readable=True,
-            help="Standalone report YAML or composite YAML containing the report entry.",
+            help="Standalone report YAML; requires --run-root.",
         ),
-    ],
+    ] = None,
+    composite_config: Annotated[
+        Path | None,
+        typer.Option(
+            "--composite-config",
+            exists=True,
+            dir_okay=False,
+            readable=True,
+            help="Composite YAML; its single matching run is resolved automatically.",
+        ),
+    ] = None,
     report_id: Annotated[
         str | None,
-        typer.Option("--report", help="Report ID to select when --config is a composite YAML."),
+        typer.Option("--report-id", help="Report ID to select from --composite-config."),
     ] = None,
     run_root: Annotated[
         Path | None,
         typer.Option(
             "--run-root",
             file_okay=False,
-            help="Completed composite run to read; overrides run_root in the report YAML.",
+            help="Completed composite run to read with --config.",
         ),
     ] = None,
     output_dir: Annotated[
@@ -112,7 +139,15 @@ def main(
         ),
     ] = None,
 ) -> None:
-    typer.echo(report_composite(config, report_id=report_id, run_root=run_root, output_dir=output_dir))
+    typer.echo(
+        report_composite(
+            config,
+            composite_config_path=composite_config,
+            report_id=report_id,
+            run_root=run_root,
+            output_dir=output_dir,
+        )
+    )
 
 
 def cli() -> None:

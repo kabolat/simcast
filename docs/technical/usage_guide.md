@@ -494,12 +494,14 @@ to rerun repeatedly while iterating on which metrics, bootstrap settings, or
 figures to produce.
 
 ```bash
-uv run report --config configs/reports/powertech2027_main.yaml
+uv run report \
+  --config configs/reports/powertech2027_main.yaml \
+  --run-root runs/powertech2027/main/<run-id>
 ```
 
 A report document (§7 of the [configuration reference](configuration_reference.md#7-evaluation-and-report-configuration))
-names the source `run_root` (or takes it from `--run-root`), the `metrics` to
-summarize, which recorded `evaluation_ids` to report on, and its own
+names the `metrics` to summarize, which recorded `evaluation_ids` to report on,
+and its own
 `reference` method plus an `analysis` block (bootstrap replicates and block
 lengths). Unless
 `output_dir` is set explicitly (in the YAML or via `--output-dir`), the report
@@ -510,7 +512,7 @@ report directories from the same recorded evaluations.
 When a composite declares `reports`, select one directly:
 
 ```bash
-uv run report --config configs/venues/<venue>/study.yaml --report standard_report
+uv run report --composite-config configs/venues/<venue>/study.yaml --report-id standard_report
 ```
 
 The command loads that report entry, selects only its declared evaluation IDs,
@@ -530,11 +532,20 @@ uv run evaluate --config configs/evaluations/variogram_power_1.yaml \
 ```
 
 A standalone evaluation document (§2.6 and §7 of the
-[configuration reference](configuration_reference.md)) can also carry its own
-`run_root`, `base_ids`, and `method_ids`, so `--run-root` may be omitted once
-those are set in the YAML. When `--config` instead names a composite, pass
-`--evaluation <id>` to select one of its declared `evaluations` entries; the
-composite's own base/method selection then applies. The command is idempotent:
+[configuration reference](configuration_reference.md)) carries `base_ids` and
+`method_ids`, while `--run-root` identifies the completed run. When using a
+composite config, pass `--composite-config` and `--evaluation-id`:
+
+```bash
+uv run evaluate \
+  --composite-config configs/venues/lab/quick_shot.yaml \
+  --evaluation-id standard
+```
+
+The command finds the single manifest-bearing run under
+`runs/<venue>/<composite>/`; it errors if none or multiple runs exist. The
+standalone and composite modes reject the other mode's options. The command is
+idempotent:
 rerunning it skips any fit whose evaluation directory already has a completed
 `evaluation_manifest.json`, and only computes the missing ones. Its output
 nests under `runs/<venue>/<composite>/<run-id>/evaluations/<evaluation-id>/`

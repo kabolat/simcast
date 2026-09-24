@@ -87,13 +87,12 @@ def test_standalone_evaluation_document_evaluates_all_selected_fits(
                 "kind": "evaluation",
                 "id": "variogram_power_1",
                 "evaluation": {"variogram_power": 1.0},
-                "run_root": str(run_root),
             }
         ),
         encoding="utf-8",
     )
 
-    destination = evaluate_composite(document_path)
+    destination = evaluate_composite(document_path, run_root=run_root)
 
     assert destination == run_root / "evaluations" / "variogram_power_1"
     assert calls["evaluate"] == 2
@@ -111,22 +110,31 @@ def test_standalone_evaluation_is_idempotent_on_rerun(tmp_path: Path, monkeypatc
             {
                 "kind": "evaluation",
                 "id": "variogram_power_1",
-                "run_root": str(run_root),
             }
         ),
         encoding="utf-8",
     )
 
-    evaluate_composite(document_path)
+    evaluate_composite(document_path, run_root=run_root)
     first_calls = dict(calls)
-    evaluate_composite(document_path)
+    evaluate_composite(document_path, run_root=run_root)
 
     assert calls == first_calls
 
 
-def test_composite_mode_requires_evaluation_option(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_standalone_evaluation_requires_run_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_evaluate(monkeypatch)
+    document_path = tmp_path / "evaluation.yaml"
+    document_path.write_text(yaml.safe_dump({"kind": "evaluation", "id": "standard"}), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="--run-root is required"):
+        evaluate_composite(document_path)
+
+
+def test_composite_mode_resolves_its_single_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     run_root = _synthetic_run_root(tmp_path)
     _patch_evaluate(monkeypatch)
+    monkeypatch.chdir(tmp_path)
     venue_dir = tmp_path / "configs" / "venues" / "lab"
     venue_dir.mkdir(parents=True)
     composite_path = venue_dir / "composite.yaml"
@@ -142,11 +150,37 @@ def test_composite_mode_requires_evaluation_option(tmp_path: Path, monkeypatch: 
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="--evaluation is required"):
-        evaluate_composite(composite_path)
+    with pytest.raises(ValueError, match="--evaluation-id is required"):
+        evaluate_composite(composite_config_path=composite_path)
 
-    destination = evaluate_composite(composite_path, evaluation_id="variogram_power_1", run_root=run_root)
+    destination = evaluate_composite(composite_config_path=composite_path, evaluation_id="variogram_power_1")
     assert destination == run_root / "evaluations" / "variogram_power_1"
+
+
+def test_composite_mode_rejects_multiple_runs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_evaluate(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    run_parent = tmp_path / "runs" / "lab" / "quick_shot"
+    for run_id in ("first", "second"):
+        run_dir = run_parent / run_id
+        run_dir.mkdir(parents=True)
+        (run_dir / "composite_manifest.json").write_text("{}\n", encoding="utf-8")
+    venue_dir = tmp_path / "configs" / "venues" / "lab"
+    venue_dir.mkdir(parents=True)
+    composite_path = venue_dir / "composite.yaml"
+    composite_path.write_text(
+        "kind: composite\nname: quick_shot\nvenue: lab\n"
+        "bases: [{id: transformer, config: transformer.yaml}]\n"
+        "methods: [{id: m0, method: m0.yaml}]\n"
+        "evaluations: [{id: standard, config: standard.yaml}]\n",
+        encoding="utf-8",
+    )
+    (venue_dir / "standard.yaml").write_text(
+        yaml.safe_dump({"kind": "evaluation", "id": "standard"}), encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="multiple composite runs"):
+        evaluate_composite(composite_config_path=composite_path, evaluation_id="standard")
 
 
 def test_evaluation_does_not_require_a_reference_fit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -159,11 +193,10 @@ def test_evaluation_does_not_require_a_reference_fit(tmp_path: Path, monkeypatch
                 "kind": "evaluation",
                 "id": "independent",
                 "method_ids": ["m4"],
-                "run_root": str(run_root),
             }
         ),
         encoding="utf-8",
     )
 
-    evaluate_composite(document_path)
+    evaluate_composite(document_path, run_root=run_root)
     assert calls["evaluate"] == 1

@@ -1,5 +1,4 @@
 kind: report
-run_root: runs/powertech2027/main/2026-09-16_093812
 reference: m0
 metrics: 
   - mean_pinball

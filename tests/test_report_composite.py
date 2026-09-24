@@ -65,7 +65,6 @@ def _synthetic_run_root(tmp_path: Path) -> Path:
 def _write_report_config(path: Path, run_root: Path, *, metrics: list[str], output_dir: Path | None = None) -> Path:
     payload: dict[str, object] = {
         "kind": "report",
-        "run_root": str(run_root),
         "reference": "m0",
         "metrics": metrics,
         "evaluation_ids": ["standard"],
@@ -84,7 +83,7 @@ def test_report_composite_only_reads_completed_cells_and_defaults_output_under_r
     run_root = _synthetic_run_root(tmp_path)
     config_path = _write_report_config(tmp_path / "report.yaml", run_root, metrics=["mean_pinball"])
 
-    destination = report_composite(config_path)
+    destination = report_composite(config_path, run_root=run_root)
 
     assert destination == run_root / "reports" / "report"
     assert (destination / "method_comparison_mean_pinball.png").is_file()
@@ -101,7 +100,7 @@ def test_report_composite_supports_alternate_metrics_and_explicit_output_dir(tmp
         tmp_path / "report.yaml", run_root, metrics=["mean_pinball", "crps"], output_dir=output_dir
     )
 
-    destination = report_composite(config_path)
+    destination = report_composite(config_path, run_root=run_root)
 
     assert destination == output_dir
     assert (destination / "method_comparison_mean_pinball.png").is_file()
@@ -119,7 +118,7 @@ def test_report_composite_rejects_unknown_metric_without_writing_anything(
     config_path = _write_report_config(tmp_path / "report.yaml", run_root, metrics=["not_a_real_metric"])
 
     with pytest.raises(ValueError, match="not_a_real_metric"):
-        report_composite(config_path)
+        report_composite(config_path, run_root=run_root)
 
     assert not (run_root / "reports").exists()
 
@@ -134,7 +133,7 @@ def test_report_composite_plots_noncovering_bootstrap_interval(
         config_path.read_text(encoding="utf-8").replace("bootstrap_replicates: 200", "bootstrap_replicates: 1"),
         encoding="utf-8",
     )
-    report_composite(config_path)
+    report_composite(config_path, run_root=run_root)
 
     assert (run_root / "reports" / "report").is_dir()
 

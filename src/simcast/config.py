@@ -452,16 +452,15 @@ class CompositeMethodEntry(ConfigModel):
 class EvaluationDocumentConfig(ConfigModel):
     """A reusable evaluation design: sampling and scoring settings.
 
-    ``run_root``, ``base_ids``, ``method_ids``, and ``output_dir`` are used only
-    when this document is run standalone against an already-fitted run; a
-    composite evaluation entry supplies its own selection instead.
+    ``base_ids``, ``method_ids``, and ``output_dir`` are used when this
+    document is run standalone against an already-fitted run; the run path is
+    supplied explicitly by the CLI.
     """
 
     kind: Literal["evaluation"]
     id: Slug
     sampling: SamplingConfig = Field(default_factory=SamplingConfig)
     evaluation: EvaluationConfig = Field(default_factory=EvaluationConfig)
-    run_root: Path | None = None
     base_ids: list[Slug] = Field(default_factory=list)
     method_ids: list[Slug] = Field(default_factory=list)
     output_dir: Path | None = None
@@ -565,12 +564,11 @@ class ReportConfig(ConfigModel):
 
     Unlike a composite, this is never hashed against fitted/evaluated cells:
     it only reads already-computed ``per_origin_metrics.parquet`` records.
-    ``run_root`` may be left unset here and supplied instead via ``--run-root``,
-    so the same report document can be reused across different runs.
+    The run path is supplied explicitly by the CLI, so the same report
+    document can be reused across different runs.
     """
 
     kind: Literal["report"]
-    run_root: Path | None = None
     reference: Slug
     metrics: list[str] = Field(default_factory=lambda: ["mean_pinball"], min_length=1)
     evaluation_ids: list[str] = Field(default_factory=list)

@@ -384,15 +384,15 @@ forecast horizon, or Chronos model revision requires a different cache.
 
 A `kind: evaluation` document (§2.6) can also be run standalone against an
 already-completed run, without a composite `evaluations` entry, using
-`simcast.cli.evaluate_composite`. In that mode its own `run_root`, `base_ids`,
-and `method_ids` fields select the target run and fits directly:
+`simcast.cli.evaluate_composite`. The run is supplied with `--run-root`; it is
+not stored in the evaluation YAML. `base_ids` and `method_ids` select the
+target fits:
 
 ```yaml
 kind: evaluation
 id: variogram_power_1
 evaluation:
   variogram_power: 1.0
-run_root: runs/lab/quick_shot/2026-09-16_093812
 ```
 
 A `kind: report` document regenerates a report from an already-completed run's
@@ -402,7 +402,6 @@ when and how to use it; this section lists its fields.
 
 ```yaml
 kind: report
-run_root: runs/powertech2027/main/2026-09-16_093812
 reference: m0
 metrics: [mean_pinball, crps]
 evaluation_ids: [standard]
@@ -414,7 +413,6 @@ analysis:
 | Key | YAML type and admissible values | Default | Meaning |
 |---|---|---|---|
 | `kind` | literal string `report` | **required** | declares a standalone report-regeneration document |
-| `run_root` | path to an existing `runs/<venue>/<composite>/<run-id>/` directory | `null` (must be given here or via `--run-root`) | source of already-computed evaluation records |
 | `metrics` | non-empty list of unique column names from `per_origin_metrics.parquet` | `[mean_pinball]` | which metrics get a summary, paired-effect table, and figure |
 | `evaluation_ids` | list of known evaluation IDs recorded in the run's manifest | `[]` | which recorded evaluations to report on; empty means every evaluation in the manifest |
 | `analysis` | a composite `analysis` block (§4) | **required** | bootstrap replicates and block lengths for this report only |
