@@ -60,7 +60,16 @@ def download_data(
 
 
 def main(
-    base: Annotated[Path, typer.Option("--base", exists=True, dir_okay=False, readable=True)],
+    base: Annotated[
+        Path,
+        typer.Option(
+            "--base",
+            exists=True,
+            dir_okay=False,
+            readable=True,
+            help="Base YAML identifying the data and physical group to download.",
+        ),
+    ],
     override: Annotated[
         list[str] | None,
         typer.Option("--set", help="Configuration override as dotted.path=value"),

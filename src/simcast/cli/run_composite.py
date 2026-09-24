@@ -298,10 +298,28 @@ def run_composite(
 
 
 def main(
-    config: Annotated[Path, typer.Option("--config", exists=True, dir_okay=False, readable=True)],
-    run_id: Annotated[str | None, typer.Option("--run-id")] = None,
-    resume: Annotated[bool, typer.Option("--resume")] = False,
-    rebuild_cache: Annotated[bool, typer.Option("--rebuild-cache")] = False,
+    config: Annotated[
+        Path,
+        typer.Option(
+            "--config",
+            exists=True,
+            dir_okay=False,
+            readable=True,
+            help="Composite YAML declaring bases, methods, and optional evaluations/reports.",
+        ),
+    ],
+    run_id: Annotated[
+        str | None,
+        typer.Option("--run-id", help="Stable lowercase run ID; omit to generate a timestamped ID."),
+    ] = None,
+    resume: Annotated[
+        bool,
+        typer.Option("--resume", help="Resume an existing run after validating its configuration hash."),
+    ] = False,
+    rebuild_cache: Annotated[
+        bool,
+        typer.Option("--rebuild-cache", help="Rebuild compatible marginal caches before fitting."),
+    ] = False,
 ) -> None:
     logging.basicConfig(level=logging.INFO)
     typer.echo(run_composite(config, run_id=run_id, resume=resume, rebuild_cache=rebuild_cache))

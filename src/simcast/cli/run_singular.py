@@ -82,13 +82,44 @@ def run_singular(
 
 
 def main(
-    base: Annotated[Path, typer.Option("--base", exists=True, dir_okay=False, readable=True)],
-    method: Annotated[Path, typer.Option("--method", exists=True, dir_okay=False, readable=True)],
+    base: Annotated[
+        Path,
+        typer.Option(
+            "--base",
+            exists=True,
+            dir_okay=False,
+            readable=True,
+            help="Base YAML defining the frozen marginal experiment.",
+        ),
+    ],
+    method: Annotated[
+        Path,
+        typer.Option(
+            "--method",
+            exists=True,
+            dir_okay=False,
+            readable=True,
+            help="Method YAML defining the dependence model to fit and evaluate.",
+        ),
+    ],
     reference_method: Annotated[
-        Path | None, typer.Option("--reference-method", exists=True, dir_okay=False, readable=True)
+        Path | None,
+        typer.Option(
+            "--reference-method",
+            exists=True,
+            dir_okay=False,
+            readable=True,
+            help="Optional method YAML to evaluate alongside the selected method.",
+        ),
     ] = None,
-    output_dir: Annotated[Path | None, typer.Option("--output-dir", file_okay=False)] = None,
-    rebuild_cache: Annotated[bool, typer.Option("--rebuild-cache")] = False,
+    output_dir: Annotated[
+        Path | None,
+        typer.Option("--output-dir", file_okay=False, help="Explicit singular run directory."),
+    ] = None,
+    rebuild_cache: Annotated[
+        bool,
+        typer.Option("--rebuild-cache", help="Rebuild the compatible marginal cache before fitting."),
+    ] = False,
 ) -> None:
     logging.basicConfig(level=logging.INFO)
     typer.echo(

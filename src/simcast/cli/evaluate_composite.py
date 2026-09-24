@@ -128,9 +128,28 @@ def evaluate_composite(
 
 
 def main(
-    config: Annotated[Path, typer.Option("--config", exists=True, dir_okay=False, readable=True)],
-    evaluation_id: Annotated[str | None, typer.Option("--evaluation")] = None,
-    run_root: Annotated[Path | None, typer.Option("--run-root", file_okay=False)] = None,
+    config: Annotated[
+        Path,
+        typer.Option(
+            "--config",
+            exists=True,
+            dir_okay=False,
+            readable=True,
+            help="Standalone evaluation YAML or composite YAML containing the evaluation entry.",
+        ),
+    ],
+    evaluation_id: Annotated[
+        str | None,
+        typer.Option("--evaluation", help="Evaluation ID to select when --config is a composite YAML."),
+    ] = None,
+    run_root: Annotated[
+        Path | None,
+        typer.Option(
+            "--run-root",
+            file_okay=False,
+            help="Completed composite run to reuse; overrides run_root in a standalone evaluation YAML.",
+        ),
+    ] = None,
 ) -> None:
     typer.echo(evaluate_composite(config, evaluation_id=evaluation_id, run_root=run_root))
 

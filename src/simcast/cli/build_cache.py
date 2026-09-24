@@ -577,13 +577,30 @@ def build_cache(
 
 
 def main(
-    base: Annotated[Path, typer.Option("--base", exists=True, dir_okay=False, readable=True)],
+    base: Annotated[
+        Path,
+        typer.Option(
+            "--base",
+            exists=True,
+            dir_okay=False,
+            readable=True,
+            help="Base YAML defining the frozen Chronos marginal and PIT cache.",
+        ),
+    ],
     override: Annotated[
         list[str] | None,
         typer.Option("--set", help="Configuration override as dotted.path=value"),
     ] = None,
-    output_dir: Annotated[Path | None, typer.Option("--output-dir", file_okay=False)] = None,
-    overwrite: Annotated[bool, typer.Option("--overwrite")] = False,
+    output_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--output-dir", file_okay=False, help="Explicit cache directory; otherwise use the canonical path."
+        ),
+    ] = None,
+    overwrite: Annotated[
+        bool,
+        typer.Option("--overwrite", help="Replace an existing cache directory deliberately."),
+    ] = False,
 ) -> None:
     """Build frozen Chronos forecasts, embeddings, and configured PIT scores."""
 

@@ -81,10 +81,36 @@ def report_composite(
 
 
 def main(
-    config: Annotated[Path, typer.Option("--config", exists=True, dir_okay=False, readable=True)],
-    report_id: Annotated[str | None, typer.Option("--report")] = None,
-    run_root: Annotated[Path | None, typer.Option("--run-root", file_okay=False)] = None,
-    output_dir: Annotated[Path | None, typer.Option("--output-dir", file_okay=False)] = None,
+    config: Annotated[
+        Path,
+        typer.Option(
+            "--config",
+            exists=True,
+            dir_okay=False,
+            readable=True,
+            help="Standalone report YAML or composite YAML containing the report entry.",
+        ),
+    ],
+    report_id: Annotated[
+        str | None,
+        typer.Option("--report", help="Report ID to select when --config is a composite YAML."),
+    ] = None,
+    run_root: Annotated[
+        Path | None,
+        typer.Option(
+            "--run-root",
+            file_okay=False,
+            help="Completed composite run to read; overrides run_root in the report YAML.",
+        ),
+    ] = None,
+    output_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--output-dir",
+            file_okay=False,
+            help="Destination for the report; defaults to <run_root>/reports/<report-id>.",
+        ),
+    ] = None,
 ) -> None:
     typer.echo(report_composite(config, report_id=report_id, run_root=run_root, output_dir=output_dir))
 
