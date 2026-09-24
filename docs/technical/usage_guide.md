@@ -78,7 +78,8 @@ representation-output patch used by the experiment. It does not modify the
 forecast quantiles.
 
 Chronos weights are retrieved through the Hugging Face cache. An optional
-`HF_TOKEN` improves Hub rate limits; never store it in YAML or Git:
+When a composite declares reports, the command runs all of them by default.
+Select one directly when needed:
 
 ```bash
 export HF_TOKEN=...
@@ -451,7 +452,8 @@ Examples:
 --set chronos.device=cpu
 --set pit.mode=linear_interpolation
 --set sampling.num_samples=2048
---set evaluation.energy_score=false
+When using a composite config, pass `--composite-config`. It runs all declared evaluations
+by default; `--evaluation-id` narrows it to one:
 --set covariates.future_weather_source=oracle
 ```
 
@@ -501,15 +503,15 @@ uv run report \
 
 A report document (§7 of the [configuration reference](configuration_reference.md#7-evaluation-and-report-configuration))
 names the `metrics` to summarize, which recorded `evaluation_ids` to report on,
-and its own
-`reference` method plus an `analysis` block (bootstrap replicates and block
-lengths). Unless
+and its own `reference` method plus an `analysis` block (bootstrap replicates
+and block lengths). Unless
 `output_dir` is set explicitly (in the YAML or via `--output-dir`), the report
 is written under `<run_root>/reports/<report-config-stem>/`.
 Running it twice with different `metrics` produces independent, comparable
 report directories from the same recorded evaluations.
 
-When a composite declares `reports`, select one directly:
+When a composite declares reports, the command runs all of them by default.
+Select one directly when needed:
 
 ```bash
 uv run report --composite-config configs/venues/<venue>/study.yaml --report-id standard_report
@@ -534,18 +536,20 @@ uv run evaluate --config configs/evaluations/variogram_power_1.yaml \
 A standalone evaluation document (§2.6 and §7 of the
 [configuration reference](configuration_reference.md)) carries `base_ids` and
 `method_ids`, while `--run-root` identifies the completed run. When using a
-composite config, pass `--composite-config` and `--evaluation-id`:
+composite config, pass `--composite-config`. It runs all declared evaluations
+by default; `--evaluation-id` narrows it to one:
 
 ```bash
 uv run evaluate \
   --composite-config configs/venues/lab/quick_shot.yaml \
-  --evaluation-id standard
+  --evaluation-id standard \
+  --run-id 2026-09-24_133838
 ```
 
-The command finds the single manifest-bearing run under
-`runs/<venue>/<composite>/`; it errors if none or multiple runs exist. The
-standalone and composite modes reject the other mode's options. The command is
-idempotent:
+With one run under `runs/<venue>/<composite>/`, `--run-id` may be omitted. If
+multiple runs exist, provide `--run-id`; the command errors rather than
+guessing. The standalone and composite modes reject the other mode's options.
+The command is idempotent:
 rerunning it skips any fit whose evaluation directory already has a completed
 `evaluation_manifest.json`, and only computes the missing ones. Its output
 nests under `runs/<venue>/<composite>/<run-id>/evaluations/<evaluation-id>/`

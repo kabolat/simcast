@@ -17,8 +17,15 @@ from simcast.config import ReportConfig, load_composite_config, load_report_conf
 from simcast.reporting.composite_report import write_composite_report
 
 
-def _resolve_composite_run(*, venue: str, name: str) -> Path:
+def _resolve_composite_run(*, venue: str, name: str, run_id: str | None = None) -> Path:
     run_dir = Path("runs") / venue / name
+    if run_id is not None:
+        if not run_id or any(character not in "abcdefghijklmnopqrstuvwxyz0123456789_-" for character in run_id):
+            raise ValueError("run_id must be a lowercase safe slug")
+        selected = run_dir / run_id
+        if not (selected / "composite_manifest.json").is_file():
+            raise FileNotFoundError(f"no completed composite run found at {selected}")
+        return selected.resolve()
     candidates = sorted(
         path for path in run_dir.iterdir() if path.is_dir() and (path / "composite_manifest.json").is_file()
     ) if run_dir.is_dir() else []
@@ -36,6 +43,7 @@ def report_composite(
     report_id: str | None = None,
     run_root: str | Path | None = None,
     output_dir: str | Path | None = None,
+    run_id: str | None = None,
 ) -> Path:
     if (config_path is None) == (composite_config_path is None):
         raise ValueError("provide exactly one of --config or --composite-config")
@@ -44,7 +52,7 @@ def report_composite(
             raise ValueError("--run-root is not valid with --composite-config")
         source = Path(composite_config_path).expanduser().resolve()
         composite = load_composite_config(source)
-        resolved_run_root = _resolve_composite_run(venue=composite.venue, name=composite.name)
+        resolved_run_root = _resolve_composite_run(venue=composite.venue, name=composite.name, run_id=run_id)
         entries = composite.reports
         if report_id is not None:
             entry = next((item for item in entries if item.id == report_id), None)
@@ -70,6 +78,8 @@ def report_composite(
     else:
         if report_id is not None:
             raise ValueError("--report-id is valid only with --composite-config")
+        if run_id is not None:
+            raise ValueError("--run-id is valid only with --composite-config")
         if config_path is None:
             raise ValueError("--config is required in standalone mode")
         source = Path(config_path).expanduser().resolve()
@@ -164,6 +174,10 @@ def main(
             help="Destination for the report; defaults to <run_root>/reports/<report-id>.",
         ),
     ] = None,
+    run_id: Annotated[
+        str | None,
+        typer.Option("--run-id", help="Run ID to select with --composite-config when multiple runs exist."),
+    ] = None,
 ) -> None:
     typer.echo(
         report_composite(
@@ -172,6 +186,7 @@ def main(
             report_id=report_id,
             run_root=run_root,
             output_dir=output_dir,
+            run_id=run_id,
         )
     )
 
