@@ -213,12 +213,11 @@ def test_runtime_adapter_is_full_group_and_m4_has_full_budget() -> None:
     }
 
 
-def test_cache_fingerprint_ignores_runtime_and_evaluation_but_not_marginal_design() -> None:
+def test_cache_fingerprint_ignores_runtime_but_not_marginal_design() -> None:
     base = load_base_config(BASES / "transformer.yaml")
     operational = base.model_copy(
         update={
             "runtime": base.runtime.model_copy(update={"num_workers": 7}),
-            "evaluation": base.evaluation.model_copy(update={"joint_score_num_samples": 64}),
         }
     )
     changed_pit = base.model_copy(update={"pit": base.pit.model_copy(update={"eps": 1.0e-6})})

@@ -346,9 +346,6 @@ class BaseOutputConfig(ConfigModel):
     save_resolved_config: bool = True
 
 
-BaseEvaluationConfig: TypeAlias = EvaluationConfig
-
-
 class BaseExperimentConfig(ConfigModel):
     kind: Literal["base"]
     id: Slug
@@ -359,8 +356,6 @@ class BaseExperimentConfig(ConfigModel):
     split: SplitConfig = Field(default_factory=SplitConfig)
     chronos: ChronosConfig = Field(default_factory=ChronosConfig)
     pit: PitConfig = Field(default_factory=PitConfig)
-    sampling: SamplingConfig = Field(default_factory=SamplingConfig)
-    evaluation: BaseEvaluationConfig = Field(default_factory=BaseEvaluationConfig)
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
     output: BaseOutputConfig = Field(default_factory=BaseOutputConfig)
 

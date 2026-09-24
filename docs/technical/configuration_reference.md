@@ -137,7 +137,12 @@ rejects it with `linear_interpolation`. Changing `pit.mode` changes the
 scientific marginal fingerprint and therefore selects a different cache. See
 [Chapter 3](../scientific/03_chronos_and_pit.md) for equations and numerical examples.
 
-### 2.6 Sampling and estimands
+### 2.6 Evaluation settings
+
+Sampling and score settings are no longer valid base fields. They belong to
+the compulsory `kind: evaluation` documents referenced by composite
+evaluation entries. The legacy table below is retained only as a field
+reference for those evaluation documents; it must not be copied into a base.
 
 | Key | YAML type and admissible values | Default | Meaning |
 |---|---|---|---|
