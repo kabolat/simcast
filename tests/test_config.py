@@ -17,6 +17,7 @@ from simcast.config import (
     deep_merge,
     load_base_config,
     load_composite_config,
+    load_evaluation_config,
     load_method_config,
     parse_overrides,
     resolve_run_config,
@@ -41,6 +42,30 @@ def test_base_contains_only_the_common_scientific_design() -> None:
     assert not hasattr(base, "features")
     assert not hasattr(base, "training")
     assert not hasattr(base, "dependence")
+
+
+def test_method_and_evaluation_ids_default_to_filename(tmp_path: Path) -> None:
+    method_path = tmp_path / "filename_method.yaml"
+    method_path.write_text("kind: method\nfamily: independent\n", encoding="utf-8")
+    evaluation_path = tmp_path / "filename_evaluation.yaml"
+    evaluation_path.write_text("kind: evaluation\n", encoding="utf-8")
+
+    assert load_method_config(method_path).id == "filename_method"
+    assert load_evaluation_config(evaluation_path).id == "filename_evaluation"
+
+
+def test_composite_name_defaults_to_filename(tmp_path: Path) -> None:
+    venue_dir = tmp_path / "configs" / "venues" / "lab"
+    venue_dir.mkdir(parents=True)
+    path = venue_dir / "filename_composite.yaml"
+    path.write_text(
+        "kind: composite\nvenue: lab\n"
+        "bases: [{id: base, config: base.yaml}]\n"
+        "methods: [{id: m0, method: m0.yaml}]\n",
+        encoding="utf-8",
+    )
+
+    assert load_composite_config(path).name == "filename_composite"
 
 
 def test_linear_interpolation_is_a_valid_consistent_pit_mode() -> None:

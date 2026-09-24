@@ -709,14 +709,19 @@ def load_base_config(path: str | Path, overrides: Sequence[str] = ()) -> BaseExp
 def load_method_config(path: str | Path, overrides: Sequence[str] = ()) -> MethodConfig:
     """Load exactly one strictly typed dependence-method configuration."""
 
-    return TypeAdapter(MethodConfig).validate_python(_load_role_values(path, overrides))
+    source = Path(path).expanduser().resolve()
+    values = _load_role_values(source, overrides)
+    values.setdefault("id", source.stem)
+    return TypeAdapter(MethodConfig).validate_python(values)
 
 
 def load_composite_config(path: str | Path, overrides: Sequence[str] = ()) -> CompositeExperimentConfig:
     """Load a venue-scoped explicit composite experiment declaration."""
 
     source = Path(path).expanduser().resolve()
-    config = CompositeExperimentConfig.model_validate(_load_role_values(source, overrides))
+    values = _load_role_values(source, overrides)
+    values.setdefault("name", source.stem)
+    config = CompositeExperimentConfig.model_validate(values)
     if source.parent.parent.name != "venues" or source.parent.parent.parent.name != "configs":
         raise ValueError("composite configurations must be stored directly under configs/venues/<venue>")
     directory_venue = source.parent.name
@@ -730,7 +735,10 @@ def load_composite_config(path: str | Path, overrides: Sequence[str] = ()) -> Co
 def load_evaluation_config(path: str | Path, overrides: Sequence[str] = ()) -> EvaluationDocumentConfig:
     """Load one evaluation design for a composite evaluation entry."""
 
-    return EvaluationDocumentConfig.model_validate(_load_role_values(path, overrides))
+    source = Path(path).expanduser().resolve()
+    values = _load_role_values(source, overrides)
+    values.setdefault("id", source.stem)
+    return EvaluationDocumentConfig.model_validate(values)
 
 
 def load_report_config(path: str | Path, overrides: Sequence[str] = ()) -> ReportConfig:

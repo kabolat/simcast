@@ -186,8 +186,9 @@ family: independent
 
 No feature, model, or optimization section is admissible because
 $R_{g,\tau}^{(i)}=I_{K_g}$ is completely specified. `kind` is the literal
-string `method`; `id` is a required safe slug; and `family` is the literal
-string `independent`. These are the only valid M0 fields.
+string `method`; `id` is a safe slug, defaulting to the method YAML filename
+stem when omitted; and `family` is the literal string `independent`. These are
+the only valid M0 fields.
 
 ### 3.2 M1: static Gaussian copula
 
@@ -204,7 +205,7 @@ model:
 | Key | YAML type and admissible values | Default | Meaning |
 |---|---|---|---|
 | `kind` | literal string `method` | **required** | declares one dependence hypothesis |
-| `id` | safe slug | **required** | method-file identity |
+| `id` | safe slug | method YAML filename stem | method-file identity |
 | `family` | literal string `static_gaussian` | **required** | selects M1 |
 | `model.shrinkage` | literal string `ledoit_wolf` | `ledoit_wolf` | covariance shrinkage estimator |
 | `model.share_across_leads` | Boolean | `false` | `false`: one training correlation per lead; `true`: pool all valid leads |
@@ -305,7 +306,7 @@ validation rather than silently doing nothing.
 | Key | YAML type and admissible values | Default | Meaning |
 |---|---|---|---|
 | `kind` | literal string `composite` | **required** | declares an explicit collection of comparisons |
-| `name` | safe slug | **required** | composite identity within the venue |
+| `name` | safe slug | composite YAML filename stem | composite identity within the venue |
 | `venue` | safe slug, matching `configs/venues/<venue>/` | **required** | reproducible research workspace identity |
 | `bases` | non-empty list of base entries | **required** | named base configurations available to the composite |
 | `bases[].id` | safe slug, unique within `bases` | **required** | local base reference |
@@ -397,8 +398,10 @@ evaluation:
   variogram_power: 1.0
 ```
 
-The evaluation document's `metrics` list is the authoritative set of metrics
-computed and persisted for that evaluation.
+The evaluation document's `id` defaults to its YAML filename stem when omitted.
+The composite evaluation entry's `id` remains the run-local name used for the
+evaluation directory and manifest key. The document's `metrics` list is the
+authoritative set of metrics computed and persisted for that evaluation.
 
 A `kind: report` document regenerates a report from an already-completed run's
 recorded evaluations, without re-fitting or re-evaluating anything. See
