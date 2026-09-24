@@ -174,3 +174,40 @@ def test_composite_mode_selects_the_only_report(tmp_path: Path, monkeypatch: pyt
 
     assert destination == run_root / "reports" / "main"
 
+
+def test_composite_mode_runs_all_reports_by_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    run_root = _synthetic_run_root(tmp_path)
+    venue_dir = tmp_path / "configs" / "venues" / "lab"
+    report_dir = tmp_path / "configs" / "reports"
+    venue_dir.mkdir(parents=True)
+    report_dir.mkdir(parents=True)
+    report_payload = {
+        "kind": "report",
+        "reference": "m0",
+        "metrics": ["mean_pinball"],
+        "evaluation_ids": ["standard"],
+        "analysis": {"bootstrap_replicates": 10, "primary_block_length": 3},
+    }
+    for name in ("first", "second"):
+        (report_dir / f"{name}.yaml").write_text(yaml.safe_dump(report_payload), encoding="utf-8")
+    composite_path = venue_dir / "composite.yaml"
+    composite_path.write_text(
+        "kind: composite\nname: quick_all_methods\nvenue: lab\n"
+        "bases: [{id: transformer, config: transformer.yaml}]\n"
+        "methods: [{id: m0, method: m0.yaml}, {id: m4, method: m4.yaml}]\n"
+        "evaluations: [{id: standard, config: standard.yaml}]\n"
+        "reports: [{id: first, config: ../../reports/first.yaml, evaluation_ids: [standard]}, "
+        "{id: second, config: ../../reports/second.yaml, evaluation_ids: [standard]}]\n",
+        encoding="utf-8",
+    )
+    (venue_dir / "standard.yaml").write_text(
+        yaml.safe_dump({"kind": "evaluation", "id": "standard"}), encoding="utf-8"
+    )
+
+    destination = report_composite(composite_config_path=composite_path)
+
+    assert destination == run_root / "reports"
+    assert (destination / "first" / "report_summary.md").is_file()
+    assert (destination / "second" / "report_summary.md").is_file()
+

@@ -13,7 +13,7 @@ from typing import Annotated
 
 import typer
 
-from simcast.config import load_composite_config, load_report_config
+from simcast.config import ReportConfig, load_composite_config, load_report_config
 from simcast.reporting.composite_report import write_composite_report
 
 
@@ -44,17 +44,29 @@ def report_composite(
             raise ValueError("--run-root is not valid with --composite-config")
         source = Path(composite_config_path).expanduser().resolve()
         composite = load_composite_config(source)
-        if report_id is None:
-            if len(composite.reports) != 1:
-                raise ValueError("--report-id is required when the composite has multiple reports")
-            report_id = composite.reports[0].id
-        entry = next((item for item in composite.reports if item.id == report_id), None)
-        if entry is None:
-            expected = [item.id for item in composite.reports]
-            raise ValueError(f"unknown report {report_id!r}; expected one of {expected}")
-        config = load_report_config((source.parent / entry.config).resolve())
-        evaluation_ids = entry.evaluation_ids
         resolved_run_root = _resolve_composite_run(venue=composite.venue, name=composite.name)
+        entries = composite.reports
+        if report_id is not None:
+            entry = next((item for item in entries if item.id == report_id), None)
+            if entry is None:
+                expected = [item.id for item in entries]
+                raise ValueError(f"unknown report {report_id!r}; expected one of {expected}")
+            entries = [entry]
+        if not entries:
+            raise ValueError("composite has no reports to run")
+        destinations = [
+            _write_report(
+                load_report_config((source.parent / entry.config).resolve()),
+                entry.evaluation_ids,
+                entry.id,
+                resolved_run_root,
+                (Path(output_dir) / entry.id if output_dir is not None else None)
+                if len(entries) > 1
+                else output_dir,
+            )
+            for entry in entries
+        ]
+        return destinations[0] if len(destinations) == 1 else resolved_run_root / "reports"
     else:
         if report_id is not None:
             raise ValueError("--report-id is valid only with --composite-config")
@@ -68,6 +80,16 @@ def report_composite(
             raise ValueError("--run-root is required with --config")
         resolved_run_root = Path(run_root).expanduser().resolve()
 
+    return _write_report(config, evaluation_ids, source.stem, resolved_run_root, output_dir)
+
+
+def _write_report(
+    config: ReportConfig,
+    evaluation_ids: list[str],
+    report_id: str,
+    resolved_run_root: Path,
+    output_dir: str | Path | None,
+) -> Path:
     manifest_path = resolved_run_root / "composite_manifest.json"
     if not manifest_path.is_file():
         raise FileNotFoundError(f"no composite_manifest.json under {resolved_run_root}")
@@ -88,7 +110,7 @@ def report_composite(
     elif config.output_dir is not None:
         destination = Path(config.output_dir).expanduser().resolve()
     else:
-        destination = resolved_run_root / "reports" / (report_id or source.stem)
+        destination = resolved_run_root / "reports" / report_id
     write_composite_report(
         destination,
         cells,
@@ -122,7 +144,9 @@ def main(
     ] = None,
     report_id: Annotated[
         str | None,
-        typer.Option("--report-id", help="Report ID to select from --composite-config."),
+        typer.Option(
+            "--report-id", help="Report ID to run from --composite-config; omit to run all reports."
+        ),
     ] = None,
     run_root: Annotated[
         Path | None,

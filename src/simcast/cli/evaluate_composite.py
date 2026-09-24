@@ -16,6 +16,7 @@ import yaml  # type: ignore[import-untyped]
 
 from simcast.cli.evaluate import evaluate_from_config
 from simcast.config import (
+    EvaluationDocumentConfig,
     ResolvedExperimentConfig,
     load_composite_config,
     load_evaluation_config,
@@ -52,17 +53,29 @@ def evaluate_composite(
             raise ValueError("--run-root is not valid with --composite-config")
         source = Path(composite_config_path).expanduser().resolve()
         composite = load_composite_config(source)
-        if evaluation_id is None:
-            if len(composite.evaluations) != 1:
-                raise ValueError("--evaluation-id is required when the composite has multiple evaluations")
-            evaluation_id = composite.evaluations[0].id
-        entry = next((item for item in composite.evaluations if item.id == evaluation_id), None)
-        if entry is None:
-            expected = [item.id for item in composite.evaluations]
-            raise ValueError(f"unknown evaluation {evaluation_id!r}; expected one of {expected}")
-        document = load_evaluation_config(_resolve_path(source, entry.config))
-        base_ids, method_ids = entry.base_ids, entry.method_ids
         resolved_run_root = _resolve_composite_run(source, venue=composite.venue, name=composite.name)
+        entries = composite.evaluations
+        if evaluation_id is not None:
+            entry = next((item for item in entries if item.id == evaluation_id), None)
+            if entry is None:
+                expected = [item.id for item in entries]
+                raise ValueError(f"unknown evaluation {evaluation_id!r}; expected one of {expected}")
+            entries = [entry]
+        if not entries:
+            raise ValueError("composite has no evaluations to run")
+        destinations: list[Path] = []
+        for entry in entries:
+            document = load_evaluation_config(_resolve_path(source, entry.config))
+            destinations.append(
+                _evaluate_document(
+                    document,
+                    entry.id,
+                    entry.base_ids,
+                    entry.method_ids,
+                    resolved_run_root,
+                )
+            )
+        return destinations[0] if len(destinations) == 1 else resolved_run_root / "evaluations"
     else:
         if evaluation_id is not None:
             raise ValueError("--evaluation-id is valid only with --composite-config")
@@ -76,6 +89,16 @@ def evaluate_composite(
         resolved_run_root = Path(run_root).expanduser().resolve()
         evaluation_id = document.id
 
+    return _evaluate_document(document, evaluation_id, base_ids, method_ids, resolved_run_root)
+
+
+def _evaluate_document(
+    document: EvaluationDocumentConfig,
+    evaluation_id: str,
+    base_ids: list[str],
+    method_ids: list[str],
+    resolved_run_root: Path,
+) -> Path:
     manifest_path = resolved_run_root / "composite_manifest.json"
     if not manifest_path.is_file():
         raise FileNotFoundError(f"no composite_manifest.json under {resolved_run_root}")
@@ -165,7 +188,10 @@ def main(
     ] = None,
     evaluation_id: Annotated[
         str | None,
-        typer.Option("--evaluation-id", help="Evaluation ID to select from --composite-config."),
+            typer.Option(
+                "--evaluation-id",
+                help="Evaluation ID to run from --composite-config; omit to run all evaluations.",
+            ),
     ] = None,
     run_root: Annotated[
         Path | None,
