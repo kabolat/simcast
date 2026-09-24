@@ -10,26 +10,41 @@ from simcast.cli.report_composite import report_composite
 
 def _synthetic_run_root(tmp_path: Path) -> Path:
     run_root = tmp_path / "runs" / "lab" / "quick_all_methods" / "fixed"
-    evaluation = run_root / "evaluations" / "standard" / "transformer" / "m4" / "seed_1"
-    evaluation.mkdir(parents=True)
+    evaluation_root = run_root / "evaluations" / "standard" / "transformer"
+    reference_evaluation = evaluation_root / "m0" / "deterministic"
+    method_evaluation = evaluation_root / "m4" / "seed_1"
+    reference_evaluation.mkdir(parents=True)
+    method_evaluation.mkdir(parents=True)
     rows = [
         {"method": method, "origin": origin, "mean_pinball": 1.0 + offset, "crps": 2.0 + offset}
         for method, offset in (("independent", 0.1), ("conditional_kernel", 0.0))
         for origin in range(8)
     ]
-    pd.DataFrame(rows).to_parquet(evaluation / "per_origin_metrics.parquet", index=False)
+    frame = pd.DataFrame(rows)
+    frame[frame["method"] == "independent"].to_parquet(
+        reference_evaluation / "per_origin_metrics.parquet", index=False
+    )
+    frame[frame["method"] == "conditional_kernel"].to_parquet(
+        method_evaluation / "per_origin_metrics.parquet", index=False
+    )
     manifest = {
         "fits": [],
         "evaluations": {
             "standard": [
                 {
                     "base_id": "transformer",
+                    "method_id": "m0",
+                    "seed": None,
+                    "method_family": "independent",
+                    "evaluation_path": str(reference_evaluation),
+                    "status": "complete",
+                },
+                {
+                    "base_id": "transformer",
                     "method_id": "m4",
                     "seed": 1,
                     "method_family": "conditional_kernel",
-                    "reference_method_id": "m0",
-                    "reference_family": "independent",
-                    "evaluation_path": str(evaluation),
+                    "evaluation_path": str(method_evaluation),
                     "status": "complete",
                 },
                 {
@@ -37,9 +52,7 @@ def _synthetic_run_root(tmp_path: Path) -> Path:
                     "method_id": "m4",
                     "seed": 2,
                     "method_family": "conditional_kernel",
-                    "reference_method_id": "m0",
-                    "reference_family": "independent",
-                    "evaluation_path": str(evaluation),
+                    "evaluation_path": str(method_evaluation),
                     "status": "running",
                 },
             ]
@@ -53,9 +66,10 @@ def _write_report_config(path: Path, run_root: Path, *, metrics: list[str], outp
     payload: dict[str, object] = {
         "kind": "report",
         "run_root": str(run_root),
+        "reference": "m0",
         "metrics": metrics,
         "evaluation_ids": ["standard"],
-        "analysis": {"reference": "independent", "bootstrap_replicates": 200, "primary_block_length": 3},
+        "analysis": {"bootstrap_replicates": 200, "primary_block_length": 3},
     }
     if output_dir is not None:
         payload["output_dir"] = str(output_dir)

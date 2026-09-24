@@ -40,7 +40,6 @@ def test_generic_composite_report_includes_m4(tmp_path: Path) -> None:
             "method_id": "m0",
             "seed": None,
             "method_family": "independent",
-            "reference_family": "independent",
         },
         {
             "evaluation_path": str(evaluation),
@@ -48,13 +47,12 @@ def test_generic_composite_report_includes_m4(tmp_path: Path) -> None:
             "method_id": "m4",
             "seed": 42,
             "method_family": "conditional_kernel",
-            "reference_family": "independent",
         }
     ]
 
     report = tmp_path / "report"
-    analysis = CompositeAnalysisConfig(reference="m0", bootstrap_replicates=200, primary_block_length=7)
-    write_composite_report(report, cells, analysis)
+    analysis = CompositeAnalysisConfig(bootstrap_replicates=200, primary_block_length=7)
+    write_composite_report(report, cells, analysis, reference="m0")
 
     summary = pd.read_csv(report / "method_summary.csv")
     effects = pd.read_csv(report / "paired_effects.csv")

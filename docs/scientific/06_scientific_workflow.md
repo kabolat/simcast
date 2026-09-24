@@ -47,7 +47,10 @@ to vary. This correspondence makes a completed result auditable.
 |---|---|---|---|
 | Base | population, ordered $\mathcal E_g$, $\mathcal I^{(i)}$, marginal grid, PIT rule, split, sampling, and scores | a `base` YAML file; [base fields](../technical/configuration_reference.md#2-base-configuration) | fingerprinted PIT library and resolved base |
 | Method | one map from features or historical scores to $R_{g,\tau}^{(i)}$ | a `method` YAML file; [method fields](../technical/configuration_reference.md#3-method-configuration) | resolved method, fitted parameters or checkpoint, fitting diagnostics |
-| Composite | declared bases, method variants, seeds, reference, and block-bootstrap design | a `composite` YAML file; [composite fields](../technical/configuration_reference.md#4-composite-configuration) | expansion manifest, run status, paired summaries, and report |
+| Composite | declared bases, method variants, and seeds; optional evaluation designs | a `composite` YAML file; [composite fields](../technical/configuration_reference.md#4-composite-configuration) | expansion manifest, run status, independent evaluation records, and reports |
+
+The report configuration separately declares the reference method and
+block-bootstrap design used for cross-method paired summaries.
 
 The [usage guide's interface map](../technical/usage_guide.md#1-choose-the-appropriate-interface)
 shows which command creates each record. The separation prevents a method

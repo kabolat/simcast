@@ -1,5 +1,4 @@
 kind: evaluation
 id: variogram_power_1
-reference: m0
 evaluation:
   variogram_power: 1.0

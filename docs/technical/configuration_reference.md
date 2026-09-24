@@ -320,7 +320,7 @@ validation rather than silently doing nothing.
 | `evaluations[].id` | safe slug, unique within `evaluations` | **required** | evaluation identity |
 | `evaluations[].config` | evaluation YAML path | **required** | sampling, score, and evaluation settings |
 | `evaluations[].base_ids` | list of known base IDs | `[]` | bases to evaluate; empty means every base |
-| `evaluations[].method_ids` | list of known method IDs | `[]` | fitted methods to evaluate; empty means every non-reference method |
+| `evaluations[].method_ids` | list of known method IDs | `[]` | fitted methods to evaluate independently; empty means every fitted method |
 | `reports` | list of report entries | `[]` | optional explicit post-evaluation reports |
 | `reports[].id` | safe slug, unique within `reports` | **required** | report identity |
 | `reports[].config` | report YAML path | **required** | report metrics and uncertainty settings |
@@ -390,7 +390,6 @@ and `method_ids` fields select the target run and fits directly:
 ```yaml
 kind: evaluation
 id: variogram_power_1
-reference: m0
 evaluation:
   variogram_power: 1.0
 run_root: runs/lab/quick_shot/2026-09-16_093812
@@ -404,10 +403,10 @@ when and how to use it; this section lists its fields.
 ```yaml
 kind: report
 run_root: runs/powertech2027/main/2026-09-16_093812
+reference: m0
 metrics: [mean_pinball, crps]
 evaluation_ids: [standard]
 analysis:
-  reference: m0
   bootstrap_replicates: 10000
   primary_block_length: 7
 ```
@@ -418,7 +417,7 @@ analysis:
 | `run_root` | path to an existing `runs/<venue>/<composite>/<run-id>/` directory | `null` (must be given here or via `--run-root`) | source of already-computed evaluation records |
 | `metrics` | non-empty list of unique column names from `per_origin_metrics.parquet` | `[mean_pinball]` | which metrics get a summary, paired-effect table, and figure |
 | `evaluation_ids` | list of known evaluation IDs recorded in the run's manifest | `[]` | which recorded evaluations to report on; empty means every evaluation in the manifest |
-| `analysis` | a composite `analysis` block (§4) | **required** | reference, bootstrap replicates, and block lengths for this report only |
+| `analysis` | a composite `analysis` block (§4) | **required** | bootstrap replicates and block lengths for this report only |
 | `output_dir` | path | `<run_root>/reports/<report-id>` | where the regenerated report is written |
 
 `metrics` accepts any column already present in `per_origin_metrics.parquet`

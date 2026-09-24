@@ -38,8 +38,9 @@ not a separate numerical exercise. The evidence path is:
 |---|---|---|---|
 | Fixed comparison | What remains common across methods? | resolved base, ordered $\mathcal E_g$, marginal fingerprint, complete-case rule | [base configuration](../technical/configuration_reference.md#2-base-configuration) and [cache construction](../technical/usage_guide.md#4-frozen-marginal-construction) |
 | Dependence hypothesis | Which $C_{g,\tau}^{(i)}$ is being tested? | resolved method file and, where applicable, seed-specific checkpoint | [method configuration](../technical/configuration_reference.md#3-method-configuration) |
-| Declared repetition | Which groups, variants, seeds, and reference form the study? | resolved composite and expansion manifest | [composite configuration](../technical/configuration_reference.md#4-composite-configuration) |
-| Common evaluation | Are the methods scored on the same outcomes and random draws? | evaluation manifest, validity mask, per-origin records | [evaluation schema](../technical/artifact_reference.md#evaluation-directory) |
+| Declared repetition | Which groups, variants, and seeds form the study? | resolved composite and expansion manifest | [composite configuration](../technical/configuration_reference.md#4-composite-configuration) |
+| Common evaluation | Are each selected method's metrics produced on the same outcomes and random draws? | evaluation manifest, validity mask, per-origin records | [evaluation schema](../technical/artifact_reference.md#evaluation-directory) |
+| Cross-method comparison | Which evaluated method is the reference? | report configuration and paired effects | [report configuration](../technical/configuration_reference.md#7-evaluation-and-report-configuration) |
 | Uncertainty and interpretation | How large and how stable is the paired difference? | paired effects, block-bootstrap intervals, lead-wise and group-wise summaries | [outputs and interpretation](../technical/usage_guide.md#10-outputs-and-interpretation) |
 
 This structure distinguishes a result from a convenient plot. A figure may

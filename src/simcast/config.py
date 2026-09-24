@@ -450,7 +450,7 @@ class CompositeMethodEntry(ConfigModel):
 
 
 class EvaluationDocumentConfig(ConfigModel):
-    """A reusable evaluation design: sampling, scoring, and its deterministic reference.
+    """A reusable evaluation design: sampling and scoring settings.
 
     ``run_root``, ``base_ids``, ``method_ids``, and ``output_dir`` are used only
     when this document is run standalone against an already-fitted run; a
@@ -459,7 +459,6 @@ class EvaluationDocumentConfig(ConfigModel):
 
     kind: Literal["evaluation"]
     id: Slug
-    reference: Slug
     sampling: SamplingConfig = Field(default_factory=SamplingConfig)
     evaluation: EvaluationConfig = Field(default_factory=EvaluationConfig)
     run_root: Path | None = None
@@ -503,7 +502,6 @@ class CompositeReportEntry(ConfigModel):
 
 
 class CompositeAnalysisConfig(ConfigModel):
-    reference: Slug
     bootstrap_replicates: PositiveInt = 10_000
     primary_block_length: PositiveInt = 7
     sensitivity_block_lengths: list[PositiveInt] = Field(default_factory=lambda: [3, 14])
@@ -573,6 +571,7 @@ class ReportConfig(ConfigModel):
 
     kind: Literal["report"]
     run_root: Path | None = None
+    reference: Slug
     metrics: list[str] = Field(default_factory=lambda: ["mean_pinball"], min_length=1)
     evaluation_ids: list[str] = Field(default_factory=list)
     analysis: CompositeAnalysisConfig

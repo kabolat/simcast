@@ -31,6 +31,7 @@ def write_composite_report(
     report_dir: Path,
     cells: list[dict[str, object]],
     analysis: CompositeAnalysisConfig,
+    reference: str,
     metrics: Sequence[str] = ("mean_pinball",),
 ) -> None:
     """Write pooled per-origin metrics, paired effects, and per-metric figures."""
@@ -38,6 +39,7 @@ def write_composite_report(
     origin_frames: list[pd.DataFrame] = []
     primary_frames: list[pd.DataFrame] = []
     comparisons: set[tuple[str, str, str, str]] = set()
+    reference_families: dict[str, str] = {}
     for cell in cells:
         evaluation = Path(str(cell["evaluation_path"]))
         frame = pd.read_parquet(evaluation / "per_origin_metrics.parquet")
@@ -45,13 +47,18 @@ def write_composite_report(
         frame["method_id"] = str(cell["method_id"])
         frame["configured_seed"] = "deterministic" if cell["seed"] is None else str(cell["seed"])
         origin_frames.append(frame)
-        primary_family = str(cell["method_family"])
-        primary_frames.append(frame[frame["method"] == primary_family])
-        reference_family = str(cell["reference_family"])
-        if primary_family == reference_family:
+        primary_frames.append(frame)
+        if str(cell["method_id"]) == reference:
+            reference_families[str(cell["base_id"])] = str(cell["method_family"])
+    for cell in cells:
+        method_id = str(cell["method_id"])
+        if method_id == reference:
+            continue
+        reference_family = reference_families.get(str(cell["base_id"]))
+        if reference_family is None:
             continue
         comparisons.add(
-            (str(cell["base_id"]), str(cell["method_id"]), primary_family, reference_family)
+            (str(cell["base_id"]), method_id, str(cell["method_family"]), reference_family)
         )
     per_origin = pd.concat(origin_frames, ignore_index=True)
     unknown_metrics = [metric for metric in metrics if metric not in per_origin.columns]
@@ -72,9 +79,7 @@ def write_composite_report(
         summary_frames.append(frame)
 
         for base_id, method_id, primary_family, reference_family in sorted(comparisons):
-            comparison = per_origin[
-                (per_origin["base_id"] == base_id) & (per_origin["method_id"] == method_id)
-            ]
+            comparison = per_origin[per_origin["base_id"] == base_id]
             # Averaging here treats optimization seeds as repeated fits, not as
             # additional test observations. Repeated deterministic reference rows
             # collapse to their common value in the same operation.
@@ -171,10 +176,12 @@ def write_composite_report(
     for old_pdf in report_dir.glob("method_comparison_*.pdf"):
         old_pdf.unlink()
 
-    _write_report_summary(report_dir, metrics, analysis)
+    _write_report_summary(report_dir, metrics, analysis, reference)
 
 
-def _write_report_summary(report_dir: Path, metrics: Sequence[str], analysis: CompositeAnalysisConfig) -> None:
+def _write_report_summary(
+    report_dir: Path, metrics: Sequence[str], analysis: CompositeAnalysisConfig, reference: str
+) -> None:
     """Plain-text index so a report directory can be understood without opening every file."""
 
     block_lengths = [analysis.primary_block_length, *analysis.sensitivity_block_lengths]
@@ -182,7 +189,7 @@ def _write_report_summary(report_dir: Path, metrics: Sequence[str], analysis: Co
         "# Report summary",
         "",
         f"Metrics: {', '.join(metrics)}.",
-        f"Reference: `{analysis.reference}`. Bootstrap: {analysis.bootstrap_replicates} replicates, "
+        f"Reference: `{reference}`. Bootstrap: {analysis.bootstrap_replicates} replicates, "
         f"block lengths {block_lengths}.",
         "",
         "| File | Contents |",
@@ -194,7 +201,7 @@ def _write_report_summary(report_dir: Path, metrics: Sequence[str], analysis: Co
         description = _FIXED_FILE_DESCRIPTIONS.get(path.name, "")
         if not description and path.stem.startswith("method_comparison_"):
             metric = path.stem.removeprefix("method_comparison_")
-            description = f"base-panel bar charts of `{metric}` per experiment/method (png)"
+            description = f"base-panel bar charts of `{metric}` per evaluated method (png)"
         if not description and path.stem.startswith("paired_effect_"):
             metric = path.stem.removeprefix("paired_effect_")
             description = f"vertical base-panel relative-improvement plot of `{metric}` for all block lengths (png)"

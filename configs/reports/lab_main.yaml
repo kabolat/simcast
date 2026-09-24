@@ -1,12 +1,12 @@
 kind: report
 run_root: runs/lab/all_groups_m1/2026-09-22_150525
+reference: m0
 metrics:
   - mean_pinball
   - crps
   - energy_score
   - variogram_score
 analysis:
-  reference: m0
   bootstrap_replicates: 200
   primary_block_length: 7
   sensitivity_block_lengths: [3, 14]

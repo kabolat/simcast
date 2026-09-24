@@ -156,8 +156,9 @@ A venue is a reproducible research workspace, not a Python environment.
 Outputs follow:
 
 ```text
-runs/<venue>/<composite>/<run-id>/
-reports/<venue>/<composite>/<run-id>/
+runs/<venue>/<composite>/<run-id>/<base-id>/<method-id>/<seed-label>/
+runs/<venue>/<composite>/<run-id>/evaluations/<evaluation-id>/<base-id>/<method-id>/<seed-label>/
+runs/<venue>/<composite>/<run-id>/reports/<report-id>/
 ```
 
 The repository includes `lab` composites with deliberately small explicit
@@ -170,8 +171,10 @@ Aggregate scenario quantiles, coverage, interval width and score, WIS, and CRPS
 are evaluated from $\widetilde A_{g,\tau}^{(i,m)}$. Energy Score uses the
 empirical all-pairs estimator on the selected 512-member joint ensemble;
 chunking changes only memory consumption. Variogram Score assesses pairwise
-spatial contrasts. Composite effects are paired at the origin level and use a
-moving-block bootstrap to retain temporal dependence.
+spatial contrasts. Each selected method is evaluated independently under the
+same declared sampling design. Cross-method effects are a reporting concern:
+the report config selects the reference method and uses a moving-block
+bootstrap at the origin level to retain temporal dependence.
 
 Every run records the complete ordered entity set, revisions, resolved
 role-specific configurations, hashes, seeds, environment and Git metadata,

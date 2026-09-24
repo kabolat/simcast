@@ -205,10 +205,10 @@ The manifest's `"fits"` list records each fit's `fit_id`, `base_id`,
 `method_id`, `seed`, `method_family`, base/marginal/method hashes, cache and
 fit paths, and status. Its `"evaluations"` mapping keys each declared
 evaluation ID to a list of cells recording `base_id`, `method_id`, `seed`,
-`method_family`, `reference_method_id`, `reference_family`, `evaluation_path`,
-and status. A fit's directory is independent of any `sampling`/`evaluation`
-setting, so the same fit can appear under multiple evaluation IDs without
-retraining (`simcast.cli.evaluate_composite`, [usage guide
+`method_family`, `evaluation_path`, and status. Each cell contains the metrics
+for one method only. A fit's directory is independent of any
+`sampling`/`evaluation` setting, so the same fit can appear under multiple
+evaluation IDs without retraining (`simcast.cli.evaluate_composite`, [usage guide
 §14](usage_guide.md#14-re-evaluating-a-completed-run)).
 
 The current generic report root contains:
@@ -222,11 +222,11 @@ paired_effect_<metric>.png          vertical base-panel relative-improvement plo
 report_summary.md                   plain-text index describing every file above
 ```
 
-`per_origin_metrics.parquet` retains the complete evaluation rows, including
-reference-method rows repeated inside a primary method's evaluation. The
-`method_summary.csv` and `method_comparison_<metric>` figures include only the
-primary method declared by each method entry; reference rows are retained
-for `paired_effects.csv` but are not shown as duplicate method bars. Each
+`per_origin_metrics.parquet` retains the complete evaluation rows for every
+independently evaluated method. The `method_summary.csv` and
+`method_comparison_<metric>` figures include every evaluated method. The
+report's declared reference is used only when constructing `paired_effects.csv`;
+it is not an evaluation setting. Each
 visual uses one panel per base, because absolute score scales are not
 comparable across entity types. `paired_effect_<metric>.png` plots positive
 relative improvement, $-100d/\bar S_{reference}$, so upward values favor the
@@ -242,6 +242,8 @@ Its default output directory is `<run_root>/reports/<report-id>/`.
 
 The report fields retain `base_id`, `method_id`, `method`, and configured
 seed so that a displayed comparison can be traced to its resolved declaration.
+The report configuration supplies the reference method ID; evaluation
+manifests do not.
 
 Resume compares the stored composite SHA-256 digest with the newly resolved
 declaration. A mismatch is rejected; a validated complete fit is preserved.

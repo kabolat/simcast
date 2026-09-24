@@ -80,16 +80,10 @@ def evaluate_composite(
     completed = {(cell["base_id"], cell["method_id"], cell["seed"]) for cell in cells}
 
     for base_id, base_fits in fits_by_base.items():
-        reference_fits = [fit for fit in base_fits if fit["method_id"] == document.reference]
-        if len(reference_fits) != 1 or reference_fits[0]["seed"] is not None:
-            raise ValueError(
-                f"reference {document.reference!r} must be exactly one deterministic fit for base {base_id!r}"
-            )
-        reference_fit = reference_fits[0]
         selected = [
             fit
             for fit in base_fits
-            if fit["method_id"] != document.reference and (not method_ids or fit["method_id"] in method_ids)
+            if not method_ids or fit["method_id"] in method_ids
         ]
         for fit in selected:
             key = (fit["base_id"], fit["method_id"], fit["seed"])
@@ -103,11 +97,8 @@ def evaluate_composite(
                 raise RuntimeError(f"refusing to overwrite partial evaluation output: {evaluation_dir}")
             methods = [str(fit["method_family"])]
             method_runs: dict[str, Path] = {str(fit["method_family"]): Path(str(fit["fit_path"]))}
-            if reference_fit["method_family"] != fit["method_family"]:
-                methods.append(str(reference_fit["method_family"]))
-                method_runs[str(reference_fit["method_family"])] = Path(str(reference_fit["fit_path"]))
             if not (evaluation_dir / "evaluation_manifest.json").is_file():
-                fit_resolved_config = Path(str(reference_fit["fit_path"])) / "resolved_config.yaml"
+                fit_resolved_config = Path(str(fit["fit_path"])) / "resolved_config.yaml"
                 runtime = ResolvedExperimentConfig.model_validate(
                     yaml.safe_load(fit_resolved_config.read_text(encoding="utf-8"))
                 )
@@ -125,8 +116,6 @@ def evaluate_composite(
                     "method_id": fit["method_id"],
                     "seed": fit["seed"],
                     "method_family": fit["method_family"],
-                    "reference_method_id": document.reference,
-                    "reference_family": reference_fit["method_family"],
                     "evaluation_path": str(evaluation_dir),
                     "status": "complete",
                 }

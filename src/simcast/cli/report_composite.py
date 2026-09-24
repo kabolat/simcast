@@ -70,7 +70,13 @@ def report_composite(
         destination = Path(config.output_dir).expanduser().resolve()
     else:
         destination = resolved_run_root / "reports" / (report_id or Path(config_path).stem)
-    write_composite_report(destination, cells, config.analysis, metrics=config.metrics)
+    write_composite_report(
+        destination,
+        cells,
+        config.analysis,
+        reference=config.reference,
+        metrics=config.metrics,
+    )
     return destination
 
 

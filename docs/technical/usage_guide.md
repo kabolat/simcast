@@ -500,7 +500,8 @@ uv run report --config configs/reports/powertech2027_main.yaml
 A report document (§7 of the [configuration reference](configuration_reference.md#7-evaluation-and-report-configuration))
 names the source `run_root` (or takes it from `--run-root`), the `metrics` to
 summarize, which recorded `evaluation_ids` to report on, and its own
-`analysis` block (reference, bootstrap replicates, block lengths). Unless
+`reference` method plus an `analysis` block (bootstrap replicates and block
+lengths). Unless
 `output_dir` is set explicitly (in the YAML or via `--output-dir`), the report
 is written under `<run_root>/reports/<report-config-stem>/`.
 Running it twice with different `metrics` produces independent, comparable

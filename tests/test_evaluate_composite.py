@@ -75,7 +75,7 @@ def _patch_evaluate(monkeypatch: pytest.MonkeyPatch) -> dict[str, int]:
     return calls
 
 
-def test_standalone_evaluation_document_evaluates_non_reference_fits(
+def test_standalone_evaluation_document_evaluates_all_selected_fits(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     run_root = _synthetic_run_root(tmp_path)
@@ -86,7 +86,6 @@ def test_standalone_evaluation_document_evaluates_non_reference_fits(
             {
                 "kind": "evaluation",
                 "id": "variogram_power_1",
-                "reference": "m0",
                 "evaluation": {"variogram_power": 1.0},
                 "run_root": str(run_root),
             }
@@ -97,10 +96,10 @@ def test_standalone_evaluation_document_evaluates_non_reference_fits(
     destination = evaluate_composite(document_path)
 
     assert destination == run_root / "evaluations" / "variogram_power_1"
-    assert calls["evaluate"] == 1
+    assert calls["evaluate"] == 2
     manifest = json.loads((run_root / "composite_manifest.json").read_text(encoding="utf-8"))
     cells = manifest["evaluations"]["variogram_power_1"]
-    assert [cell["method_id"] for cell in cells] == ["m4"]
+    assert [cell["method_id"] for cell in cells] == ["m0", "m4"]
 
 
 def test_standalone_evaluation_is_idempotent_on_rerun(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -112,7 +111,6 @@ def test_standalone_evaluation_is_idempotent_on_rerun(tmp_path: Path, monkeypatc
             {
                 "kind": "evaluation",
                 "id": "variogram_power_1",
-                "reference": "m0",
                 "run_root": str(run_root),
             }
         ),
@@ -140,7 +138,7 @@ def test_composite_mode_requires_evaluation_option(tmp_path: Path, monkeypatch: 
         encoding="utf-8",
     )
     (venue_dir / "variogram_power_1.yaml").write_text(
-        yaml.safe_dump({"kind": "evaluation", "id": "variogram_power_1", "reference": "m0"}),
+        yaml.safe_dump({"kind": "evaluation", "id": "variogram_power_1"}),
         encoding="utf-8",
     )
 
@@ -151,21 +149,21 @@ def test_composite_mode_requires_evaluation_option(tmp_path: Path, monkeypatch: 
     assert destination == run_root / "evaluations" / "variogram_power_1"
 
 
-def test_reference_must_be_a_single_deterministic_fit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_evaluation_does_not_require_a_reference_fit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     run_root = _synthetic_run_root(tmp_path)
-    _patch_evaluate(monkeypatch)
-    document_path = tmp_path / "bad_reference.yaml"
+    calls = _patch_evaluate(monkeypatch)
+    document_path = tmp_path / "independent.yaml"
     document_path.write_text(
         yaml.safe_dump(
             {
                 "kind": "evaluation",
-                "id": "bad_reference",
-                "reference": "m4",
+                "id": "independent",
+                "method_ids": ["m4"],
                 "run_root": str(run_root),
             }
         ),
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="must be exactly one deterministic fit"):
-        evaluate_composite(document_path)
+    evaluate_composite(document_path)
+    assert calls["evaluate"] == 1

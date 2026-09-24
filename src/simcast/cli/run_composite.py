@@ -175,25 +175,15 @@ def _run_evaluations(
 
     for entry in config.evaluations:
         document = load_evaluation_config(_resolve_path(source, entry.config))
-        if document.reference not in method_entries:
-            raise ValueError(f"evaluation {entry.id!r} references unknown method {document.reference!r}")
         cells = evaluations_by_id.setdefault(entry.id, [])
         completed = {(cell["base_id"], cell["method_id"], cell["seed"]) for cell in cells}
         base_ids = entry.base_ids or list(fits_by_base)
         for base_id in base_ids:
             base_fits = fits_by_base.get(base_id, [])
-            reference_fits = [fit for fit in base_fits if fit["method_id"] == document.reference]
-            if len(reference_fits) != 1 or reference_fits[0]["seed"] is not None:
-                raise ValueError(
-                    f"evaluation {entry.id!r} reference {document.reference!r} must be a single "
-                    f"deterministic fit for base {base_id!r}"
-                )
-            reference_fit = reference_fits[0]
             selected = [
                 fit
                 for fit in base_fits
-                if fit["method_id"] != document.reference
-                and (not entry.method_ids or fit["method_id"] in entry.method_ids)
+                if not entry.method_ids or fit["method_id"] in entry.method_ids
             ]
             for fit in selected:
                 key = (fit["base_id"], fit["method_id"], fit["seed"])
@@ -206,9 +196,6 @@ def _run_evaluations(
                 _reject_partial(evaluation_dir, expected_file="evaluation_manifest.json")
                 methods = [str(fit["method_family"])]
                 method_runs: dict[str, Path] = {str(fit["method_family"]): Path(str(fit["fit_path"]))}
-                if reference_fit["method_family"] != fit["method_family"]:
-                    methods.append(str(reference_fit["method_family"]))
-                    method_runs[str(reference_fit["method_family"])] = Path(str(reference_fit["fit_path"]))
                 if not (evaluation_dir / "evaluation_manifest.json").is_file():
                     base_entry = base_entries[base_id]
                     base = update_base(
@@ -236,8 +223,6 @@ def _run_evaluations(
                         "method_id": fit["method_id"],
                         "seed": fit["seed"],
                         "method_family": fit["method_family"],
-                        "reference_method_id": document.reference,
-                        "reference_family": reference_fit["method_family"],
                         "evaluation_path": str(evaluation_dir),
                         "status": "complete",
                     }
