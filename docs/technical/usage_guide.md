@@ -498,6 +498,17 @@ is written under `reports/<venue>/<composite>/<run-id>/<report-config-stem>/`.
 Running it twice with different `metrics` produces independent, comparable
 report directories from the same fitted models and evaluations.
 
+When a composite declares `reports`, select one directly:
+
+```bash
+uv run python -m simcast.cli.report_composite \
+  --config configs/venues/<venue>/study.yaml \
+  --report standard_report
+```
+
+The command loads that report entry, selects only its declared evaluation IDs,
+and reads the completed evaluation cells from the referenced run.
+
 ## 14. Scientific validation without experiments
 
 ```bash
