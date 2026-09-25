@@ -366,6 +366,7 @@ def _case_tables(
             table[metric] = np.where(table["valid"], array, np.nan)
         rows.append(table)
     per_case = pd.concat(rows, ignore_index=True)
+    quantile_columns = [f"aggregate_q{level:g}" for level in config.evaluation.quantile_levels]
     metric_columns = [
         column
         for column in per_case.columns
@@ -380,16 +381,17 @@ def _case_tables(
             "K",
             "valid",
             "observed_aggregate",
-            *(f"aggregate_q{level:g}" for level in config.evaluation.quantile_levels),
+            *quantile_columns,
         }
     ]
+    per_origin_columns = ["observed_aggregate", *quantile_columns, *metric_columns]
     valid_rows = per_case[per_case["valid"]]
     per_origin = (
         valid_rows.groupby(
             ["group", "method", "neural_seed", "origin_index", "origin", "K"],
             dropna=False,
             sort=False,
-        )[metric_columns]
+        )[per_origin_columns]
         .mean()
         .reset_index()
     )

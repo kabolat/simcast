@@ -33,6 +33,10 @@ def test_generic_composite_report_includes_m4(tmp_path: Path) -> None:
             "origin": origin,
             "mean_pinball": 1.0 + 0.02 * origin + offset,
             "coverage_0.9": 0.88 if method == "independent" else 0.92,
+            "observed_aggregate": 1.0,
+            "aggregate_q0.05": 0.8 + offset,
+            "aggregate_q0.50": 1.0 + offset,
+            "aggregate_q0.95": 1.2 + offset,
         }
         for method, offset in (("independent", 0.1), ("conditional_kernel", 0.0))
         for origin in range(12)
@@ -67,6 +71,7 @@ def test_generic_composite_report_includes_m4(tmp_path: Path) -> None:
     assert (report / "method_comparison_mean_pinball.png").is_file()
     assert (report / "paired_effect_mean_pinball.png").is_file()
     assert (report / "summary_coverage.png").is_file()
+    assert (report / "summary_quantile_calibration.png").is_file()
     assert not (report / "method_comparison_mean_pinball.pdf").exists()
     assert (report / "report_summary.md").is_file()
     assert "method_summary.csv" in (report / "report_summary.md").read_text(encoding="utf-8")

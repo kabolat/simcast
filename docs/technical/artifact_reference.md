@@ -230,6 +230,7 @@ paired_effects.csv                  paired moving-block bootstrap effects, one r
 method_comparison_<metric>.png      base-panel absolute score bar charts for one metric
 paired_effect_<metric>.png          vertical base-panel relative-improvement plot for all block lengths
 summary_coverage.png                empirical-versus-nominal interval coverage by method
+summary_quantile_calibration.png    empirical-versus-nominal aggregate quantile calibration by method
 report_summary.md                   plain-text index describing every file above
 ```
 
