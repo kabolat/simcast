@@ -140,6 +140,19 @@ def test_report_composite_plots_noncovering_bootstrap_interval(
     assert (run_root / "reports" / "report" / "standard").is_dir()
 
 
+def test_force_replaces_existing_report_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    run_root = _synthetic_run_root(tmp_path)
+    config_path = _write_report_config(tmp_path / "report.yaml", run_root, metrics=["mean_pinball"])
+
+    destination = report_composite(config_path, run_root=run_root)
+    stale = destination / "stale.txt"
+    stale.write_text("old", encoding="utf-8")
+    report_composite(config_path, run_root=run_root, force=True)
+
+    assert not stale.exists()
+
+
 def test_composite_mode_selects_the_only_report(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
     run_root = _synthetic_run_root(tmp_path)

@@ -8,6 +8,7 @@ the evaluator with a (possibly different) evaluation design.
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from typing import Annotated
 
@@ -53,6 +54,7 @@ def evaluate_composite(
     evaluation_id: str | None = None,
     run_root: str | Path | None = None,
     run_id: str | None = None,
+    force: bool = False,
 ) -> Path:
     if (config_path is None) == (composite_config_path is None):
         raise ValueError("provide exactly one of --config or --composite-config")
@@ -81,6 +83,7 @@ def evaluate_composite(
                     entry.base_ids,
                     entry.method_ids,
                     resolved_run_root,
+                    force=force,
                 )
             )
         return destinations[0] if len(destinations) == 1 else resolved_run_root / "evaluations"
@@ -99,7 +102,7 @@ def evaluate_composite(
         resolved_run_root = Path(run_root).expanduser().resolve()
         evaluation_id = document.id
 
-    return _evaluate_document(document, evaluation_id, base_ids, method_ids, resolved_run_root)
+    return _evaluate_document(document, evaluation_id, base_ids, method_ids, resolved_run_root, force=force)
 
 
 def _evaluate_document(
@@ -108,6 +111,8 @@ def _evaluate_document(
     base_ids: list[str],
     method_ids: list[str],
     resolved_run_root: Path,
+    *,
+    force: bool = False,
 ) -> Path:
     manifest_path = resolved_run_root / "composite_manifest.json"
     if not manifest_path.is_file():
@@ -126,6 +131,27 @@ def _evaluate_document(
     evaluations_by_id: dict[str, list[dict[str, object]]] = dict(manifest.get("evaluations", {}))
     cells = evaluations_by_id.setdefault(evaluation_id, [])
     completed = {(cell["base_id"], cell["method_id"], cell["seed"]) for cell in cells}
+
+    selected_keys = {
+        (fit["base_id"], fit["method_id"], fit["seed"])
+        for base_fits in fits_by_base.values()
+        for fit in base_fits
+        if not method_ids or fit["method_id"] in method_ids
+    }
+    if force:
+        for cell in cells[:]:
+            key = (cell["base_id"], cell["method_id"], cell["seed"])
+            if key not in selected_keys:
+                continue
+            evaluation_path = Path(str(cell["evaluation_path"]))
+            if evaluation_path.exists():
+                shutil.rmtree(evaluation_path)
+        cells[:] = [
+            cell
+            for cell in cells
+            if (cell["base_id"], cell["method_id"], cell["seed"]) not in selected_keys
+        ]
+        completed = set()
 
     for base_id, base_fits in fits_by_base.items():
         selected = [
@@ -218,6 +244,10 @@ def main(
         str | None,
         typer.Option("--run-id", help="Run ID to select with --composite-config when multiple runs exist."),
     ] = None,
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Recompute selected evaluation cells and replace their outputs."),
+    ] = False,
 ) -> None:
     typer.echo(
         evaluate_composite(
@@ -226,6 +256,7 @@ def main(
             evaluation_id=evaluation_id,
             run_root=run_root,
             run_id=run_id,
+            force=force,
         )
     )
 

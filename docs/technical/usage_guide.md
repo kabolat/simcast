@@ -511,6 +511,8 @@ When `metrics` is omitted, all metrics declared by the selected evaluations are
 reported. A report cannot add a metric that was not computed by those
 evaluations. Running it twice with different presentation subsets produces
 independent, comparable report directories from the same recorded evaluations.
+Pass `--force` to replace the selected report directory and remove stale
+artifacts before regeneration.
 
 When a composite declares reports, the command runs all of them by default.
 Select one directly when needed:
@@ -556,6 +558,7 @@ rerunning it skips any fit whose evaluation directory already has a completed
 `evaluation_manifest.json`, and only computes the missing ones. Its output
 nests under `runs/<venue>/<composite>/<run-id>/evaluations/<evaluation-id>/`
 and is immediately reportable with `report_composite` (§15).
+Pass `--force` to discard and recompute the selected evaluation cells.
 
 ## 16. Scientific validation without experiments
 

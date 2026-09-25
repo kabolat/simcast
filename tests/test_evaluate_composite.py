@@ -126,6 +126,18 @@ def test_standalone_evaluation_is_idempotent_on_rerun(tmp_path: Path, monkeypatc
     assert calls == first_calls
 
 
+def test_force_recomputes_completed_evaluation_cells(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    run_root = _synthetic_run_root(tmp_path)
+    calls = _patch_evaluate(monkeypatch)
+    document_path = tmp_path / "variogram_power_1.yaml"
+    document_path.write_text(yaml.safe_dump({"kind": "evaluation", "id": "variogram_power_1"}), encoding="utf-8")
+
+    evaluate_composite(document_path, run_root=run_root)
+    evaluate_composite(document_path, run_root=run_root, force=True)
+
+    assert calls["evaluate"] == 4
+
+
 def test_standalone_evaluation_requires_run_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_evaluate(monkeypatch)
     document_path = tmp_path / "evaluation.yaml"

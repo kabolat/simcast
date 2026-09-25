@@ -8,6 +8,7 @@ bootstrap settings can be iterated on without touching runs/.
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from typing import Annotated
 
@@ -44,6 +45,7 @@ def report_composite(
     run_root: str | Path | None = None,
     output_dir: str | Path | None = None,
     run_id: str | None = None,
+    force: bool = False,
 ) -> Path:
     if (config_path is None) == (composite_config_path is None):
         raise ValueError("provide exactly one of --config or --composite-config")
@@ -71,7 +73,7 @@ def report_composite(
                 else output_dir
             )
             destinations.extend(
-                _write_report(config, evaluation_id, entry.id, resolved_run_root, report_root)
+                _write_report(config, evaluation_id, entry.id, resolved_run_root, report_root, force=force)
                 for evaluation_id in entry.evaluation_ids
             )
         return destinations[0] if len(destinations) == 1 else resolved_run_root / "reports"
@@ -94,7 +96,7 @@ def report_composite(
     if not selected_ids:
         raise ValueError("run contains no evaluations to report on")
     destinations = [
-        _write_report(config, evaluation_id, source.stem, resolved_run_root, output_dir)
+        _write_report(config, evaluation_id, source.stem, resolved_run_root, output_dir, force=force)
         for evaluation_id in selected_ids
     ]
     return destinations[0] if len(destinations) == 1 else resolved_run_root / "reports" / source.stem
@@ -106,6 +108,8 @@ def _write_report(
     report_id: str,
     resolved_run_root: Path,
     output_dir: str | Path | None,
+    *,
+    force: bool = False,
 ) -> Path:
     manifest_path = resolved_run_root / "composite_manifest.json"
     if not manifest_path.is_file():
@@ -140,6 +144,8 @@ def _write_report(
         destination = Path(config.output_dir).expanduser().resolve() / evaluation_id
     else:
         destination = resolved_run_root / "reports" / report_id / evaluation_id
+    if force and destination.exists():
+        shutil.rmtree(destination)
     write_composite_report(
         destination,
         cells,
@@ -213,6 +219,10 @@ def main(
         str | None,
         typer.Option("--run-id", help="Run ID to select with --composite-config when multiple runs exist."),
     ] = None,
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Replace the selected report directory before regenerating it."),
+    ] = False,
 ) -> None:
     typer.echo(
         report_composite(
@@ -222,6 +232,7 @@ def main(
             run_root=run_root,
             output_dir=output_dir,
             run_id=run_id,
+            force=force,
         )
     )
 
