@@ -403,6 +403,18 @@ The composite evaluation entry's `id` remains the run-local name used for the
 evaluation directory and manifest key. The document's `metrics` list is the
 authoritative set of metrics computed and persisted for that evaluation.
 
+Optional figure selection is configured separately:
+
+```yaml
+figures:
+  aggregate_origin: "2024-01-15T23:45:00Z"
+  correlation_origin: "2024-01-15T23:45:00Z"
+  correlation_lead: 1
+```
+
+When omitted, both figures use the first testing origin and the correlation
+figure uses lead 1. The requested origins must exist in the testing split.
+
 A `kind: report` document regenerates a report from an already-completed run's
 recorded evaluations, without re-fitting or re-evaluating anything. See
 [usage guide §15](usage_guide.md#15-regenerating-or-customizing-a-report) for

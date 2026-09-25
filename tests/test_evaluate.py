@@ -77,7 +77,9 @@ def test_full_group_evaluation_uses_only_the_complete_group(tmp_path: Path) -> N
     assert (output / "scientific_summary.json").is_file()
     assert (output / "evaluation_manifest.json").is_file()
     assert (output / "resolved_config.yaml").is_file()
-    assert (output / "figures" / "summary_coverage.png").is_file()
+    assert (output / "figures" / "dataset_locations.png").is_file()
+    assert (output / "figures" / "marginal_pit.png").is_file()
+    assert (output / "figures" / "independent" / "summary_by_lead_mean_pinball.png").is_file()
     assert not (output / "figures" / "variable_cardinality.png").exists()
     manifest = json.loads((output / "evaluation_manifest.json").read_text(encoding="utf-8"))
     assert manifest["group"]["entity_count"] == 4

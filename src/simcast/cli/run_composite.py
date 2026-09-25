@@ -214,6 +214,8 @@ def _run_evaluations(
                         runtime,
                         methods=methods,
                         metrics=document.metrics,
+                        figures=document.figures,
+                        base_figures_dir=evaluation_dir.parents[1] / "figures",
                         method_runs=method_runs,
                         cache_dir=Path(str(fit["cache_path"])),
                         output_dir=evaluation_dir,

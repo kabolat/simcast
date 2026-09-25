@@ -63,7 +63,9 @@ def _synthetic_run_root(tmp_path: Path) -> Path:
 def _patch_evaluate(monkeypatch: pytest.MonkeyPatch) -> dict[str, int]:
     calls = {"evaluate": 0}
 
-    def fake_evaluate(config, *, methods, metrics, method_runs, cache_dir, output_dir):
+    def fake_evaluate(
+        config, *, methods, metrics, figures=None, base_figures_dir=None, method_runs, cache_dir, output_dir
+    ):
         del config, methods, method_runs, cache_dir
         calls["evaluate"] += 1
         path = Path(output_dir)

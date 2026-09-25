@@ -17,7 +17,7 @@ import torch
 import yaml  # type: ignore[import-untyped]
 
 from simcast.cli.train_dependence import _cache_path, _dependence_scores
-from simcast.config import ResolvedExperimentConfig
+from simcast.config import EvaluationFiguresConfig, ResolvedExperimentConfig
 from simcast.dependence import IndependentCopula, StaticGaussianCopula
 from simcast.evaluation.aggregate import AggregateEvaluation, evaluate_aggregate_ensemble
 from simcast.evaluation.metrics import energy_score, variogram_score
@@ -29,8 +29,6 @@ from simcast.evaluation.plots import (
     plot_entity_load_traces,
     plot_entity_locations,
     plot_factor_parameters,
-    plot_interval_coverage,
-    plot_method_summary,
     plot_missingness,
     plot_pinball_by_quantile,
     plot_pit_histogram,
@@ -435,19 +433,24 @@ def _plots(
     predictions: torch.Tensor,
     valid: torch.Tensor,
     config: ResolvedExperimentConfig,
+    *,
+    metrics: Sequence[str],
+    figures: EvaluationFiguresConfig,
+    base_figures_dir: Path,
 ) -> None:
-    figures = output / "figures"
+    method_figures = output / "figures"
+    base_figures_dir.mkdir(parents=True, exist_ok=True)
     ids = _entity_ids(library)
     dataset = library.dataset
     latitude = dataset["latitude"].values if "latitude" in dataset else np.arange(len(ids))
     longitude = dataset["longitude"].values if "longitude" in dataset else np.zeros(len(ids))
-    plot_entity_locations(latitude, longitude, ids, figures / "dataset_locations.png")
-    plot_entity_load_traces(dataset["true_y"].values, ids, figures / "dataset_load_traces.png")
-    plot_missingness(dataset["true_y"].values, ids, figures / "dataset_missingness.png")
+    plot_entity_locations(latitude, longitude, ids, base_figures_dir / "dataset_locations.png")
+    plot_entity_load_traces(dataset["true_y"].values, ids, base_figures_dir / "dataset_load_traces.png")
+    plot_missingness(dataset["true_y"].values, ids, base_figures_dir / "dataset_missingness.png")
     tune = dataset.where(dataset["split"] != "test", drop=True)
     plot_pit_histogram(
         tune["pit_u"].values,
-        figures / "marginal_pit.png",
+        base_figures_dir / "marginal_pit.png",
         quantile_levels=dataset["quantile"].values,
         mode=config.pit.mode,
     )
@@ -455,40 +458,54 @@ def _plots(
         tune["true_y"].values,
         tune["quantile_prediction"].values,
         dataset["quantile"].values,
-        figures / "marginal_quantile_coverage.png",
+        base_figures_dir / "marginal_quantile_coverage.png",
     )
     plot_pinball_by_quantile(
         tune["true_y"].values,
         tune["quantile_prediction"].values,
         dataset["quantile"].values,
-        figures / "marginal_pinball.png",
+        base_figures_dir / "marginal_pinball.png",
     )
     empirical, _ = _training_correlations(library)
     if "static_gaussian" in prepared:
         static = prepared["static_gaussian"].correlations[0, 0].numpy()
         plot_correlation_heatmap(
-            empirical, ids, figures / "pit_empirical_correlation.png", title="Training PIT correlation"
+            empirical, ids, base_figures_dir / "pit_empirical_correlation.png", title="Training PIT correlation"
         )
-        plot_correlation_heatmap(static, ids, figures / "static_correlation.png", title="Ledoit-Wolf PIT correlation")
-        plot_eigenvalue_spectrum({"Empirical": empirical, "Ledoit-Wolf": static}, figures / "static_eigenvalues.png")
-    valid_positions = valid.reshape(-1).nonzero(as_tuple=False).flatten()
-    if valid_positions.numel():
-        position = int(valid_positions[0])
-        origin, lead_index = divmod(position, truth.shape[-1])
-        aggregate_truth = truth[origin].sum(dim=0).numpy()
-        for name, result in results.items():
+        plot_correlation_heatmap(
+            static, ids, base_figures_dir / "static_correlation.png", title="Ledoit-Wolf PIT correlation"
+        )
+        plot_eigenvalue_spectrum(
+            {"Empirical": empirical, "Ledoit-Wolf": static}, base_figures_dir / "static_eigenvalues.png"
+        )
+
+    test_origins = pd.to_datetime(library.test_data()["origin_timestamp"].values, utc=True)
+    aggregate_origin = _figure_origin_index(test_origins, figures.aggregate_origin)
+    correlation_origin = _figure_origin_index(test_origins, figures.correlation_origin)
+    correlation_lead = figures.correlation_lead - 1
+    if correlation_lead >= truth.shape[-1]:
+        raise ValueError("figures.correlation_lead exceeds the configured forecast horizon")
+    if valid[aggregate_origin].any():
+        aggregate_truth = truth[aggregate_origin].sum(dim=0).numpy()
+        for _name, result in results.items():
+            method_figures = output / "figures" if len(results) == 1 else output / "figures" / _name
+            method_figures.mkdir(parents=True, exist_ok=True)
             plot_aggregate_fan(
-                result.aggregate.quantile_predictions[origin].numpy(),
+                result.aggregate.quantile_predictions[aggregate_origin].numpy(),
                 config.evaluation.quantile_levels,
                 aggregate_truth,
-                figures / f"aggregate_fan_{name}.png",
-                title=f"Aggregate forecast: {name}",
+                method_figures / "aggregate_fan.png",
+                title="Aggregate forecast",
             )
+    if valid[correlation_origin, correlation_lead]:
+        for name, result in results.items():
+            method_figures = output / "figures" if len(results) == 1 else output / "figures" / name
+            method_figures.mkdir(parents=True, exist_ok=True)
             plot_correlation_heatmap(
-                result.correlations[origin, lead_index].numpy(),
+                result.correlations[correlation_origin, correlation_lead].numpy(),
                 ids,
-                figures / f"correlation_{name}.png",
-                title=f"{name}, origin {origin}, lead {lead_index + 1}",
+                method_figures / "correlation.png",
+                title=f"Origin {correlation_origin}, lead {correlation_lead + 1}",
             )
     if "static_gaussian" in prepared:
         static_by_origin = prepared["static_gaussian"].correlations[:, 0]
@@ -496,29 +513,52 @@ def _plots(
             item = prepared.get(name)
             if item is None:
                 continue
+            method_figures = output / "figures" if len(results) == 1 else output / "figures" / name
+            method_figures.mkdir(parents=True, exist_ok=True)
             plot_dependence_dynamics(
                 item.correlations[:, 0].numpy(),
                 static_by_origin.numpy(),
-                figures / f"dependence_dynamics_{name}.png",
+                method_figures / f"dependence_dynamics_{name}.png",
             )
             if item.conditional is not None and item.features is not None:
-                model = item.conditional.model
                 with torch.no_grad():
-                    loadings, sigma = cast(_FactorModel, model).factor_parameters(item.features[0, :, 0])
-                plot_factor_parameters(loadings.numpy(), sigma.numpy(), ids, figures / f"factors_{name}.png")
-    plot_method_summary(
-        {name: result.aggregate.overall for name, result in results.items()},
-        figures / "summary_pinball.png",
-    )
-    plot_interval_coverage(
-        {name: result.aggregate.overall for name, result in results.items()},
-        config.evaluation.interval_levels,
-        figures / "summary_coverage.png",
-    )
-    plot_score_by_lead(
-        {name: result.aggregate.by_lead["mean_pinball"].tolist() for name, result in results.items()},
-        figures / "summary_by_lead.png",
-    )
+                    loadings, sigma = cast(_FactorModel, item.conditional.model).factor_parameters(
+                        item.features[0, :, 0]
+                    )
+                plot_factor_parameters(loadings.numpy(), sigma.numpy(), ids, method_figures / f"factors_{name}.png")
+    for metric in metrics:
+        for name, result in results.items():
+            method_figures = output / "figures" if len(results) == 1 else output / "figures" / name
+            method_figures.mkdir(parents=True, exist_ok=True)
+            if metric in result.aggregate.by_lead:
+                values = result.aggregate.by_lead[metric].tolist()
+            else:
+                tensors = {
+                    "energy_score": "energy_score",
+                    "variogram_score": "variogram_score",
+                    "test_pseudo_nll": "pseudo_nll",
+                }
+                attribute = tensors.get(metric)
+                if attribute is None:
+                    continue
+                values = [
+                    float(column[torch.isfinite(column)].mean())
+                    for column in getattr(result, attribute).T
+                ]
+            plot_score_by_lead(
+                {name: values}, method_figures / f"summary_by_lead_{metric}.png"
+            )
+
+
+def _figure_origin_index(origins: pd.DatetimeIndex, requested: datetime | None) -> int:
+    if requested is None:
+        return 0
+    target = pd.Timestamp(requested)
+    target = target.tz_localize("UTC") if target.tzinfo is None else target.tz_convert("UTC")
+    matches = np.flatnonzero(origins == target)
+    if not len(matches):
+        raise ValueError(f"figure origin {target.isoformat()} is not a testing origin")
+    return int(matches[0])
 
 
 def _scientific_summary(
@@ -565,6 +605,8 @@ def evaluate_from_config(
     *,
     methods: Sequence[str] = CORE_METHODS,
     metrics: Sequence[str] | None = None,
+    figures: EvaluationFiguresConfig | None = None,
+    base_figures_dir: str | Path | None = None,
     method_runs: Mapping[str, str | Path] | None = None,
     cache_dir: str | Path | None = None,
     output_dir: str | Path | None = None,
@@ -626,7 +668,19 @@ def evaluate_from_config(
     if frequency_mapping is not None:
         np.savez_compressed(output / "pit_training_frequency_map.npz", midpoints=frequency_mapping)
 
-    _plots(output, library, prepared, results, truth, predictions, valid, config)
+    _plots(
+        output,
+        library,
+        prepared,
+        results,
+        truth,
+        predictions,
+        valid,
+        config,
+        metrics=declared_metrics,
+        figures=figures or EvaluationFiguresConfig(),
+        base_figures_dir=Path(base_figures_dir) if base_figures_dir is not None else output / "figures",
+    )
     _, off_diagonal = _training_correlations(library)
     summary = _scientific_summary(result_metrics, float(np.mean(np.abs(off_diagonal))))
     (output / "scientific_summary.json").write_text(

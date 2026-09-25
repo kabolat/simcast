@@ -56,6 +56,7 @@ def run_singular(
         method_runs=run_paths,
         cache_dir=cache,
         output_dir=destination / "evaluation",
+        base_figures_dir=destination / "figures",
     )
     write_yaml(destination / "resolved_base.yaml", base)
     write_yaml(destination / "resolved_method.yaml", primary)

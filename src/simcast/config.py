@@ -6,7 +6,7 @@ import os
 import re
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
-from datetime import time
+from datetime import datetime, time
 from pathlib import Path
 from typing import Annotated, Any, Literal, Self, TypeAlias
 
@@ -285,6 +285,12 @@ class EvaluationConfig(ConfigModel):
             raise ValueError("probability levels must be sorted and unique")
         return value
 
+
+class EvaluationFiguresConfig(ConfigModel):
+    aggregate_origin: datetime | None = None
+    correlation_origin: datetime | None = None
+    correlation_lead: PositiveInt = 1
+
 class RuntimeConfig(ConfigModel):
     deterministic: bool = True
     num_workers: NonNegativeInt = 0
@@ -472,6 +478,7 @@ class EvaluationDocumentConfig(ConfigModel):
     )
     sampling: SamplingConfig = Field(default_factory=SamplingConfig)
     evaluation: EvaluationConfig = Field(default_factory=EvaluationConfig)
+    figures: EvaluationFiguresConfig = Field(default_factory=EvaluationFiguresConfig)
     base_ids: list[Slug] = Field(default_factory=list)
     method_ids: list[Slug] = Field(default_factory=list)
     output_dir: Path | None = None

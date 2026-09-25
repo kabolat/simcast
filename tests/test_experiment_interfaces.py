@@ -26,7 +26,9 @@ def test_singular_fits_only_selected_method_and_explicit_reference(
         fitted.append(config.dependence.method)
         return path
 
-    def fake_evaluate(config, *, methods, metrics=None, method_runs, cache_dir, output_dir):
+    def fake_evaluate(
+        config, *, methods, metrics=None, figures=None, base_figures_dir=None, method_runs, cache_dir, output_dir
+    ):
         del config, method_runs
         assert cache_dir == cache
         evaluated.extend(methods)
@@ -115,7 +117,9 @@ def test_resume_preserves_validated_completed_cells(
         (path / "run_metadata.json").write_text("{}\n", encoding="utf-8")
         return path
 
-    def fake_evaluate(config, *, methods, metrics, method_runs, cache_dir, output_dir):
+    def fake_evaluate(
+        config, *, methods, metrics, figures=None, base_figures_dir=None, method_runs, cache_dir, output_dir
+    ):
         del config, methods, metrics, method_runs
         assert cache_dir == cache
         calls["evaluate"] += 1

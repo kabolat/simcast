@@ -160,12 +160,17 @@ proper scores and uncertainty.
 
 ## Figures
 
-Evaluation normally creates dataset location/load/missingness plots; marginal
-PIT, coverage, and pinball diagnostics; empirical/static correlation heatmaps
-and eigenvalues; per-method correlation and aggregate-fan examples; M2/M3
-dependence-dynamics and factor plots; and full-group score/coverage summaries.
-Example fans use the first valid flattened
-origin-lead position, while the fan traces all leads for that origin.
+Composite evaluation figures are split by scope. Base-level dataset, missingness,
+marginal, and static-reference diagnostics live once under
+`evaluations/<evaluation-id>/<base-id>/figures/`. Method-level figures live
+under each method/seed evaluation directory and include `aggregate_fan.png`,
+`correlation.png`, dependence-dynamics/factor diagnostics, and
+`summary_by_lead_<metric>.png` for every declared metric. Figure origins and
+the correlation lead are selected by the evaluation document's `figures`
+configuration; defaults are the first testing origin and lead 1.
+
+Comparative coverage and paired summaries belong to reports, not individual
+method evaluation directories.
 
 Factor plots must be interpreted cautiously because low-rank factors are
 rotation non-identifiable. Correlation matrices and aggregate score changes are
