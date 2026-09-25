@@ -20,7 +20,7 @@ from simcast.cli.train_dependence import _cache_path, _dependence_scores
 from simcast.config import EvaluationFiguresConfig, ResolvedExperimentConfig
 from simcast.dependence import IndependentCopula, StaticGaussianCopula
 from simcast.evaluation.aggregate import AggregateEvaluation, evaluate_aggregate_ensemble
-from simcast.evaluation.metrics import energy_score, variogram_score
+from simcast.evaluation.metrics import empirical_quantiles, energy_score, variogram_score
 from simcast.evaluation.plots import (
     plot_aggregate_fan,
     plot_correlation_heatmap,
@@ -71,6 +71,7 @@ class MethodEvaluation:
     variogram_score: torch.Tensor
     pseudo_nll: torch.Tensor
     correlations: torch.Tensor
+    interval_predictions: torch.Tensor
 
 
 def _latest_run(root: Path, method: str) -> Path:
@@ -266,6 +267,12 @@ def _sample_and_evaluate(
     variogram = variogram.reshape(n_origin, horizon)
     pseudo_nll = pseudo_nll.reshape(n_origin, horizon)
     aggregate_truth = truth.sum(dim=1)
+    interval_levels = torch.tensor(config.evaluation.interval_levels, dtype=aggregate.dtype)
+    interval_bounds = empirical_quantiles(
+        aggregate,
+        torch.stack(((1.0 - interval_levels) / 2.0, (1.0 + interval_levels) / 2.0), dim=-1).reshape(-1),
+    )
+    interval_predictions = interval_bounds.reshape(n_origin, horizon, len(interval_levels), 2)
     report = evaluate_aggregate_ensemble(
         aggregate,
         aggregate_truth,
@@ -273,7 +280,9 @@ def _sample_and_evaluate(
         interval_coverages=tuple(config.evaluation.interval_levels),
         valid_mask=valid,
     )
-    return MethodEvaluation(prepared.name, report, energy, variogram, pseudo_nll, prepared.correlations)
+    return MethodEvaluation(
+        prepared.name, report, energy, variogram, pseudo_nll, prepared.correlations, interval_predictions
+    )
 
 
 def _serializable_metrics(result: MethodEvaluation, valid: torch.Tensor) -> dict[str, float | int]:
@@ -497,6 +506,8 @@ def _plots(
                 config.evaluation.quantile_levels,
                 aggregate_truth,
                 method_figures / "aggregate_fan.png",
+                interval_predictions=result.interval_predictions[aggregate_origin].numpy(),
+                interval_levels=config.evaluation.interval_levels,
                 title="Aggregate forecast",
             )
     if valid[correlation_origin, correlation_lead]:

@@ -193,6 +193,8 @@ def plot_aggregate_fan(
     truth: np.ndarray,
     path: str | Path,
     *,
+    interval_predictions: np.ndarray | None = None,
+    interval_levels: Sequence[float] = (),
     title: str,
 ) -> Path:
     predictions = np.asarray(quantile_predictions)
@@ -201,11 +203,11 @@ def plot_aggregate_fan(
     lead = np.arange(1, predictions.shape[0] + 1)
     median_index = int(np.argmin(np.abs(probabilities - 0.5)))
     axis.plot(lead, predictions[:, median_index], label="Predictive median")
-    for lower_level in (0.05, 0.1, 0.25):
-        upper_level = 1 - lower_level
-        lower = int(np.argmin(np.abs(probabilities - lower_level)))
-        upper = int(np.argmin(np.abs(probabilities - upper_level)))
-        axis.fill_between(lead, predictions[:, lower], predictions[:, upper], alpha=0.15)
+    if interval_predictions is None:
+        interval_predictions = np.empty((predictions.shape[0], 0, 2))
+    for index, level in enumerate(interval_levels):
+        lower, upper = interval_predictions[:, index, 0], interval_predictions[:, index, 1]
+        axis.fill_between(lead, lower, upper, alpha=0.15, label=f"{level:g} interval")
     axis.plot(lead, truth, color="black", linewidth=1, label="Realized aggregate")
     axis.set(xlabel="Lead", ylabel="Aggregate load", title=title)
     axis.legend()
