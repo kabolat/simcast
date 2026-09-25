@@ -546,7 +546,7 @@ def _plots(
                     for column in getattr(result, attribute).T
                 ]
             plot_score_by_lead(
-                {name: values}, method_figures / f"summary_by_lead_{metric}.png"
+                {name: values}, method_figures / f"summary_by_lead_{metric}.png", metric=metric
             )
 
 

@@ -235,11 +235,13 @@ def plot_interval_coverage(
     return _finish(figure, path)
 
 
-def plot_score_by_lead(table: Mapping[str, Sequence[float]], path: str | Path) -> Path:
+def plot_score_by_lead(
+    table: Mapping[str, Sequence[float]], path: str | Path, *, metric: str = "mean_pinball"
+) -> Path:
     figure, axis = plt.subplots(figsize=(9, 4))
     for method, scores in table.items():
         axis.plot(np.arange(1, len(scores) + 1), scores, label=method)
-    axis.set(xlabel="Lead", ylabel="Mean pinball loss", title="Aggregate score by lead")
+    axis.set(xlabel="Lead", ylabel=metric, title=f"{metric} by lead")
     axis.legend()
     return _finish(figure, path)
 
