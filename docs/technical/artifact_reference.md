@@ -229,6 +229,7 @@ method_summary.csv                  mean value per (base, evaluated method, seed
 paired_effects.csv                  paired moving-block bootstrap effects, one row per metric/comparison
 method_comparison_<metric>.png      base-panel absolute score bar charts for one metric
 paired_effect_<metric>.png          vertical base-panel relative-improvement plot for all block lengths
+summary_coverage.png                empirical-versus-nominal interval coverage by method
 report_summary.md                   plain-text index describing every file above
 ```
 

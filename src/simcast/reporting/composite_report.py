@@ -110,6 +110,7 @@ def write_composite_report(
     method_summary = pd.concat(summary_frames, ignore_index=True)
     method_summary.to_csv(report_dir / "method_summary.csv", index=False)
     pd.DataFrame(effect_rows).to_csv(report_dir / "paired_effects.csv", index=False)
+    _write_coverage_figure(per_origin, report_dir)
 
     for metric in metrics:
         figure_data = method_summary[method_summary["metric"] == metric]
@@ -177,6 +178,38 @@ def write_composite_report(
         old_pdf.unlink()
 
     _write_report_summary(report_dir, metrics, analysis, reference)
+
+
+def _write_coverage_figure(per_origin: pd.DataFrame, report_dir: Path) -> None:
+    coverage_columns = sorted(
+        column for column in per_origin.columns if column.startswith("coverage_")
+    )
+    if not coverage_columns:
+        return
+    methods = list(per_origin["method"].drop_duplicates())
+    figure, axes = plt.subplots(
+        len(coverage_columns),
+        1,
+        squeeze=False,
+        figsize=(7.0, 3.5 * len(coverage_columns)),
+    )
+    for axis, column in zip(axes[:, 0], coverage_columns, strict=True):
+        nominal = float(column.removeprefix("coverage_"))
+        values = [
+            float(per_origin.loc[per_origin["method"] == method, column].mean())
+            for method in methods
+        ]
+        axis.axhline(nominal, color="black", linestyle="--", label="nominal")
+        axis.plot(methods, values, marker="o")
+        axis.set_ylim(0.0, 1.0)
+        axis.set_ylabel("empirical coverage")
+        axis.set_title(f"Nominal interval coverage: {nominal:g}")
+        axis.tick_params(axis="x", rotation=30)
+        axis.legend()
+    figure.supxlabel("method")
+    figure.tight_layout()
+    figure.savefig(report_dir / "summary_coverage.png", dpi=180)
+    plt.close(figure)
 
 
 def _write_report_summary(

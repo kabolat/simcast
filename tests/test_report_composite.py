@@ -16,7 +16,13 @@ def _synthetic_run_root(tmp_path: Path) -> Path:
     reference_evaluation.mkdir(parents=True)
     method_evaluation.mkdir(parents=True)
     rows = [
-        {"method": method, "origin": origin, "mean_pinball": 1.0 + offset, "crps": 2.0 + offset}
+        {
+            "method": method,
+            "origin": origin,
+            "mean_pinball": 1.0 + offset,
+            "crps": 2.0 + offset,
+            "coverage_0.9": 0.88 if method == "independent" else 0.92,
+        }
         for method, offset in (("independent", 0.1), ("conditional_kernel", 0.0))
         for origin in range(8)
     ]
@@ -90,6 +96,7 @@ def test_report_composite_only_reads_completed_cells_and_defaults_output_under_r
     assert (report_destination / "method_comparison_mean_pinball.png").is_file()
     assert (report_destination / "paired_effect_mean_pinball.png").is_file()
     assert (report_destination / "report_summary.md").is_file()
+    assert (report_destination / "summary_coverage.png").is_file()
     per_origin = pd.read_parquet(report_destination / "per_origin_metrics.parquet")
     assert len(per_origin) == 16  # only the one completed cell's rows, not the "running" one
 
