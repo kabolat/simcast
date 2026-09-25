@@ -85,11 +85,12 @@ def test_report_composite_only_reads_completed_cells_and_defaults_output_under_r
 
     destination = report_composite(config_path, run_root=run_root)
 
-    assert destination == run_root / "reports" / "report"
-    assert (destination / "method_comparison_mean_pinball.png").is_file()
-    assert (destination / "paired_effect_mean_pinball.png").is_file()
-    assert (destination / "report_summary.md").is_file()
-    per_origin = pd.read_parquet(destination / "per_origin_metrics.parquet")
+    assert destination == run_root / "reports" / "report" / "standard"
+    report_destination = destination
+    assert (report_destination / "method_comparison_mean_pinball.png").is_file()
+    assert (report_destination / "paired_effect_mean_pinball.png").is_file()
+    assert (report_destination / "report_summary.md").is_file()
+    per_origin = pd.read_parquet(report_destination / "per_origin_metrics.parquet")
     assert len(per_origin) == 16  # only the one completed cell's rows, not the "running" one
 
 
@@ -102,11 +103,12 @@ def test_report_composite_supports_alternate_metrics_and_explicit_output_dir(tmp
 
     destination = report_composite(config_path, run_root=run_root)
 
-    assert destination == output_dir
-    assert (destination / "method_comparison_mean_pinball.png").is_file()
-    assert (destination / "method_comparison_crps.png").is_file()
-    assert (destination / "paired_effect_crps.png").is_file()
-    summary = pd.read_csv(destination / "method_summary.csv")
+    report_destination = output_dir / "standard"
+    assert destination == report_destination
+    assert (report_destination / "method_comparison_mean_pinball.png").is_file()
+    assert (report_destination / "method_comparison_crps.png").is_file()
+    assert (report_destination / "paired_effect_crps.png").is_file()
+    summary = pd.read_csv(report_destination / "method_summary.csv")
     assert set(summary["metric"]) == {"mean_pinball", "crps"}
 
 
@@ -135,7 +137,7 @@ def test_report_composite_plots_noncovering_bootstrap_interval(
     )
     report_composite(config_path, run_root=run_root)
 
-    assert (run_root / "reports" / "report").is_dir()
+    assert (run_root / "reports" / "report" / "standard").is_dir()
 
 
 def test_composite_mode_selects_the_only_report(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -172,7 +174,7 @@ def test_composite_mode_selects_the_only_report(tmp_path: Path, monkeypatch: pyt
 
     destination = report_composite(composite_config_path=composite_path)
 
-    assert destination == run_root / "reports" / "main"
+    assert destination == run_root / "reports" / "main" / "standard"
 
 
 def test_composite_mode_runs_all_reports_by_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -208,6 +210,6 @@ def test_composite_mode_runs_all_reports_by_default(tmp_path: Path, monkeypatch:
     destination = report_composite(composite_config_path=composite_path)
 
     assert destination == run_root / "reports"
-    assert (destination / "first" / "report_summary.md").is_file()
-    assert (destination / "second" / "report_summary.md").is_file()
+    assert (destination / "first" / "standard" / "report_summary.md").is_file()
+    assert (destination / "second" / "standard" / "report_summary.md").is_file()
 

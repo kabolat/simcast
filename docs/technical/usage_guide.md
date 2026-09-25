@@ -506,7 +506,7 @@ names the optional `metrics` presentation subset, which recorded `evaluation_ids
 and its own `reference` method plus an `analysis` block (bootstrap replicates
 and block lengths). Unless
 `output_dir` is set explicitly (in the YAML or via `--output-dir`), the report
-is written under `<run_root>/reports/<report-config-stem>/`.
+is written under `<run_root>/reports/<report-config-stem>/<evaluation-id>/`.
 When `metrics` is omitted, all metrics declared by the selected evaluations are
 reported. A report cannot add a metric that was not computed by those
 evaluations. Running it twice with different presentation subsets produces

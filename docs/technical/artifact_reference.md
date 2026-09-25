@@ -243,7 +243,7 @@ using the configured metrics, `evaluation_ids` selection, and analysis
 settings, without re-fitting or re-evaluating; see
 [usage guide §15](usage_guide.md#15-regenerating-or-customizing-a-report) and
 [configuration reference §7](configuration_reference.md#7-evaluation-and-report-configuration).
-Its default output directory is `<run_root>/reports/<report-id>/`.
+Its default output directory is `<run_root>/reports/<report-id>/<evaluation-id>/`.
 
 The report fields retain `base_id`, `method_id`, `method`, and configured
 seed so that a displayed comparison can be traced to its resolved declaration.

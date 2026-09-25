@@ -62,18 +62,18 @@ def report_composite(
             entries = [entry]
         if not entries:
             raise ValueError("composite has no reports to run")
-        destinations = [
-            _write_report(
-                load_report_config((source.parent / entry.config).resolve()),
-                entry.evaluation_ids,
-                entry.id,
-                resolved_run_root,
+        destinations: list[Path] = []
+        for entry in entries:
+            config = load_report_config((source.parent / entry.config).resolve())
+            report_root = (
                 (Path(output_dir) / entry.id if output_dir is not None else None)
                 if len(entries) > 1
-                else output_dir,
+                else output_dir
             )
-            for entry in entries
-        ]
+            destinations.extend(
+                _write_report(config, evaluation_id, entry.id, resolved_run_root, report_root)
+                for evaluation_id in entry.evaluation_ids
+            )
         return destinations[0] if len(destinations) == 1 else resolved_run_root / "reports"
     else:
         if report_id is not None:
@@ -90,12 +90,19 @@ def report_composite(
             raise ValueError("--run-root is required with --config")
         resolved_run_root = Path(run_root).expanduser().resolve()
 
-    return _write_report(config, evaluation_ids, source.stem, resolved_run_root, output_dir)
+    selected_ids = evaluation_ids or _manifest_evaluation_ids(resolved_run_root)
+    if not selected_ids:
+        raise ValueError("run contains no evaluations to report on")
+    destinations = [
+        _write_report(config, evaluation_id, source.stem, resolved_run_root, output_dir)
+        for evaluation_id in selected_ids
+    ]
+    return destinations[0] if len(destinations) == 1 else resolved_run_root / "reports" / source.stem
 
 
 def _write_report(
     config: ReportConfig,
-    evaluation_ids: list[str],
+    evaluation_id: str,
     report_id: str,
     resolved_run_root: Path,
     output_dir: str | Path | None,
@@ -105,10 +112,8 @@ def _write_report(
         raise FileNotFoundError(f"no composite_manifest.json under {resolved_run_root}")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     evaluations = manifest.get("evaluations", {})
-    selected_ids = evaluation_ids or list(evaluations)
     cells = [
         cell
-        for evaluation_id in selected_ids
         for cell in evaluations.get(evaluation_id, [])
         if cell.get("status") == "complete"
     ]
@@ -130,11 +135,11 @@ def _write_report(
             raise ValueError("selected evaluations do not record declared metrics")
 
     if output_dir is not None:
-        destination = Path(output_dir).expanduser().resolve()
+        destination = Path(output_dir).expanduser().resolve() / evaluation_id
     elif config.output_dir is not None:
-        destination = Path(config.output_dir).expanduser().resolve()
+        destination = Path(config.output_dir).expanduser().resolve() / evaluation_id
     else:
-        destination = resolved_run_root / "reports" / report_id
+        destination = resolved_run_root / "reports" / report_id / evaluation_id
     write_composite_report(
         destination,
         cells,
@@ -143,6 +148,14 @@ def _write_report(
         metrics=metrics,
     )
     return destination
+
+
+def _manifest_evaluation_ids(run_root: Path) -> list[str]:
+    manifest_path = run_root / "composite_manifest.json"
+    if not manifest_path.is_file():
+        raise FileNotFoundError(f"no composite_manifest.json under {run_root}")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    return [str(evaluation_id) for evaluation_id in manifest.get("evaluations", {})]
 
 
 def _cell_metrics(cell: dict[str, object]) -> list[str]:

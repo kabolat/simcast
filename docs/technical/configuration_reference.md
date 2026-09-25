@@ -424,7 +424,7 @@ analysis:
 | `metrics` | list of unique names declared by the selected evaluations | `[]` | optional presentation subset; empty means all declared evaluation metrics |
 | `evaluation_ids` | list of known evaluation IDs recorded in the run's manifest | `[]` | which recorded evaluations to report on; empty means every evaluation in the manifest |
 | `analysis` | a composite `analysis` block (§4) | **required** | bootstrap replicates and block lengths for this report only |
-| `output_dir` | path | `<run_root>/reports/<report-id>` | where the regenerated report is written |
+| `output_dir` | path | `<run_root>/reports/<report-id>/<evaluation-id>` | where the regenerated report is written |
 
 Evaluation `metrics` is authoritative: the evaluator records it in
 `evaluation_manifest.json`. Report `metrics` is only a presentation filter;
