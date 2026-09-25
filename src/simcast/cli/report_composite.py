@@ -42,6 +42,7 @@ def report_composite(
     *,
     composite_config_path: str | Path | None = None,
     report_id: str | None = None,
+    evaluation_id: str | None = None,
     run_root: str | Path | None = None,
     output_dir: str | Path | None = None,
     run_id: str | None = None,
@@ -67,6 +68,14 @@ def report_composite(
         destinations: list[Path] = []
         for entry in entries:
             config = load_report_config((source.parent / entry.config).resolve())
+            selected_evaluation_ids = entry.evaluation_ids
+            if evaluation_id is not None:
+                if evaluation_id not in selected_evaluation_ids:
+                    raise ValueError(
+                        f"unknown evaluation {evaluation_id!r} for report {entry.id!r}; "
+                        f"expected one of {selected_evaluation_ids}"
+                    )
+                selected_evaluation_ids = [evaluation_id]
             report_root = (
                 (Path(output_dir) / entry.id if output_dir is not None else None)
                 if len(entries) > 1
@@ -74,7 +83,7 @@ def report_composite(
             )
             destinations.extend(
                 _write_report(config, evaluation_id, entry.id, resolved_run_root, report_root, force=force)
-                for evaluation_id in entry.evaluation_ids
+                for evaluation_id in selected_evaluation_ids
             )
         return destinations[0] if len(destinations) == 1 else resolved_run_root / "reports"
     else:
@@ -87,7 +96,7 @@ def report_composite(
         source = Path(config_path).expanduser().resolve()
         config = load_report_config(source)
         report_id = None
-        evaluation_ids = config.evaluation_ids
+        evaluation_ids = [evaluation_id] if evaluation_id is not None else config.evaluation_ids
         if run_root is None:
             raise ValueError("--run-root is required with --config")
         resolved_run_root = Path(run_root).expanduser().resolve()
@@ -215,6 +224,10 @@ def main(
             help="Destination for the report; defaults to <run_root>/reports/<report-id>.",
         ),
     ] = None,
+    evaluation_id: Annotated[
+        str | None,
+        typer.Option("--evaluation-id", help="Evaluation ID to include in the report."),
+    ] = None,
     run_id: Annotated[
         str | None,
         typer.Option("--run-id", help="Run ID to select with --composite-config when multiple runs exist."),
@@ -231,6 +244,7 @@ def main(
             report_id=report_id,
             run_root=run_root,
             output_dir=output_dir,
+            evaluation_id=evaluation_id,
             run_id=run_id,
             force=force,
         )

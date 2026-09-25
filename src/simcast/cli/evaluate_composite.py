@@ -8,6 +8,7 @@ the evaluator with a (possibly different) evaluation design.
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 from pathlib import Path
 from typing import Annotated
@@ -22,6 +23,8 @@ from simcast.config import (
     load_composite_config,
     load_evaluation_config,
 )
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _resolve_path(source: Path, value: Path) -> Path:
@@ -114,6 +117,7 @@ def _evaluate_document(
     *,
     force: bool = False,
 ) -> Path:
+    LOGGER.info("starting evaluation %s%s", evaluation_id, " (forced)" if force else "")
     manifest_path = resolved_run_root / "composite_manifest.json"
     if not manifest_path.is_file():
         raise FileNotFoundError(f"no composite_manifest.json under {resolved_run_root}")
@@ -139,6 +143,7 @@ def _evaluate_document(
         if not method_ids or fit["method_id"] in method_ids
     }
     if force:
+        LOGGER.info("clearing selected cells for evaluation %s", evaluation_id)
         for cell in cells[:]:
             key = (cell["base_id"], cell["method_id"], cell["seed"])
             if key not in selected_keys:
@@ -164,6 +169,7 @@ def _evaluate_document(
             if key in completed:
                 continue
             seed_label = "deterministic" if fit["seed"] is None else f"seed_{fit['seed']}"
+            LOGGER.info("evaluating %s/%s/%s", fit["base_id"], fit["method_id"], seed_label)
             evaluation_dir = (
                 resolved_run_root / "evaluations" / evaluation_id / base_id / str(fit["method_id"]) / seed_label
             )
@@ -201,6 +207,7 @@ def _evaluate_document(
 
     manifest["evaluations"] = evaluations_by_id
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    LOGGER.info("completed evaluation %s", evaluation_id)
     return resolved_run_root / "evaluations" / evaluation_id
 
 
@@ -249,6 +256,7 @@ def main(
         typer.Option("--force", help="Recompute selected evaluation cells and replace their outputs."),
     ] = False,
 ) -> None:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     typer.echo(
         evaluate_composite(
             config,

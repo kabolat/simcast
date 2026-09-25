@@ -511,6 +511,8 @@ When `metrics` is omitted, all metrics declared by the selected evaluations are
 reported. A report cannot add a metric that was not computed by those
 evaluations. Running it twice with different presentation subsets produces
 independent, comparable report directories from the same recorded evaluations.
+Use `--evaluation-id <id>` to report only one evaluation without changing the
+report YAML.
 Pass `--force` to replace the selected report directory and remove stale
 artifacts before regeneration.
 
