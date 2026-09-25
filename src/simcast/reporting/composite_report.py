@@ -182,31 +182,30 @@ def write_composite_report(
 
 def _write_coverage_figure(per_origin: pd.DataFrame, report_dir: Path) -> None:
     coverage_columns = sorted(
-        column for column in per_origin.columns if column.startswith("coverage_")
+        (column for column in per_origin.columns if column.startswith("coverage_")),
+        key=lambda column: float(column.removeprefix("coverage_")),
     )
     if not coverage_columns:
         return
     methods = list(per_origin["method"].drop_duplicates())
-    figure, axes = plt.subplots(
-        len(coverage_columns),
-        1,
-        squeeze=False,
-        figsize=(7.0, 3.5 * len(coverage_columns)),
-    )
-    for axis, column in zip(axes[:, 0], coverage_columns, strict=True):
-        nominal = float(column.removeprefix("coverage_"))
-        values = [
+    nominal = np.asarray([float(column.removeprefix("coverage_")) for column in coverage_columns])
+    figure, axis = plt.subplots(figsize=(7.0, 6.0))
+    axis.plot([0.0, 1.0], [0.0, 1.0], color="black", linestyle="--", label="nominal")
+    for method in methods:
+        empirical = [
             float(per_origin.loc[per_origin["method"] == method, column].mean())
-            for method in methods
+            for column in coverage_columns
         ]
-        axis.axhline(nominal, color="black", linestyle="--", label="nominal")
-        axis.plot(methods, values, marker="o")
-        axis.set_ylim(0.0, 1.0)
-        axis.set_ylabel("empirical coverage")
-        axis.set_title(f"Nominal interval coverage: {nominal:g}")
-        axis.tick_params(axis="x", rotation=30)
-        axis.legend()
-    figure.supxlabel("method")
+        axis.plot(nominal, empirical, marker="o", label=method)
+    axis.set(
+        xlim=(0.0, 1.0),
+        ylim=(0.0, 1.0),
+        xlabel="nominal coverage",
+        ylabel="empirical coverage",
+        title="Aggregate interval calibration",
+    )
+    axis.set_aspect("equal", adjustable="box")
+    axis.legend()
     figure.tight_layout()
     figure.savefig(report_dir / "summary_coverage.png", dpi=180)
     plt.close(figure)
