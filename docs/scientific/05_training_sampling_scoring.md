@@ -192,14 +192,26 @@ $$
 $$
 
 `mean_pinball` averages over the configured `evaluation.quantile_levels`
-(default $0.05,0.10,0.25,0.50,0.75,0.90,0.95$) and all cases. It is the headline
-descriptive ranking score. Aggregate quantiles are nearest empirical order
-statistics of the $M$ scenario statistics (Hyndman and Fan, 1996).
+(default $0.05,0.10,0.25,0.50,0.75,0.90,0.95$) and all cases; the per-level
+values are kept as `pinball_q<level>`. The supplied main report presents
+`mean_pinball` as its headline score. Aggregate quantiles are nearest
+empirical order statistics of the $M$ scenario statistics (Hyndman and Fan,
+1996).
 
-The score is consistent for an individual aggregate quantile (Gneiting, 2011).
-It rewards sharp quantiles only when they are calibrated under the realized
-aggregate, which is why a narrower interval alone is not evidence of
-improvement.
+The loss is consistent for the $\alpha$-quantile (Gneiting, 2011): its expected
+value is minimized by reporting the true $\alpha$-quantile. It is asymmetric.
+An observation above $q_\alpha$ costs $\alpha$ per unit of excess, one below
+costs $1-\alpha$ per unit. At $\alpha=0.95$, under-forecasting is penalized
+nineteen times more heavily than over-forecasting, so the optimal $q_{0.95}$
+is exceeded in only 5% of cases. This makes the per-level values diagnostic:
+
+- a high `pinball_q0.05` or `pinball_q0.95` locates the problem in the lower
+  or upper tail of the aggregate distribution;
+- a high `pinball_q0.5` is a location error (at $\alpha=0.5$ the loss is half
+  the absolute error of the median);
+- `summary_quantile_calibration.png` shows the empirical frequency of
+  $a\le q_\alpha$ against $\alpha$. A calibrated forecast lies on the diagonal,
+  and the pinball loss rewards sharpness only among calibrated quantiles.
 
 ### Ensemble CRPS
 
@@ -283,38 +295,88 @@ $$
 
 twice the mean pinball loss over the $2K+1$ levels implied by the intervals.
 
-### WIS versus CRPS
+### How the aggregate scores relate
 
-Both scores are integrals of the same quantile loss: the quantile
-decomposition gives $\operatorname{CRPS}=2\int_0^1\rho_\tau\,d\tau$, and WIS is
-an equally weighted $(2K+1)$-point approximation of that integral. Bracher et
-al. (2021) show that WIS approaches CRPS for many, roughly evenly spaced
-levels. In Simcast the distinction matters for four reasons.
+`mean_pinball`, CRPS, and WIS are not three independent criteria. All three
+are averages of the same quantile loss $\rho_\tau$ and differ only in which
+levels $\tau$ they average over and in a factor of two:
 
-1. **The levels are few and uneven.** The default intervals imply
-   $\tau\in\{0.05,0.10,0.25,0.50,0.75,0.90,0.95\}$: four of the seven levels
-   lie in the outer 10% tails and only three between 0.25 and 0.75. With equal
-   weights, WIS is therefore a tail-emphasizing quantile score, not the CRPS.
-   A set of central intervals such as 0.10--0.80 does the opposite: it weights
-   the centre and ignores the tails beyond the 0.10 and 0.90 quantiles.
-2. **Values depend on the declared levels.** Changing `interval_levels` changes
-   what WIS measures, so WIS values from evaluations with different interval
-   sets are not comparable. CRPS does not depend on any declared level.
-3. **WIS can duplicate `mean_pinball`.** When `quantile_levels` equal the
-   implied levels, as in the default evaluation,
-   $\operatorname{WIS}=2\times$`mean_pinball` case by case, and it adds no
-   information. WIS is useful mainly for its decomposition into widths and
-   penalties (`interval_width_*`, `interval_score_*`) and for comparison with
-   interval-format benchmarks. One half of this WIS, as an average pinball
-   loss, was the GEFCom2014 score (Hong et al., 2016).
-4. **CRPS uses the whole ensemble.** Because the complete scenario ensemble is
-   available, CRPS is the exact, level-free score for the aggregate
-   distribution. WIS and `mean_pinball` summarize it at chosen quantiles. When
-   they rank methods differently from CRPS, the differences are concentrated
-   at quantiles that the chosen grid over- or under-weights.
+| Score | Levels averaged | Formula | Scale |
+|---|---|---|---|
+| `mean_pinball` | the $J$ declared `quantile_levels` | $\frac1J\sum_j\rho_{\tau_j}$ | half |
+| WIS | the $2K+1$ levels implied by `interval_levels` | $\frac{2}{2K+1}\sum_j\rho_{\tau_j}$ | full |
+| CRPS | all levels in $(0,1)$ with equal weight | $2\int_0^1\rho_\tau\,d\tau$ | full |
 
-Both are proper and negatively oriented, and both are on the scale of the
-observation, so each reduces to the absolute error for a point forecast.
+"Full scale" means that each score reduces to the absolute error for a point
+forecast, so it is measured in the units of the observation and reads as an
+uncertainty-aware absolute error. `mean_pinball` is on half that scale:
+$2\times$`mean_pinball` is the number to set beside CRPS and WIS. With the
+default configuration the three are tied even more closely: `quantile_levels`
+equal the levels implied by the default `interval_levels`, so
+$\operatorname{WIS}=2\times$`mean_pinball` exactly, case by case.
+
+The substantive difference is the weighting over $\tau$. Bracher et al.
+(2021) show that WIS approaches CRPS for many, roughly evenly spaced levels;
+the same holds for $2\times$`mean_pinball`. Short or uneven grids depart from
+it:
+
+1. **The default grid emphasizes the tails.** The default levels
+   $\{0.05,0.10,0.25,0.50,0.75,0.90,0.95\}$ place four of seven points in the
+   outer 10% tails and only three between 0.25 and 0.75. `mean_pinball` and WIS
+   therefore weight tail errors more than CRPS does. A set of central intervals
+   such as 0.10--0.80 does the opposite: it weights the centre and ignores the
+   tails beyond the 0.10 and 0.90 quantiles.
+2. **Grid-based values depend on the declared levels.** Changing
+   `quantile_levels` or `interval_levels` changes what `mean_pinball` or WIS
+   measures, so their values from evaluations with different levels are not
+   comparable. CRPS does not depend on any declared level.
+3. **CRPS uses the whole ensemble.** Because the complete scenario ensemble is
+   available, CRPS is the exact, level-free score of the aggregate
+   distribution. `mean_pinball` and WIS summarize it at chosen quantiles.
+
+### Choosing and reading the aggregate scores
+
+Choose the score that matches the question, and fix the primary one before
+looking at test results (see [Chapter 7](07_experiments_and_results.md)).
+
+| Question | Score |
+|---|---|
+| How accurate is the whole aggregate distribution? | CRPS |
+| How accurate is a quantile that a decision uses, e.g. a 95% capacity or reserve level? | `pinball_q<level>` at that level |
+| How accurate is the aggregate on a declared quantile grid? | `mean_pinball` |
+| Are the intervals calibrated and how sharp are they? | `coverage_*` with `interval_width_*`, summarized by WIS |
+| How does the result compare with interval- or quantile-format benchmarks? | WIS, or `mean_pinball` on the benchmark's levels |
+
+WIS adds most when it is read through its components. Each $\operatorname{IS}_\alpha$
+splits into the width $u-l$ (sharpness) and the penalties for observations
+below $l$ or above $u$ (calibration), and `interval_width_*`, `coverage_*`, and
+`interval_score_*` are stored per level for this purpose. One half of this WIS,
+as an average pinball loss, was the GEFCom2014 score (Hong et al., 2016).
+
+When reading results:
+
+1. **Agreement is the robust case.** If CRPS, `mean_pinball`, and WIS favour
+   the same method with paired intervals that exclude zero, the improvement
+   holds regardless of how the quantile levels are weighted.
+2. **Disagreement locates the difference.** If `mean_pinball` improves but
+   CRPS does not, the gain is concentrated at the declared levels, usually the
+   tails under the default grid. Inspect `pinball_q<level>` to find which.
+3. **Coverage explains the pinball tails.** Coverage below nominal with narrow
+   intervals means under-dispersion; coverage above nominal with wide
+   intervals means over-dispersion. Either raises the corresponding tail
+   pinball losses.
+4. **In Simcast, dependence acts through dispersion.** Marginals are fixed, so
+   aggregate scores can change only because the copula changes the joint
+   distribution of the entities. For the sum,
+   $\operatorname{Var}(\sum_kY_k)=\sum_k\operatorname{Var}(Y_k)+2\sum_{k<l}\operatorname{Cov}(Y_k,Y_l)$:
+   positive dependence widens the aggregate distribution. When forecast errors
+   are positively correlated, M0 produces aggregate intervals that are too
+   narrow. This shows up as coverage below nominal and inflated tail pinball
+   losses, while the median, and hence `pinball_q0.5`, is barely affected. For
+   `max` and `absolute_max`, positive dependence instead lowers the upper tail
+   of the statistic.
+5. **Magnitudes are group-specific.** All three are in the units of $T$, so
+   compare them within a base, or use relative paired effects across bases.
 
 ## Joint full-group scores
 
@@ -339,11 +401,38 @@ $$
 
 The pair sum is exact for the selected 512-member ensemble. `torch.cdist` is
 chunked over 128 first-sample rows solely to limit memory; no cyclic pairing or
-pair subsampling remains. The Energy Score is strictly proper, but its ability
-to detect misspecified correlations between components is limited
-(Scheuerer and Hamill, 2015; Pinson and Tastu, 2013). Because Simcast holds
-marginals fixed and varies only dependence, this weakness bears directly on
-method comparisons, and the Variogram Score is reported alongside it.
+pair subsampling remains.
+
+Interpretation:
+
+1. **Accuracy minus spread.** The first term is the mean Euclidean distance from
+   the scenarios to the observed vector; the second rewards ensemble spread.
+   As with the CRPS, a sharper ensemble scores better only if it still
+   contains the observation. For $K_g=1$ the Energy Score equals the CRPS.
+2. **Relation to the aggregate scores.** Since
+   $\|\mathbf x\|_2=c_{K}\int_{S^{K-1}}|\theta^{\mathsf T}\mathbf x|\,d\sigma(\theta)$
+   for a constant $c_K$ and the uniform distribution $\sigma$ on unit
+   directions, the Energy Score is proportional to the CRPS of the projection
+   $\theta^{\mathsf T}\mathbf Y$ averaged over all directions $\theta$. The
+   simple-sum aggregate CRPS scores one direction,
+   $\theta\propto(1,\ldots,1)$. The Energy Score therefore evaluates the joint
+   law in every direction, and a gain in the sum direction is diluted among
+   all the others. A method can improve the aggregate CRPS without improving
+   the Energy Score, and the reverse.
+3. **Weak sensitivity to dependence.** The Energy Score is strictly proper, but
+   location and scale errors dominate it, and its ability to detect
+   misspecified correlations is limited (Scheuerer and Hamill, 2015; Pinson
+   and Tastu, 2013). Because Simcast holds marginals fixed, differences
+   between methods are entirely due to dependence but are typically small
+   relative to the score. Judge them by their paired intervals, not by their
+   size relative to the score; the Variogram Score is reported alongside for
+   this reason.
+4. **Scale.** The score is in the units of $\mathbf y$, and the Euclidean norm
+   lets large or volatile entities dominate. It grows with $K_g$ and is not
+   comparable across groups.
+5. **Estimator.** Like the ensemble CRPS, the all-pairs estimator exceeds its
+   fair counterpart by about $\mathbb E\|X-X'\|/(2M_J)$; with $M_J=512$ this
+   is small relative to the score.
 
 ### Variogram Score
 
@@ -399,9 +488,13 @@ group sizes check this property.
 
 Suppose three aggregate scenarios are $(48,55,63)$ and the observation is
 $a=58$. The first CRPS term is
-$(|48-58|+|55-58|+|63-58|)/3=6$; the second term uses all nine ordered pairs to
-account for ensemble dispersion. Energy Score applies the same principle to
-vectors of entity values and therefore evaluates the joint spatial law.
+$(|48-58|+|55-58|+|63-58|)/3=6$. The pairwise distances are $7$, $15$, and $8$,
+so the nine ordered pairs sum to $60$ and the second term is
+$60/(2\cdot 9)=3.33$. The CRPS is $6-3.33=2.67$: the ensemble's spread earns
+back a little over half of its mean absolute error. The median scenario is
+$55$, so `pinball_q0.5` is $0.5\cdot|58-55|=1.5$. Energy Score applies the
+same accuracy-minus-spread principle to vectors of entity values and
+therefore evaluates the joint spatial law.
 
 For M2--M4, `method.optimization.*` controls optimization. In an evaluation
 document, `sampling.num_samples`, `sampling.evaluation_seed`, and

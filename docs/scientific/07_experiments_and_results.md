@@ -106,7 +106,7 @@ aggregate score. Energy Score uses the empirical all-pairs estimator on the
 selected 512-member joint ensemble; ensemble selection is distinct from the
 formula. Variogram Score emphasizes pairwise entity contrasts, ignores shifts
 common to all entities, and scales with $K_g$, so it is compared only within a
-group. See [Chapter 5](05_training_sampling_scoring.md#wis-versus-crps) for
+group. See [Chapter 5](05_training_sampling_scoring.md#how-the-aggregate-scores-relate) for
 these caveats.
 
 A report computes a paired effect and its moving-block interval for every
