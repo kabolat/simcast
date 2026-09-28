@@ -142,6 +142,12 @@ def _evaluate_document(
         for fit in base_fits
         if not method_ids or fit["method_id"] in method_ids
     }
+    LOGGER.info(
+        "Evaluation %s: %d selected fits, %d already complete",
+        evaluation_id,
+        len(selected_keys),
+        len(completed & selected_keys),
+    )
     if force:
         LOGGER.info("clearing selected cells for evaluation %s", evaluation_id)
         for cell in cells[:]:

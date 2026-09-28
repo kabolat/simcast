@@ -8,6 +8,7 @@ bootstrap settings can be iterated on without touching runs/.
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 from pathlib import Path
 from typing import Annotated
@@ -16,6 +17,8 @@ import typer
 
 from simcast.config import ReportConfig, load_composite_config, load_report_config
 from simcast.reporting.composite_report import write_composite_report
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _resolve_composite_run(*, venue: str, name: str, run_id: str | None = None) -> Path:
@@ -143,6 +146,13 @@ def _write_report(
         metrics = sorted(declared_metrics)
         if not metrics:
             raise ValueError("selected evaluations do not record declared metrics")
+    LOGGER.info(
+        "Reporting %s/%s from %d evaluation cells with metrics: %s",
+        report_id,
+        evaluation_id,
+        len(cells),
+        ", ".join(metrics),
+    )
 
     if output_dir is not None:
         destination = Path(output_dir).expanduser().resolve() / evaluation_id
@@ -159,6 +169,7 @@ def _write_report(
         reference=config.reference,
         metrics=metrics,
     )
+    LOGGER.info("Report complete: %s", destination)
     return destination
 
 
@@ -234,6 +245,7 @@ def main(
         typer.Option("--force", help="Replace the selected report directory before regenerating it."),
     ] = False,
 ) -> None:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     typer.echo(
         report_composite(
             config,

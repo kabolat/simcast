@@ -465,6 +465,15 @@ The exact contents of every file are defined in the
   `singular_manifest.json`, `methods/<method-id>/`, `evaluation/`, and
   base-level `figures/`.
 
+### Progress and logs
+
+Long-running commands report phase starts and completions through standard
+logging. Composite runs also retain these messages in `composite.log`.
+Interactive terminals show `tqdm` progress bars for cache origins, evaluation
+batches, composite fit cells, and each M2--M4 training epoch; epoch bars show
+the current training and validation pseudo-NLL. Progress bars are transient and
+are not written to logs.
+
 ### Reading a completed report
 
 1. Confirm the base fingerprint, ordered entity IDs, $K_g$, complete-case

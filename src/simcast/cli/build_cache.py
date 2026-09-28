@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from math import floor
@@ -14,6 +15,7 @@ import numpy as np
 import pandas as pd
 import torch
 import typer
+from tqdm.auto import tqdm
 
 from simcast.config import (
     IndependentMethodConfig,
@@ -324,6 +326,12 @@ def build_cache_from_config(
     )
     if not candidates:
         raise ValueError("no candidate forecast origins fit the configured lookback and horizon")
+    LOGGER.info(
+        "Building %s cache for %d entities across %d candidate origins",
+        config.data.entity_type,
+        len(group.entity_ids),
+        len(candidates),
+    )
 
     model = forecaster or _default_forecaster(config)
     origins: list[pd.Timestamp] = []
@@ -335,7 +343,14 @@ def build_cache_from_config(
     output_patch_size: int | None = None
     skipped: list[dict[str, str]] = []
 
-    for window in candidates:
+    for window in tqdm(
+        candidates,
+        desc=f"Caching {config.data.entity_type}",
+        unit="origin",
+        dynamic_ncols=True,
+        leave=False,
+        disable=not sys.stderr.isatty(),
+    ):
         try:
             prepared = _prepare_window(frames, window, config)
         except _IneligibleWindow as error:

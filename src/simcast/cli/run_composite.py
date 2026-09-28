@@ -9,11 +9,13 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
 
 import typer
+from tqdm.auto import tqdm
 
 from simcast.cli.build_cache import build_cache_from_config
 from simcast.cli.evaluate import evaluate_from_config
@@ -128,11 +130,26 @@ def _run_fits(
     fits_by_id: dict[str, dict[str, object]],
 ) -> None:
     rebuilt_caches: set[Path] = set()
-    for item in expanded:
+    LOGGER.info("Fit phase: %d declared cells, %d already complete", len(expanded), len(fits_by_id))
+    seen_caches: set[Path] = set()
+    fit_progress = tqdm(
+        expanded,
+        desc="Fitting composite",
+        unit="fit",
+        dynamic_ncols=True,
+        leave=False,
+        disable=not sys.stderr.isatty(),
+    )
+    for item in fit_progress:
         fit_id = f"{item.base_entry_id}/{item.method_id}/{_seed_label(item.seed)}"
+        fit_progress.set_postfix_str(fit_id)
         if fit_id in fits_by_id:
             continue
         cache = locate_compatible_cache(item.base)
+        if cache not in seen_caches:
+            cache_action = "Rebuilding" if rebuild_cache else "Reusing" if cache.is_dir() else "Building"
+            LOGGER.info("%s marginal cache for %s: %s", cache_action, item.base_entry_id, cache)
+            seen_caches.add(cache)
         runtime = resolve_run_config(item.base, item.method, seed=item.seed)
         if rebuild_cache and cache not in rebuilt_caches:
             build_cache_from_config(runtime, output_dir=cache, overwrite=True)
@@ -175,6 +192,7 @@ def _run_evaluations(
 
     for entry in config.evaluations:
         document = load_evaluation_config(_resolve_path(source, entry.config))
+        LOGGER.info("Evaluation phase %s with metrics: %s", entry.id, ", ".join(document.metrics))
         cells = evaluations_by_id.setdefault(entry.id, [])
         completed = {(cell["base_id"], cell["method_id"], cell["seed"]) for cell in cells}
         base_ids = entry.base_ids or list(fits_by_base)
@@ -275,6 +293,14 @@ def run_composite(
         (run_root / "environment.json").write_text(json.dumps(environment, indent=2) + "\n", encoding="utf-8")
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     _configure_log(run_root / "composite.log")
+    LOGGER.info(
+        "Starting composite %s/%s (%s) with %d fit cells%s",
+        config.venue,
+        config.name,
+        identifier,
+        len(expanded),
+        "; resuming" if resume else "",
+    )
 
     fits_by_id = {str(fit["fit_id"]): fit for fit in manifest.get("fits", []) if fit.get("status") == "complete"}
     invalid = [
@@ -297,6 +323,7 @@ def run_composite(
 
     manifest["status"] = "complete"
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    LOGGER.info("Composite complete: %s", run_root)
     return run_root
 
 

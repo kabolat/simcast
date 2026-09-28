@@ -16,6 +16,8 @@ from simcast.config import base_fingerprint, load_base_config, load_method_confi
 from simcast.experiments import locate_compatible_cache, write_yaml
 from simcast.reproducibility import canonical_json_hash, git_commit, utc_run_id
 
+LOGGER = logging.getLogger(__name__)
+
 
 def run_singular(
     base_path: str | Path,
@@ -36,20 +38,26 @@ def run_singular(
         else (Path("runs/singular") / f"{utc_run_id()}_{base.id}_{primary.id}").resolve()
     )
     destination.mkdir(parents=True, exist_ok=False)
+    LOGGER.info("Starting singular run for %s with %s", base.id, primary.id)
     cache = locate_compatible_cache(base)
     primary_runtime = resolve_run_config(base, primary)
     if rebuild_cache or not cache.is_dir():
+        LOGGER.info("Building marginal cache: %s", cache)
         build_cache_from_config(primary_runtime, output_dir=cache, overwrite=rebuild_cache)
+    else:
+        LOGGER.info("Using marginal cache: %s", cache)
 
     methods = [primary, *(() if reference is None else (reference,))]
     run_paths: dict[str, Path] = {}
     for method in methods:
+        LOGGER.info("Fitting %s", method.id)
         runtime = resolve_run_config(base, method)
         run_paths[method.family] = train_from_config(
             runtime,
             cache_dir=cache,
             output_dir=destination / "methods" / method.id,
         )
+    LOGGER.info("Evaluating %d method%s", len(run_paths), "s" if len(run_paths) != 1 else "")
     evaluation = evaluate_from_config(
         primary_runtime,
         methods=tuple(run_paths),
@@ -79,6 +87,7 @@ def run_singular(
         "git_commit": git_commit(),
     }
     (destination / "singular_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    LOGGER.info("Singular run complete: %s", destination)
     return destination
 
 

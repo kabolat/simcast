@@ -5,6 +5,8 @@ from __future__ import annotations
 import copy
 import csv
 import json
+import logging
+import sys
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -13,9 +15,12 @@ from typing import cast
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
+from tqdm.auto import tqdm
 
 from simcast.training.dataset import DependenceBatch, DependenceCollator, DependenceDataset
 from simcast.training.losses import gaussian_copula_pseudo_nll
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,6 +117,7 @@ class ConditionalTrainer:
         output_dir: str | Path,
         training_collator: DependenceCollator | None = None,
         checkpoint_payload: Callable[[], dict[str, object]] | None = None,
+        progress_description: str = "Training",
     ) -> TrainingResult:
         """Fit and save best/final local checkpoints plus CSV/JSON curves."""
 
@@ -143,7 +149,15 @@ class ConditionalTrainer:
         best_state: dict[str, torch.Tensor] | None = None
         stale_epochs = 0
         history: list[EpochMetrics] = []
-        for epoch in range(1, self.epochs + 1):
+        epochs = tqdm(
+            range(1, self.epochs + 1),
+            desc=progress_description,
+            unit="epoch",
+            dynamic_ncols=True,
+            leave=False,
+            disable=not sys.stderr.isatty(),
+        )
+        for epoch in epochs:
             model.train()
             total = 0.0
             count = 0
@@ -171,6 +185,7 @@ class ConditionalTrainer:
             )
             metrics = EpochMetrics(epoch, total / count, validation_loss)
             history.append(metrics)
+            epochs.set_postfix(train=f"{metrics.training_nll:.4f}", valid=f"{validation_loss:.4f}")
             if validation_loss < best_loss:
                 best_loss = validation_loss
                 best_epoch = epoch
@@ -180,6 +195,12 @@ class ConditionalTrainer:
             else:
                 stale_epochs += 1
             if stale_epochs >= self.patience:
+                LOGGER.info(
+                    "%s early stopping at epoch %d after %d stale epochs",
+                    progress_description,
+                    epoch,
+                    stale_epochs,
+                )
                 break
         self._save_checkpoint(output / "final.pt", model, len(history), checkpoint_payload)
         if best_state is None:

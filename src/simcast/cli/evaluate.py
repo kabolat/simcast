@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 import zlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -15,6 +16,7 @@ import numpy as np
 import pandas as pd
 import torch
 import yaml  # type: ignore[import-untyped]
+from tqdm.auto import tqdm
 
 from simcast.cli.train_dependence import _dependence_scores
 from simcast.config import EvaluationFiguresConfig, ResolvedExperimentConfig
@@ -200,7 +202,14 @@ def _sample_and_evaluate(
     selected = set(metrics)
     case_indices = valid.reshape(-1).nonzero(as_tuple=False).flatten()
     device = torch.device(config.chronos.device if torch.cuda.is_available() else "cpu")
-    for offset in range(0, case_indices.numel(), config.evaluation.scenario_batch_size):
+    for offset in tqdm(
+        range(0, case_indices.numel(), config.evaluation.scenario_batch_size),
+        desc=f"Evaluating {prepared.name}",
+        unit="batch",
+        dynamic_ncols=True,
+        leave=False,
+        disable=not sys.stderr.isatty(),
+    ):
         positions = case_indices[offset : offset + config.evaluation.scenario_batch_size]
         evaluation_seed = config.sampling.evaluation_seed
         if not config.sampling.common_random_numbers:
@@ -596,6 +605,12 @@ def evaluate_from_config(
         "variogram_score",
         "test_pseudo_nll",
     ])
+    LOGGER.info(
+        "Evaluating %s on %d methods with metrics: %s",
+        config.data.entity_type,
+        len(methods),
+        ", ".join(declared_metrics),
+    )
     cache_path = Path(cache_dir).expanduser().resolve()
     library = load_pit_library(cache_path, access="evaluation")
     runs = {name: Path(path).expanduser().resolve() for name, path in (method_runs or {}).items()}
@@ -615,6 +630,7 @@ def evaluate_from_config(
     dependence_z, frequency_mapping = _dependence_scores(library, config)
     test_z = torch.tensor(dependence_z[test_origin_indices], dtype=torch.float32)
     valid = _valid_pairs(truth, predictions) & torch.isfinite(test_z).all(dim=1)
+    LOGGER.info("Evaluation uses %d/%d valid origin-lead cases", int(valid.sum()), int(valid.numel()))
     prepared = {name: _prepare_method(name, runs, library, config, all_entities) for name in methods}
     results = {
         name: _sample_and_evaluate(
@@ -701,4 +717,5 @@ def evaluate_from_config(
         (output / "resolved_config.yaml").write_text(
             yaml.safe_dump(config.model_dump(mode="json"), sort_keys=False), encoding="utf-8"
         )
+    LOGGER.info("Completed evaluation: %s", output)
     return output

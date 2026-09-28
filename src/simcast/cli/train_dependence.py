@@ -160,6 +160,14 @@ def _train_conditional(
     expected_entities = len(entity_ids)
     if train_features.shape[1] != expected_entities or validation_features.shape[1] != expected_entities:
         raise ValueError(f"every feature case must contain all {expected_entities} group entities")
+    LOGGER.info(
+        "Training %s on %d cases; validating on %d cases; max %d epochs, patience %d",
+        method,
+        train_features.shape[0],
+        validation_features.shape[0],
+        training.epochs,
+        training.patience,
+    )
     if method == "conditional_low_rank":
         m2_config = config.dependence.model
         if not isinstance(m2_config, ConditionalLowRankConfig):
@@ -242,6 +250,7 @@ def _train_conditional(
         output_dir=run_dir,
         training_collator=collator,
         checkpoint_payload=checkpoint_payload,
+        progress_description=f"Training {method}",
     )
     plot_training_history(
         [item.epoch for item in result.history],
@@ -276,6 +285,13 @@ def train_from_config(
     method = config.dependence.method
     run_dir = Path(output_dir).expanduser().resolve()
     run_dir.mkdir(parents=True, exist_ok=False)
+    LOGGER.info(
+        "Fitting %s for %s (%d entities); output: %s",
+        method,
+        config.data.entity_type,
+        len(entity_ids),
+        run_dir,
+    )
     _write_run_metadata(run_dir, config, cache_path, entity_ids)
     dependence_z, frequency_mapping = _dependence_scores(library, config)
     if frequency_mapping is not None:
@@ -303,4 +319,5 @@ def train_from_config(
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     metadata["model_sha256"] = sha256_file(model_path)
     metadata_path.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+    LOGGER.info("Completed %s fit: %s", method, run_dir)
     return run_dir
