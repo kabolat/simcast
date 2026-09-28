@@ -198,6 +198,11 @@ def _base_normal_draws(
     return torch.stack(batches)
 
 
+def _cross_entity_statistic(values: torch.Tensor, statistic: str, *, dim: int) -> torch.Tensor:
+    selected = values.abs() if statistic in {"absolute_sum", "absolute_max"} else values
+    return selected.max(dim=dim).values if statistic in {"max", "absolute_max"} else selected.sum(dim=dim)
+
+
 def _sample_and_evaluate(
     prepared: PreparedMethod,
     truth: torch.Tensor,
@@ -247,10 +252,8 @@ def _sample_and_evaluate(
             base_normals=base_normals,
             marginal_mode=config.pit.mode,
         )
-        aggregate[positions] = (
-            scenarios.entity_samples.abs().sum(dim=-1)
-            if config.evaluation.cross_entity_statistic == "absolute_sum"
-            else scenarios.aggregate_samples
+        aggregate[positions] = _cross_entity_statistic(
+            scenarios.entity_samples, config.evaluation.cross_entity_statistic, dim=-1
         ).cpu()
         if compute_joint:
             joint_count = min(sample_count, config.evaluation.joint_score_num_samples)
@@ -270,9 +273,7 @@ def _sample_and_evaluate(
     energy = energy.reshape(n_origin, horizon)
     variogram = variogram.reshape(n_origin, horizon)
     pseudo_nll = pseudo_nll.reshape(n_origin, horizon)
-    aggregate_truth = (
-        truth.abs() if config.evaluation.cross_entity_statistic == "absolute_sum" else truth
-    ).sum(dim=1)
+    aggregate_truth = _cross_entity_statistic(truth, config.evaluation.cross_entity_statistic, dim=1)
     interval_levels = torch.tensor(config.evaluation.interval_levels, dtype=aggregate.dtype)
     interval_bounds = empirical_quantiles(
         aggregate,
@@ -351,9 +352,9 @@ def _case_tables(
     origins = pd.to_datetime(test["origin_timestamp"].values, utc=True)
     origin_indices = np.asarray(test["origin"].values, dtype=np.int64)
     observed = np.asarray(test["true_y"].values)
-    observed_aggregate = (
-        np.abs(observed) if config.evaluation.cross_entity_statistic == "absolute_sum" else observed
-    ).sum(axis=1)
+    statistic = config.evaluation.cross_entity_statistic
+    selected = np.abs(observed) if statistic in {"absolute_sum", "absolute_max"} else observed
+    observed_aggregate = selected.max(axis=1) if statistic in {"max", "absolute_max"} else selected.sum(axis=1)
     n_origin, horizon = valid.shape
     rows: list[pd.DataFrame] = []
     for name, result in results.items():
@@ -506,11 +507,9 @@ def _plots(
     if correlation_lead >= truth.shape[-1]:
         raise ValueError("figures.correlation_lead exceeds the configured forecast horizon")
     if valid[aggregate_origin].any():
-        aggregate_truth = (
-            truth[aggregate_origin].abs()
-            if config.evaluation.cross_entity_statistic == "absolute_sum"
-            else truth[aggregate_origin]
-        ).sum(dim=0).numpy()
+        aggregate_truth = _cross_entity_statistic(
+            truth[aggregate_origin], config.evaluation.cross_entity_statistic, dim=0
+        ).numpy()
         for _name, result in results.items():
             method_figures = output / "figures" if len(results) == 1 else output / "figures" / _name
             method_figures.mkdir(parents=True, exist_ok=True)
@@ -585,45 +584,6 @@ def _figure_origin_index(origins: pd.DatetimeIndex, requested: datetime | None) 
     if not len(matches):
         raise ValueError(f"figure origin {target.isoformat()} is not a testing origin")
     return int(matches[0])
-
-
-def _scientific_summary(
-    metrics: Mapping[str, Mapping[str, float | int]],
-    mean_abs_pit_correlation: float,
-) -> dict[str, str]:
-    def delta(left: str, right: str) -> str:
-        if left not in metrics or right not in metrics:
-            return "not evaluated"
-        change = float(metrics[right]["mean_pinball"]) - float(metrics[left]["mean_pinball"])
-        return f"mean pinball change ({right} - {left}) = {change:.6g}"
-
-    widest_coverage = max(
-        (
-            float(key.removeprefix("coverage_"))
-            for key in metrics.get("independent", {})
-            if key.startswith("coverage_")
-        ),
-        default=None,
-    )
-    if widest_coverage is None:
-        independent_calibration = "not evaluated"
-    else:
-        observed = float(metrics["independent"][f"coverage_{widest_coverage:g}"])
-        independent_calibration = (
-            f"independent sampling gives {observed:.3f} empirical coverage for the "
-            f"nominal {widest_coverage:.3f} interval"
-        )
-    return {
-        "question_1": f"Mean absolute off-diagonal training PIT correlation is {mean_abs_pit_correlation:.4f}.",
-        "question_2": independent_calibration,
-        "question_3": delta("independent", "static_gaussian"),
-        "question_4": delta("static_gaussian", "conditional_low_rank"),
-        "question_5": delta("conditional_low_rank", "set_aware_low_rank"),
-        "question_6": (
-            "Cross-group heterogeneity is assessed in the consolidated summary; "
-            "this evaluation uses the complete static group only."
-        ),
-    }
 
 
 def evaluate_from_config(
@@ -706,11 +666,6 @@ def evaluate_from_config(
         metrics=declared_metrics,
         figures=figures or EvaluationFiguresConfig(),
         base_figures_dir=Path(base_figures_dir) if base_figures_dir is not None else output / "figures",
-    )
-    _, off_diagonal = _training_correlations(library)
-    summary = _scientific_summary(result_metrics, float(np.mean(np.abs(off_diagonal))))
-    (output / "scientific_summary.json").write_text(
-        json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     manifest = {
         "cache_path": str(cache_path),

@@ -66,13 +66,23 @@ def test_cross_entity_statistic_changes_samples_and_observations(tmp_path: Path)
     assert absolute.aggregate.quantile_predictions[0, 0, 1].item() == pytest.approx(3.0)
     assert simple.aggregate.overall["mean_pinball"] == pytest.approx(0.0)
     assert absolute.aggregate.overall["mean_pinball"] == pytest.approx(0.0)
+    for statistic, expected in (("max", 1.0), ("absolute_max", 2.0)):
+        chosen = config.model_copy(
+            update={"evaluation": config.evaluation.model_copy(update={"cross_entity_statistic": statistic})}
+        )
+        result = _sample_and_evaluate(
+            prepared, truth, predictions, torch.tensor([0.1, 0.5, 0.9]), valid, chosen, compute_joint=False
+        )
+        assert result.aggregate.quantile_predictions[0, 0, 1].item() == pytest.approx(expected)
+        assert result.aggregate.overall["mean_pinball"] == pytest.approx(0.0)
 
 
-def test_absolute_sum_is_retained_in_evaluation_artifacts(tmp_path: Path) -> None:
+@pytest.mark.parametrize("statistic", ["absolute_sum", "max", "absolute_max"])
+def test_statistic_is_retained_in_evaluation_artifacts(tmp_path: Path, statistic: str) -> None:
     cache = _cache(tmp_path / "cache", signed=True)
     config = _config(tmp_path)
     config = config.model_copy(
-        update={"evaluation": config.evaluation.model_copy(update={"cross_entity_statistic": "absolute_sum"})}
+        update={"evaluation": config.evaluation.model_copy(update={"cross_entity_statistic": statistic})}
     )
 
     output = evaluate_from_config(
@@ -83,11 +93,12 @@ def test_absolute_sum_is_retained_in_evaluation_artifacts(tmp_path: Path) -> Non
     )
 
     truth = load_pit_library(cache, access="evaluation").test_data()["true_y"].values
-    expected = np.abs(truth).sum(axis=1).reshape(-1)
+    selected = np.abs(truth) if statistic in {"absolute_sum", "absolute_max"} else truth
+    expected = (selected.max(axis=1) if statistic in {"max", "absolute_max"} else selected.sum(axis=1)).reshape(-1)
     cases = pd.read_parquet(output / "per_origin_lead_metrics.parquet")
     assert np.allclose(cases["observed_aggregate"], expected)
-    assert (cases["observed_aggregate"] > truth.sum(axis=1).reshape(-1)).all()
-    assert json.loads((output / "evaluation_manifest.json").read_text())["cross_entity_statistic"] == "absolute_sum"
+    assert not np.allclose(expected, truth.sum(axis=1).reshape(-1))
+    assert json.loads((output / "evaluation_manifest.json").read_text())["cross_entity_statistic"] == statistic
 
 
 def _config(tmp_path: Path) -> ResolvedExperimentConfig:
@@ -128,7 +139,7 @@ def test_full_group_evaluation_uses_only_the_complete_group(tmp_path: Path) -> N
     assert (output / "per_origin_lead_metrics.parquet").is_file()
     assert (output / "per_origin_metrics.parquet").is_file()
     assert not (output / "variable_k.csv").exists()
-    assert (output / "scientific_summary.json").is_file()
+    assert not (output / "scientific_summary.json").exists()
     assert (output / "evaluation_manifest.json").is_file()
     assert (output / "resolved_config.yaml").is_file()
     assert (output / "figures" / "dataset_locations.png").is_file()

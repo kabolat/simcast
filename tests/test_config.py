@@ -56,8 +56,11 @@ def test_method_and_evaluation_ids_default_to_filename(tmp_path: Path) -> None:
 
 def test_evaluation_cross_entity_statistic_is_validated(tmp_path: Path) -> None:
     path = tmp_path / "absolute_sum.yaml"
-    path.write_text("kind: evaluation\nevaluation: {cross_entity_statistic: absolute_sum}\n", encoding="utf-8")
-    assert load_evaluation_config(path).evaluation.cross_entity_statistic == "absolute_sum"
+    for statistic in ("absolute_sum", "max", "absolute_max"):
+        path.write_text(
+            f"kind: evaluation\nevaluation: {{cross_entity_statistic: {statistic}}}\n", encoding="utf-8"
+        )
+        assert load_evaluation_config(path).evaluation.cross_entity_statistic == statistic
 
     path.write_text("kind: evaluation\nevaluation: {cross_entity_statistic: maximum}\n", encoding="utf-8")
     with pytest.raises(ValidationError, match="cross_entity_statistic"):
