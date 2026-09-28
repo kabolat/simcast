@@ -144,9 +144,8 @@ def variogram_score(
     observation: torch.Tensor,
     *,
     power: float = 0.5,
-    weights: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """Variogram score of Scheuerer & Hamill (2015) over all ordered entity pairs ``[..., M, K]``.
+    """Unit-weight variogram score of Scheuerer & Hamill (2015) over all ordered entity pairs ``[..., M, K]``.
 
     Leading batch dimensions, if any, are preserved in the returned tensor.
     """
@@ -158,15 +157,8 @@ def variogram_score(
     if not 0 < power <= 2:
         raise ValueError("power must lie in (0, 2]")
     entities = draws.shape[-1]
-    if weights is None:
-        pair_weights = torch.ones((entities, entities), dtype=draws.dtype, device=draws.device)
-    else:
-        pair_weights = torch.as_tensor(weights, dtype=draws.dtype, device=draws.device)
-        if pair_weights.shape != (entities, entities):
-            raise ValueError("weights must have shape [K, K]")
     row, column = torch.triu_indices(entities, entities, offset=1, device=draws.device)
     observed = torch.abs(truth[..., row] - truth[..., column]).pow(power)
     predicted = torch.abs(draws[..., row] - draws[..., column]).pow(power).mean(dim=-2)
     # (i, j) and (j, i) contribute identical squared terms; the diagonal is zero.
-    pair_weights = pair_weights[row, column] + pair_weights[column, row]
-    return (pair_weights * (observed - predicted).square()).sum(dim=-1)
+    return 2.0 * (observed - predicted).square().sum(dim=-1)

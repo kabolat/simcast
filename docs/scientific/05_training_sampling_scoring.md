@@ -347,21 +347,22 @@ method comparisons, and the Variogram Score is reported alongside it.
 
 ### Variogram Score
 
-The Variogram Score of order $p$ (Scheuerer and Hamill, 2015) is
+Simcast uses the unit-weight Variogram Score of order $p$ (Scheuerer and
+Hamill, 2015):
 
 $$
 \operatorname{VS}_p
-=\sum_{i=1}^{K_g}\sum_{j=1}^{K_g}w_{ij}\left(
+=\sum_{i=1}^{K_g}\sum_{j=1}^{K_g}\left(
 |y_i-y_j|^p
 -\mathbb E|X_i-X_j|^p
 \right)^2,
 $$
 
 where the expectation is estimated by the mean over the $M_J$ selected
-members. Simcast uses unit weights $w_{ij}=1$ and
-$p=$ `evaluation.variogram_power` (default $0.5$). The diagonal terms are zero
-and the $(i,j)$ and $(j,i)$ terms are equal, so the sum is twice the sum over
-unordered pairs.
+members and $p=$ `evaluation.variogram_power` (default $0.5$). The diagonal
+terms are zero and the $(i,j)$ and $(j,i)$ terms are equal, so the
+implementation evaluates each unordered pair once and doubles the sum; the
+result is exactly the double sum above.
 
 Interpretation requires care:
 
@@ -377,9 +378,8 @@ Interpretation requires care:
    structure. This is why both are reported.
 3. **Scale and group size.** VS has units of $|y|^{2p}$ and sums
    $K_g(K_g-1)$ non-zero terms. Its magnitude grows with entity scale and
-   with $K_g$, so it is not comparable across groups. With unit weights,
-   pairs of large or volatile entities dominate; non-uniform weights, which
-   Scheuerer and Hamill discuss, are not currently used.
+   with $K_g$, so it is not comparable across groups. Because every pair has
+   equal weight, pairs of large or volatile entities dominate.
 4. **Order $p$.** Smaller $p$ gives less weight to large pairwise differences
    and is more robust to outliers. scoringRules uses $p=0.5$ by default and
    lists $p=0.5$ and $p=1$ as standard choices (Jordan et al., 2019).

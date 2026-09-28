@@ -44,11 +44,10 @@ def test_variogram_score_sums_over_all_ordered_pairs() -> None:
     torch.manual_seed(3)
     samples = torch.randn(7, 4)
     truth = torch.randn(4)
-    weights = torch.rand(4, 4)
     observed = (truth[:, None] - truth[None, :]).abs().sqrt()
     predicted = (samples[:, :, None] - samples[:, None, :]).abs().sqrt().mean(dim=0)
-    expected = (weights * (observed - predicted).square()).sum()
-    torch.testing.assert_close(variogram_score(samples, truth, power=0.5, weights=weights), expected)
+    expected = (observed - predicted).square().sum()
+    torch.testing.assert_close(variogram_score(samples, truth, power=0.5), expected)
 
 
 def test_weighted_interval_score_is_twice_mean_pinball_over_implied_levels() -> None:
