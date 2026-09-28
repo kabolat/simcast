@@ -459,7 +459,8 @@ The exact contents of every file are defined in the
 - **Report directory** (`reports/<report-id>/<evaluation-id>/`):
   `per_origin_metrics.parquet`, `method_summary.csv`, `paired_effects.csv`,
   `method_comparison_<metric>.png`, `paired_effect_<metric>.png`,
-  `summary_coverage.png`, `summary_quantile_calibration.png`, and
+  `summary_coverage.png` and `summary_quantile_calibration.png` (one panel per
+  base), and
   `report_summary.md`, which describes every file present.
 - **Singular directory**: resolved base and method(s),
   `singular_manifest.json`, `methods/<method-id>/`, `evaluation/`, and

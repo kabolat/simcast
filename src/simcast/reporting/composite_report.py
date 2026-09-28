@@ -188,25 +188,27 @@ def _write_coverage_figure(per_origin: pd.DataFrame, report_dir: Path) -> None:
     )
     if not coverage_columns:
         return
-    methods = list(per_origin["method"].drop_duplicates())
     nominal = np.asarray([float(column.removeprefix("coverage_")) for column in coverage_columns])
-    figure, axis = plt.subplots(figsize=(7.0, 6.0))
-    axis.plot([0.0, 1.0], [0.0, 1.0], color="black", linestyle="--", label="nominal")
-    for method in methods:
-        empirical = [
-            float(per_origin.loc[per_origin["method"] == method, column].mean())
-            for column in coverage_columns
-        ]
-        axis.plot(nominal, empirical, marker="o", label=method)
-    axis.set(
-        xlim=(0.0, 1.0),
-        ylim=(0.0, 1.0),
-        xlabel="nominal coverage",
-        ylabel="empirical coverage",
-        title="Aggregate interval calibration",
-    )
-    axis.set_aspect("equal", adjustable="box")
-    axis.legend()
+    base_ids = list(per_origin["base_id"].drop_duplicates())
+    figure, axes = plt.subplots(len(base_ids), 1, squeeze=False, figsize=(7.0, 4.5 * len(base_ids)))
+    for axis, base_id in zip(axes[:, 0], base_ids, strict=True):
+        base_rows = per_origin[per_origin["base_id"] == base_id]
+        axis.plot([0.0, 1.0], [0.0, 1.0], color="black", linestyle="--", label="nominal")
+        for method in base_rows["method"].drop_duplicates():
+            empirical = [
+                float(base_rows.loc[base_rows["method"] == method, column].mean())
+                for column in coverage_columns
+            ]
+            axis.plot(nominal, empirical, marker="o", label=method)
+        axis.set(
+            xlim=(0.0, 1.0),
+            ylim=(0.0, 1.0),
+            xlabel="nominal coverage",
+            ylabel="empirical coverage",
+            title=str(base_id),
+        )
+        axis.set_aspect("equal", adjustable="box")
+        axis.legend()
     figure.tight_layout()
     figure.savefig(report_dir / "summary_coverage.png", dpi=180)
     plt.close(figure)
@@ -219,26 +221,28 @@ def _write_quantile_coverage_figure(per_origin: pd.DataFrame, report_dir: Path) 
     )
     if "observed_aggregate" not in per_origin or not quantile_columns:
         return
-    methods = list(per_origin["method"].drop_duplicates())
     nominal = np.asarray([float(column.removeprefix("aggregate_q")) for column in quantile_columns])
-    figure, axis = plt.subplots(figsize=(7.0, 6.0))
-    axis.plot([0.0, 1.0], [0.0, 1.0], color="black", linestyle="--", label="nominal")
-    for method in methods:
-        method_rows = per_origin[per_origin["method"] == method]
-        empirical = [
-            float((method_rows["observed_aggregate"] <= method_rows[column]).mean())
-            for column in quantile_columns
-        ]
-        axis.plot(nominal, empirical, marker="o", label=method)
-    axis.set(
-        xlim=(0.0, 1.0),
-        ylim=(0.0, 1.0),
-        xlabel="nominal aggregate quantile",
-        ylabel="empirical aggregate coverage",
-        title="Aggregate quantile calibration",
-    )
-    axis.set_aspect("equal", adjustable="box")
-    axis.legend()
+    base_ids = list(per_origin["base_id"].drop_duplicates())
+    figure, axes = plt.subplots(len(base_ids), 1, squeeze=False, figsize=(7.0, 4.5 * len(base_ids)))
+    for axis, base_id in zip(axes[:, 0], base_ids, strict=True):
+        base_rows = per_origin[per_origin["base_id"] == base_id]
+        axis.plot([0.0, 1.0], [0.0, 1.0], color="black", linestyle="--", label="nominal")
+        for method in base_rows["method"].drop_duplicates():
+            method_rows = base_rows[base_rows["method"] == method]
+            empirical = [
+                float((method_rows["observed_aggregate"] <= method_rows[column]).mean())
+                for column in quantile_columns
+            ]
+            axis.plot(nominal, empirical, marker="o", label=method)
+        axis.set(
+            xlim=(0.0, 1.0),
+            ylim=(0.0, 1.0),
+            xlabel="nominal aggregate quantile",
+            ylabel="empirical aggregate coverage",
+            title=str(base_id),
+        )
+        axis.set_aspect("equal", adjustable="box")
+        axis.legend()
     figure.tight_layout()
     figure.savefig(report_dir / "summary_quantile_calibration.png", dpi=180)
     plt.close(figure)

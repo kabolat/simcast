@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import matplotlib.image as mpimg
 import pandas as pd
 
 from simcast.config import CompositeAnalysisConfig
@@ -57,3 +58,45 @@ def test_generic_composite_report_includes_m4(tmp_path: Path) -> None:
     assert not (report / "method_comparison_mean_pinball.pdf").exists()
     assert (report / "report_summary.md").is_file()
     assert "method_summary.csv" in (report / "report_summary.md").read_text(encoding="utf-8")
+
+
+def test_calibration_figures_facet_multiple_bases(tmp_path: Path) -> None:
+    evaluation = tmp_path / "evaluation"
+    evaluation.mkdir()
+    rows = [
+        {
+            "method": method,
+            "origin": origin,
+            "mean_pinball": 1.0 + offset,
+            "coverage_0.9": 0.9,
+            "observed_aggregate": 1.0,
+            "aggregate_q0.05": 0.8 + offset,
+            "aggregate_q0.50": 1.0 + offset,
+            "aggregate_q0.95": 1.2 + offset,
+        }
+        for method, offset in (("independent", 0.1), ("conditional_kernel", 0.0))
+        for origin in range(4)
+    ]
+    pd.DataFrame(rows).to_parquet(evaluation / "per_origin_metrics.parquet", index=False)
+    cells: list[dict[str, object]] = [
+        {
+            "evaluation_path": str(evaluation),
+            "base_id": base_id,
+            "method_id": method_id,
+            "seed": None if method_id == "m0" else 42,
+            "method_family": method,
+        }
+        for base_id in ("transformer", "solar_park")
+        for method_id, method in (("m0", "independent"), ("m4", "conditional_kernel"))
+    ]
+
+    report = tmp_path / "report"
+    write_composite_report(
+        report,
+        cells,
+        CompositeAnalysisConfig(bootstrap_replicates=10, primary_block_length=3),
+        reference="m0",
+    )
+
+    assert mpimg.imread(report / "summary_coverage.png").shape[0] == 1620
+    assert mpimg.imread(report / "summary_quantile_calibration.png").shape[0] == 1620
