@@ -131,7 +131,7 @@ class Chronos2FeatureExtractor:
                 raise RuntimeError("Chronos test preprocessing unexpectedly returned future targets")
 
             # Do not replace group_ids with zeros: each physical entity must
-            # remain an independent Chronos task (cross_learning=False).
+            # remain an independent Chronos task (no cross-learning).
             context = batch["context"].to(device=self.model.device, dtype=torch.float32)
             group_ids = batch["group_ids"].to(device=self.model.device)
             future_covariates = batch["future_covariates"].to(device=self.model.device, dtype=torch.float32)

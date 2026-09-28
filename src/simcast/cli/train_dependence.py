@@ -28,27 +28,10 @@ from simcast.evaluation.plots import plot_training_history
 from simcast.fm.cache import PITLibrary, load_pit_library
 from simcast.fm.feature_builder import FeatureBuilder
 from simcast.fm.pit import dependence_pit_scores
-from simcast.reproducibility import config_sha256, environment_metadata, sha256_file, utc_run_id
+from simcast.reproducibility import config_sha256, environment_metadata, sha256_file
 from simcast.training import ConditionalTrainer, DependenceCollator, DependenceDataset
 
 LOGGER = logging.getLogger(__name__)
-
-
-def _cache_path(config: ResolvedExperimentConfig, override: str | Path | None) -> Path:
-    if override is not None:
-        return Path(override).expanduser().resolve()
-    name = config.output.cache_name or f"liander2024_{config.data.entity_type}"
-    return (Path(config.output.cache_dir).expanduser() / name).resolve()
-
-
-def _run_directory(config: ResolvedExperimentConfig, method: str, override: str | Path | None) -> Path:
-    if override is not None:
-        path = Path(override).expanduser().resolve()
-    else:
-        stamp = utc_run_id()
-        path = (Path(config.output.root_dir).expanduser() / f"{stamp}_{method}").resolve()
-    path.mkdir(parents=True, exist_ok=False)
-    return path
 
 
 def _seed_everything(seed: int, deterministic: bool) -> None:
@@ -85,12 +68,6 @@ def _write_run_metadata(
             "entity_ids": entity_ids,
             "entity_count": len(entity_ids),
         },
-        "experimental_protocol": {
-            "name": config.protocol.name,
-            "full_group_only": config.protocol.full_group_only,
-            "subset_training": False,
-            "entity_selection_augmentation_enabled": False,
-        },
         "seed": config.seed,
         "evaluation_seed": config.sampling.evaluation_seed,
         "checkpoint_selection": "validation_pseudo_nll",
@@ -116,10 +93,6 @@ def _feature_builder(config: ResolvedExperimentConfig, library: PITLibrary) -> F
     settings = config.features
     if settings is None:
         raise TypeError("conditional dependence requires feature parameters")
-    if settings.use_entity_id_embedding:
-        raise NotImplementedError(
-            "entity-ID embeddings are an ablation and are intentionally disabled in this proof of concept"
-        )
     return FeatureBuilder(
         patch_size,
         shape_eps=settings.shape_eps,
@@ -184,10 +157,9 @@ def _train_conditional(
         raise TypeError("conditional dependence requires feature and optimization parameters")
     train_features = builder.fit_transform(train_embeddings, train_predictions, levels, locations)
     validation_features = builder.transform(validation_embeddings, validation_predictions, levels, locations)
-    if config.protocol.full_group_only:
-        expected_entities = len(entity_ids)
-        if train_features.shape[1] != expected_entities or validation_features.shape[1] != expected_entities:
-            raise ValueError(f"full-group protocol requires all {expected_entities} entities in every feature case")
+    expected_entities = len(entity_ids)
+    if train_features.shape[1] != expected_entities or validation_features.shape[1] != expected_entities:
+        raise ValueError(f"every feature case must contain all {expected_entities} group entities")
     if method == "conditional_low_rank":
         m2_config = config.dependence.model
         if not isinstance(m2_config, ConditionalLowRankConfig):
@@ -250,7 +222,7 @@ def _train_conditional(
         jitter=model_jitter,
         seed=config.seed,
         device=device,
-        expected_num_entities=len(entity_ids) if config.protocol.full_group_only else None,
+        expected_num_entities=len(entity_ids),
     )
     collator = DependenceCollator()
 
@@ -288,13 +260,13 @@ def _train_conditional(
 def train_from_config(
     config: ResolvedExperimentConfig,
     *,
-    cache_dir: str | Path | None = None,
-    output_dir: str | Path | None = None,
+    cache_dir: str | Path,
+    output_dir: str | Path,
 ) -> Path:
-    """Fit M0 through M3 without opening sealed test labels."""
+    """Fit one dependence method without opening sealed test labels."""
 
     _seed_everything(config.seed, config.runtime.deterministic)
-    cache_path = _cache_path(config, cache_dir)
+    cache_path = Path(cache_dir).expanduser().resolve()
     library = load_pit_library(cache_path, access="training")
     entity_ids = [str(value) for value in library.dataset["entity_id"].values]
     if config.protocol.ordered_entity_ids and entity_ids != config.protocol.ordered_entity_ids:
@@ -302,7 +274,8 @@ def train_from_config(
     if config.protocol.entity_count is not None and len(entity_ids) != config.protocol.entity_count:
         raise ValueError("configured entity_count does not match the complete cached group")
     method = config.dependence.method
-    run_dir = _run_directory(config, method, output_dir)
+    run_dir = Path(output_dir).expanduser().resolve()
+    run_dir.mkdir(parents=True, exist_ok=False)
     _write_run_metadata(run_dir, config, cache_path, entity_ids)
     dependence_z, frequency_mapping = _dependence_scores(library, config)
     if frequency_mapping is not None:
@@ -316,7 +289,6 @@ def train_from_config(
         if not isinstance(settings, StaticGaussianConfig):
             raise TypeError("static_gaussian runtime model parameters are invalid")
         model = StaticGaussianCopula(
-            shrinkage=settings.shrinkage,
             share_across_leads=settings.share_across_leads,
             jitter=settings.jitter,
         ).fit(train_z, entity_ids)

@@ -29,8 +29,8 @@ valid `(origin, lead)` cases. Origin and lead indices are metadata rather than
 direct network inputs. Lead information enters through the frozen forecast,
 patch representation, and within-patch position.
 
-The base schema has no entity-selection setting and checks the entity dimension
-again immediately before every M2--M4 model call.
+The entity dimension is checked again immediately before every M2--M4 model
+call.
 Every training and validation batch therefore contains exactly the complete
 ordered $\mathcal E_g$. Missing one entity invalidates the case instead of
 shrinking it.
@@ -38,7 +38,7 @@ shrinking it.
 M1 uses complete training vectors directly and does not use validation. M2,
 M3, and M4 fit on the chronological training partition and use chronological
 validation pseudo-likelihood for checkpoint selection. `DependenceCollator`
-only stacks complete vectors; it has no subset mode.
+only stacks complete vectors.
 
 ## Gaussian-copula pseudo-likelihood
 
@@ -118,7 +118,7 @@ observed entity vector before aggregate quantile, interval, CRPS, and pinball
 scoring. Energy and Variogram Scores continue to score the full entity vector,
 independent of this choice.
 
-Cases are processed in batches of 16. Base normals are keyed by the separately
+Cases are processed in batches of `evaluation.scenario_batch_size`. Base normals are keyed by the separately
 recorded evaluation seed and flattened `(origin, lead)` index. They therefore
 remain identical for the same case across methods, method order, and batch
 layout. `sampling.common_random_numbers: false` is an explicit diagnostic mode
@@ -388,18 +388,12 @@ Interpretation requires care:
    $\operatorname{Var}(|X_i-X_j|^p)/M_J$ per term. With $M_J=512$ this is
    small, and it is the same selected ensemble size for every method.
 
-Evaluations computed before this definition was adopted used a Variogram Score
-over unordered pairs (half the current value) and a WIS divided by
-$\tfrac12+\sum_k\alpha_k/2$. Re-run `evaluate --force` before comparing such
-records with current ones.
-
 ## Full-group output scope
 
 The evaluator produces only complete-group metrics, lead tables, correlation
-matrices, and figures. It does not create prefix-$K$ tables,
-variable-cardinality CSVs, or reduced-group figures. Architecture-level
-variable-size tests remain only to ensure that shared-weight mathematics has
-not been accidentally hard-coded to one $K_g$; they are not experiments.
+matrices, and figures. The dependence networks share weights across entities,
+so one architecture serves groups of different $K_g$; tests with several
+group sizes check this property.
 
 ## Worked scoring example and implementation guidance
 

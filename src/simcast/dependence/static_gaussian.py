@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Literal, Self
+from typing import Self
 
 import numpy as np
 import torch
@@ -47,15 +47,11 @@ class StaticGaussianCopula:
     def __init__(
         self,
         *,
-        shrinkage: Literal["ledoit_wolf"] = "ledoit_wolf",
         share_across_leads: bool = False,
         jitter: float = 1e-6,
     ) -> None:
-        if shrinkage != "ledoit_wolf":
-            raise ValueError("only ledoit_wolf shrinkage is supported")
         if not np.isfinite(jitter) or jitter <= 0:
             raise ValueError("jitter must be positive and finite")
-        self.shrinkage = shrinkage
         self.share_across_leads = share_across_leads
         self.jitter = float(jitter)
         self.entity_ids: tuple[str, ...] = ()
@@ -126,7 +122,6 @@ class StaticGaussianCopula:
                 model=np.asarray("static_gaussian"),
                 entity_ids=np.asarray(self.entity_ids, dtype=np.str_),
                 correlations=self._correlations.numpy(),
-                shrinkage=np.asarray(self.shrinkage),
                 share_across_leads=np.asarray(self.share_across_leads),
                 jitter=np.asarray(self.jitter, dtype=np.float64),
             )
@@ -138,7 +133,6 @@ class StaticGaussianCopula:
             if int(saved["schema_version"]) != 1 or str(saved["model"]) != "static_gaussian":
                 raise ValueError("not a supported static-Gaussian-copula model")
             model = cls(
-                shrinkage=str(saved["shrinkage"]),  # type: ignore[arg-type]
                 share_across_leads=bool(saved["share_across_leads"]),
                 jitter=float(saved["jitter"]),
             )

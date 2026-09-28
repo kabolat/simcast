@@ -83,7 +83,7 @@ training_curve.png              M2/M3/M4 only
 
 `run_metadata.json` records creation time, Git commit, Python and key package
 versions, absolute cache path, seed, group name, complete ordered entity IDs,
-$K_g$, `full_group_only`, and the absence of entity selection. It also records
+and $K_g$. It also records
 resolved-config and model SHA-256
 hashes, pinned data/FM revisions, optimization and evaluation seeds, checkpoint
 criterion, and PIT dependence transform. M0's NPZ stores IDs and
@@ -260,14 +260,6 @@ Resume compares the stored composite SHA-256 digest with the newly resolved
 declaration. A mismatch is rejected; a validated complete fit is preserved.
 Artifact paths may be absolute in manifests, so archival releases should
 package the complete referenced tree or provide stable remapping metadata.
-
-## Historical artifacts
-
-`read_evaluation_artifacts` recursively discovers current and historical
-`evaluation_manifest.json` files and returns their original JSON payloads. It
-performs no schema migration and never rewrites an artifact. Historical
-artifacts remain inspectable but are not executable through removed monolithic
-configuration interfaces.
 
 ## Scientific example and implementation guidance
 

@@ -19,13 +19,13 @@ def test_cache_reuse_depends_on_metadata_not_directory_name(tmp_path: Path) -> N
     compatible = tmp_path / "an_unrelated_human_name"
     compatible.mkdir()
     (compatible / "metadata.json").write_text(
-        json.dumps({"base_config": base.model_dump(mode="json")}), encoding="utf-8"
+        json.dumps({"resolved_config": base.model_dump(mode="json")}), encoding="utf-8"
     )
     incompatible = tmp_path / "looks_plausible"
     incompatible.mkdir()
     other = base.model_copy(update={"pit": base.pit.model_copy(update={"eps": 1.0e-6})})
     (incompatible / "metadata.json").write_text(
-        json.dumps({"base_config": other.model_dump(mode="json")}), encoding="utf-8"
+        json.dumps({"resolved_config": other.model_dump(mode="json")}), encoding="utf-8"
     )
 
     assert locate_compatible_cache(base) == compatible
@@ -39,7 +39,7 @@ def test_cache_reuse_ignores_post_cache_dependence_transform(tmp_path: Path) -> 
     compatible = tmp_path / "cache_from_another_dependence_transform"
     compatible.mkdir()
     (compatible / "metadata.json").write_text(
-        json.dumps({"base_config": cached.model_dump(mode="json")}), encoding="utf-8"
+        json.dumps({"resolved_config": cached.model_dump(mode="json")}), encoding="utf-8"
     )
 
     assert locate_compatible_cache(base) == compatible
@@ -50,7 +50,7 @@ def test_matching_dependence_transform_breaks_duplicate_cache_tie(tmp_path: Path
     matching = tmp_path / "matching_transform"
     matching.mkdir()
     (matching / "metadata.json").write_text(
-        json.dumps({"base_config": base.model_dump(mode="json")}), encoding="utf-8"
+        json.dumps({"resolved_config": base.model_dump(mode="json")}), encoding="utf-8"
     )
     other = base.model_copy(
         update={"pit": base.pit.model_copy(update={"dependence_transform": "nominal_cells"})}
@@ -58,7 +58,7 @@ def test_matching_dependence_transform_breaks_duplicate_cache_tie(tmp_path: Path
     nonmatching = tmp_path / "other_transform"
     nonmatching.mkdir()
     (nonmatching / "metadata.json").write_text(
-        json.dumps({"base_config": other.model_dump(mode="json")}), encoding="utf-8"
+        json.dumps({"resolved_config": other.model_dump(mode="json")}), encoding="utf-8"
     )
 
     assert locate_compatible_cache(base) == matching
@@ -75,7 +75,7 @@ def test_canonical_cache_with_wrong_metadata_is_never_trusted(tmp_path: Path) ->
 
 def test_ambiguous_compatible_caches_are_rejected(tmp_path: Path) -> None:
     base = _base_with_cache_root(tmp_path)
-    payload = json.dumps({"base_config": base.model_dump(mode="json")})
+    payload = json.dumps({"resolved_config": base.model_dump(mode="json")})
     for name in ("first", "second"):
         path = tmp_path / name
         path.mkdir()

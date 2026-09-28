@@ -33,8 +33,6 @@ Implementation: `load_base_config`, `load_method_config`,
 kind: base
 id: transformer
 protocol:
-  name: full_group
-  full_group_only: true
   ordered_entity_ids: [transformer::A, transformer::B]
   entity_count: 2
 data:
@@ -44,14 +42,12 @@ data:
 `ordered_entity_ids` defines
 $\mathcal E_g=[k_1,\ldots,k_{K_g}]$ including its order, and `entity_count`
 must equal $K_g$. Every ID must have the selected homogeneous entity-type
-prefix. No entity-selection or variable-cardinality field exists.
+prefix. Every fit and evaluation uses the complete group.
 
 | Key | YAML type and admissible values | Default / supplied value | Scientific meaning |
 |---|---|---|---|
 | `kind` | literal string `base` | **required** | declares a common marginal experiment |
 | `id` | safe slug: lowercase letters, digits, `_`, `-` | **required** | human-readable base identity; not a cache-compatibility claim |
-| `protocol.name` | literal string `full_group` | `full_group` | declares the static complete-group protocol |
-| `protocol.full_group_only` | literal Boolean `true` | `true` | forbids entity subsets and variable cardinality |
 | `protocol.ordered_entity_ids` | non-empty list of unique strings | **required** | ordered definition of $\mathcal E_g$ |
 | `protocol.entity_count` | positive integer | **required** | $K_g$; must equal the list length |
 | `data.dataset_id` | string | Liander dataset identifier | population source |
@@ -59,8 +55,6 @@ prefix. No entity-selection or variable-cardinality field exists.
 | `data.local_dir` | path string | `${SIMCAST_DATA_DIR:-data/liander2024}` | local files; deliberately excluded from the scientific fingerprint |
 | `data.entity_type` | one of `transformer`, `solar_park`, `wind_park`, `mv_feeder`, `station_installation` | `transformer` | homogeneous physical group $g$; every ID must begin with this type prefix |
 | `data.target_column` | string | `load` | measured target $y_{k,t}$ |
-| `data.include_epex` | Boolean | `false` | include optional EPEX files; currently not used as a covariate |
-| `data.include_profiles` | Boolean | `false` | include optional profile files; currently not used as a covariate |
 
 Example: transformer has $K_g=15$ in its supplied base; solar and wind each
 have $K_g=5$. The group is invalid at $(i,\tau)$ if any member is invalid.
@@ -69,7 +63,6 @@ have $K_g=5$. The group is invalid at $(i,\tau)$ if any member is invalid.
 
 | Key | YAML type and admissible values | Default / supplied value | Meaning |
 |---|---|---|---|
-| `forecast.timezone` | literal string `UTC` | `UTC` | time coordinate |
 | `forecast.frequency_minutes` | positive integer dividing 1440 | `15` | sampling interval $\Delta$ in minutes |
 | `forecast.origin_time` | `HH:MM` time aligned with `frequency_minutes` | `23:45` | daily phase of $t^{(i)}$ |
 | `forecast.lookback_steps` | positive integer | `672` | observed history length $L$ |
@@ -81,10 +74,8 @@ have $K_g=5$. The group is invalid at $(i,\tau)$ if any member is invalid.
 | `covariates.calendar.include_hour` | Boolean | `true` | hour-of-day coordinates |
 | `covariates.calendar.include_day_of_week` | Boolean | `true` | weekday coordinates |
 | `covariates.calendar.include_is_weekend` | Boolean | `true` | binary Saturday/Sunday indicator |
-| `covariates.epex.enabled` | Boolean | `false` | request optional EPEX covariate input |
-| `covariates.profiles.enabled` | Boolean | `false` | request optional profile covariate input |
 
-For `vintage`, future weather at physical time $t^{(i)}+\tau\Delta$ is selected
+All timestamps are UTC. For `vintage`, future weather at physical time $t^{(i)}+\tau\Delta$ is selected
 only from a forecast vintage available by $t^{(i)}$. Target measurements are
 assumed available when measured, but future targets are never included in
 $\mathcal I^{(i)}$. See [Chapter 2](../scientific/02_data_and_information_set.md).
@@ -111,11 +102,10 @@ therefore changes the base fingerprint.
 | `chronos.device` | non-empty string accepted by the backend | `cuda` | numerical device, not a scientific change |
 | `chronos.dtype` | `float16`, `bfloat16`, or `float32` | `bfloat16` | inference arithmetic type |
 | `chronos.batch_size` | positive integer | `16` | inference batch size |
-| `chronos.cross_learning` | literal Boolean `false` | `false` | entities remain separate Chronos tasks |
 
 Source and model revisions determine the statistical forecast and enter the
-fingerprint. Device and batch size are operational and do not. Cross-entity
-attention in the foundation model is forbidden by the literal `false` field.
+fingerprint. Device and batch size are operational and do not. Each entity is
+forecast as a separate Chronos task, without cross-entity attention.
 
 ### 2.5 Finite-quantile marginal law and PIT
 
@@ -146,7 +136,6 @@ scientific marginal fingerprint and therefore selects a different cache. See
 | Key | YAML type and admissible values | Default | Meaning |
 |---|---|---|---|
 | `runtime.deterministic` | Boolean | `true` | request deterministic numerical execution |
-| `runtime.num_workers` | non-negative integer | `0` | data-loading worker count |
 | `runtime.log_level` | `DEBUG`, `INFO`, `WARNING`, or `ERROR` | `INFO` | console verbosity only |
 | `output.cache_dir` | path string | `artifacts/cache` | cache root; not part of the marginal fingerprint |
 | `output.save_resolved_config` | Boolean | `true` | save the resolved configuration with the cache, fit, and evaluation |
@@ -178,7 +167,6 @@ kind: method
 id: m1
 family: static_gaussian
 model:
-  shrinkage: ledoit_wolf
   share_across_leads: false
   jitter: 1.0e-6
 ```
@@ -188,11 +176,11 @@ model:
 | `kind` | literal string `method` | **required** | declares one dependence hypothesis |
 | `id` | safe slug | method YAML filename stem | method-file identity |
 | `family` | literal string `static_gaussian` | **required** | selects M1 |
-| `model.shrinkage` | literal string `ledoit_wolf` | `ledoit_wolf` | covariance shrinkage estimator |
 | `model.share_across_leads` | Boolean | `false` | `false`: one training correlation per lead; `true`: pool all valid leads |
 | `model.jitter` | strictly positive real | `1.0e-6` | diagonal numerical stabilization |
 
-M1 has no gradient optimization or conditioning features.
+M1 estimates each correlation with Ledoit--Wolf covariance shrinkage and has no
+gradient optimization or conditioning features.
 
 ### 3.3 Features for M2--M4
 
@@ -207,7 +195,6 @@ Only conditional methods admit `features`:
 | `use_log_spread` | Boolean | `true` | log absolute q90--q10 spread |
 | `use_within_patch_position` | Boolean | `true` | lead position inside an output patch |
 | `use_location` | Boolean | `true` | latitude and longitude |
-| `use_entity_id_embedding` | literal Boolean `false` | `false` | explicitly unsupported entity-ID embedding |
 | `shape_eps` | strictly positive real | `1.0e-6` | numerical threshold in shape/spread construction |
 | `standardize_scalar_features` | Boolean | `true` | estimate scalar-feature normalization from training origins only |
 
@@ -221,8 +208,7 @@ base.
 |---|---|---|---|
 | `family` | literal string `conditional_low_rank` | **required** | selects M2 |
 | `model.latent_rank` | positive integer | `4` | factor rank $r$ |
-| `model.hidden_dims` | non-empty list of positive integers | `[256,128]` | widths of the shared entity-wise network |
-| `model.activation` | literal string `gelu` | `gelu` | hidden nonlinearity |
+| `model.hidden_dims` | non-empty list of positive integers | `[256,128]` | widths of the shared entity-wise GELU network |
 | `model.dropout` | real number in $[0,1)$ | `0.1` | training-time dropout probability |
 | `model.sigma_floor` | strictly positive real | `1.0e-3` | lower bound for uniqueness standard deviations |
 | `model.jitter` | strictly positive real | `1.0e-6` | final correlation stabilization |
@@ -251,9 +237,8 @@ No positional entity index is supplied, preserving permutation equivariance.
 | Key | YAML type and admissible values | Default | Meaning |
 |---|---|---|---|
 | `family` | literal string `conditional_kernel` | **required** | selects M4 |
-| `model.hidden_dims` | non-empty list of positive integers | `[256,128]` | network widths mapping features to kernel coordinates |
+| `model.hidden_dims` | non-empty list of positive integers | `[256,128]` | widths of the GELU network mapping features to kernel coordinates |
 | `model.embedding_dim` | positive integer | `16` | dimension of learned coordinates $h_k$ |
-| `model.activation` | literal string `gelu` | `gelu` | hidden nonlinearity |
 | `model.dropout` | real number in $[0,1)$ | `0.1` | training-time dropout probability |
 | `model.initial_length_scale` | strictly positive real | `1.0` | initialization of $\ell$ in $\exp(-\|h_a-h_b\|^2/(2\ell^2))$ |
 | `model.nugget` | strictly positive real | `1.0e-3` | kernel diagonal stabilization |
@@ -266,7 +251,6 @@ M4 has no reduced-data flag, origin cap, or special budget.
 | Key | YAML type and admissible values | Default | Meaning |
 |---|---|---|---|
 | `optimization.seed` | non-negative integer | `42` | initialization and batch order |
-| `optimization.optimizer` | literal string `adamw` | `adamw` | optimization algorithm |
 | `optimization.batch_size` | positive integer | `64` | complete $(i,\tau)$ vectors per batch |
 | `optimization.epochs` | positive integer | `100` | maximum fitting passes |
 | `optimization.patience` | positive integer no greater than `epochs` | `12` | validation pseudo-NLL stopping patience |
@@ -274,8 +258,8 @@ M4 has no reduced-data flag, origin cap, or special budget.
 | `optimization.weight_decay` | non-negative real | `1.0e-4` | AdamW decay coefficient |
 | `optimization.gradient_clip_norm` | strictly positive real | `1.0` | gradient-norm bound |
 
-All three trainable methods use the same semantics. A composite may override
-budgets explicitly and validation then applies to that method type.
+All three trainable methods use AdamW with the same semantics. A composite may
+override budgets explicitly and validation then applies to that method type.
 
 ## 4. Composite configuration
 
@@ -392,21 +376,20 @@ figures:
 | `sampling.num_samples` | positive integer | `4096` | scenarios $M$ per valid case |
 | `sampling.evaluation_seed` | non-negative integer | `2027` | scenario randomness |
 | `sampling.common_random_numbers` | Boolean | `true` | case-keyed Gaussian draws shared across methods |
-| `sampling.empirical_quantile_method` | literal string `nearest` | `nearest` | order-statistic convention for aggregate quantiles; does not affect entity-level projection |
 | `evaluation.cross_entity_statistic` | `sum`, `absolute_sum`, `max`, or `absolute_max` | `sum` | scalar $T(\mathbf y)$ scored by aggregate metrics: $\sum_k y_k$, $\sum_k \lvert y_k\rvert$, $\max_k y_k$, or $\max_k \lvert y_k\rvert$, applied to every scenario and the observation |
 | `evaluation.quantile_levels` | sorted, unique non-empty list in $(0,1)$ | `[.05,.10,.25,.50,.75,.90,.95]` | aggregate quantiles scored by pinball loss |
 | `evaluation.interval_levels` | sorted, unique non-empty list in $(0,1)$ | `[.50,.80,.90]` | central interval coverages $c$, using the $(1-c)/2$ and $(1+c)/2$ scenario quantiles |
 | `evaluation.variogram_power` | real number in $(0,2]$ | `0.5` | Variogram Score pairwise-difference exponent |
 | `evaluation.joint_score_num_samples` | positive integer | `512` | selected joint-ensemble size for Energy/Variogram Scores |
 | `evaluation.scenario_batch_size` | positive integer | `16` | scenario-generation batch size; operational only |
-| `evaluation.energy_score`, `evaluation.variogram_score`, `evaluation.report_by_lead` | Boolean | `true` | accepted for compatibility but ignored; joint scores follow `metrics` and lead tables are always written |
 | `figures.aggregate_origin` | ISO timestamp of a test origin | first test origin | origin shown in `aggregate_fan.png` |
 | `figures.correlation_origin` | ISO timestamp of a test origin | first test origin | origin shown in `correlation.png` |
 | `figures.correlation_lead` | positive integer no greater than the horizon | `1` | lead shown in `correlation.png` |
 | `base_ids` | list of unique base IDs | `[]` | standalone mode only: bases to evaluate; empty means all |
 | `method_ids` | list of unique method IDs | `[]` | standalone mode only: methods to evaluate; empty means all |
-| `output_dir` | path | none | accepted but unused; evaluations are always written below `<run-root>/evaluations/` |
 
+Evaluations are always written to `<run-root>/evaluations/<evaluation-id>/`.
+Aggregate quantiles are nearest empirical order statistics of the scenarios.
 Metric names are columns of `per_origin_metrics.parquet`. Besides the six
 defaults, per-level columns such as `pinball_q0.5`, `coverage_0.9`,
 `interval_width_0.9`, and `interval_score_0.9` are available for every

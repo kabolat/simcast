@@ -492,7 +492,7 @@ def build_cache_from_config(
             "frequency_minutes": config.forecast.frequency_minutes,
             "origin_stride_steps": config.forecast.origin_stride_steps,
             "origin_time": config.forecast.origin_time.isoformat(),
-            "timezone": config.forecast.timezone,
+            "timezone": "UTC",
             "coverage_start": coverage_start.isoformat(),
             "coverage_end": coverage_end.isoformat(),
         },

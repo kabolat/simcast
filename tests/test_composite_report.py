@@ -1,27 +1,9 @@
-import json
 from pathlib import Path
 
 import pandas as pd
 
 from simcast.config import CompositeAnalysisConfig
-from simcast.reporting import read_evaluation_artifacts, write_composite_report
-
-
-def test_current_and_legacy_evaluation_manifests_are_read_without_rewriting(tmp_path: Path) -> None:
-    current = tmp_path / "current" / "evaluation_manifest.json"
-    legacy = tmp_path / "legacy" / "nested" / "evaluation_manifest.json"
-    current.parent.mkdir(parents=True)
-    legacy.parent.mkdir(parents=True)
-    current_payload = {"schema": "simcast.evaluation.v2", "methods": ["conditional_kernel"]}
-    legacy_payload = {"experimental_protocol": {"name": "historical"}, "methods": ["independent"]}
-    current.write_text(json.dumps(current_payload), encoding="utf-8")
-    legacy.write_text(json.dumps(legacy_payload), encoding="utf-8")
-    before = {path: path.read_bytes() for path in (current, legacy)}
-
-    artifacts = read_evaluation_artifacts(tmp_path)
-
-    assert [artifact.manifest for artifact in artifacts] == [current_payload, legacy_payload]
-    assert {path: path.read_bytes() for path in (current, legacy)} == before
+from simcast.reporting import write_composite_report
 
 
 def test_generic_composite_report_includes_m4(tmp_path: Path) -> None:

@@ -104,7 +104,6 @@ def test_statistic_is_retained_in_evaluation_artifacts(tmp_path: Path, statistic
 def _config(tmp_path: Path) -> ResolvedExperimentConfig:
     return ResolvedExperimentConfig.model_validate(
         {
-            "protocol": {"name": "full_group", "full_group_only": True},
             "chronos": {"device": "cpu"},
             "sampling": {"num_samples": 32},
             "evaluation": {
@@ -113,7 +112,6 @@ def _config(tmp_path: Path) -> ResolvedExperimentConfig:
                 "scenario_batch_size": 2,
                 "joint_score_num_samples": 8,
             },
-            "output": {"root_dir": tmp_path / "runs"},
         }
     )
 
@@ -138,23 +136,13 @@ def test_full_group_evaluation_uses_only_the_complete_group(tmp_path: Path) -> N
     assert (output / "metrics_by_lead.csv").is_file()
     assert (output / "per_origin_lead_metrics.parquet").is_file()
     assert (output / "per_origin_metrics.parquet").is_file()
-    assert not (output / "variable_k.csv").exists()
-    assert not (output / "scientific_summary.json").exists()
     assert (output / "evaluation_manifest.json").is_file()
     assert (output / "resolved_config.yaml").is_file()
     assert (output / "figures" / "dataset_locations.png").is_file()
     assert (output / "figures" / "marginal_pit.png").is_file()
     assert (output / "figures" / "independent" / "summary_by_lead_mean_pinball.png").is_file()
-    assert not (output / "figures" / "variable_cardinality.png").exists()
     manifest = json.loads((output / "evaluation_manifest.json").read_text(encoding="utf-8"))
     assert manifest["group"]["entity_count"] == 4
-    assert manifest["experimental_protocol"] == {
-        "name": "full_group",
-        "full_group_only": True,
-        "subset_training": False,
-        "entity_selection_augmentation_enabled": False,
-    }
-    assert "variable_k_entity_ids" not in manifest
 
 
 def test_evaluation_rejects_a_shrunken_correlation_matrix(tmp_path: Path) -> None:

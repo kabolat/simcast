@@ -1,4 +1,4 @@
-"""Origin-level aggregation and paired moving-block uncertainty analysis."""
+"""Paired moving-block uncertainty analysis of origin-level scores."""
 
 from __future__ import annotations
 
@@ -6,7 +6,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 import numpy as np
-import pandas as pd
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,48 +85,3 @@ def paired_moving_block_bootstrap(
         bootstrap_replicates=bootstrap_replicates,
         number_of_origins=int(difference.size),
     )
-
-
-def mean_neural_seeds_per_origin(per_origin: pd.DataFrame, metric: str) -> pd.DataFrame:
-    """Average neural repetitions within each method/origin before temporal inference."""
-
-    required = {"group", "method", "origin", metric}
-    if missing := required - set(per_origin.columns):
-        raise ValueError(f"per-origin table is missing columns: {sorted(missing)}")
-    result = per_origin.groupby(["group", "method", "origin"], as_index=False, sort=False)[[metric]].mean()
-    return result.sort_values(by=["group", "method", "origin"])
-
-
-def seed_summary(per_origin: pd.DataFrame, metric: str = "mean_pinball") -> pd.DataFrame:
-    """Summarize each method/seed after averaging its chronological origins."""
-
-    required = {"group", "method", "neural_seed", metric}
-    if missing := required - set(per_origin.columns):
-        raise ValueError(f"per-origin table is missing columns: {sorted(missing)}")
-    result = per_origin.groupby(["group", "method", "neural_seed"], dropna=False, as_index=False)[[metric]].mean()
-    return result.rename(columns={metric: "primary_metric"})
-
-
-def select_representative_origins(origin_table: pd.DataFrame) -> list[pd.Timestamp]:
-    """Choose examples from timestamps and observed aggregates, never method error."""
-
-    required = {"origin", "observed_aggregate"}
-    if missing := required - set(origin_table.columns):
-        raise ValueError(f"origin table is missing columns: {sorted(missing)}")
-    frame = origin_table.dropna(subset=["origin", "observed_aggregate"]).copy()
-    if frame.empty:
-        return []
-    frame["origin"] = pd.to_datetime(frame["origin"], utc=True)
-    frame = frame.sort_values("origin").drop_duplicates("origin")
-    winter = frame[frame["origin"].dt.month.isin([12, 1, 2])]
-    summer = frame[frame["origin"].dt.month.isin([6, 7, 8])]
-    median_value = frame["observed_aggregate"].median()
-    median_row = frame.loc[(frame["observed_aggregate"] - median_value).abs().idxmin(), "origin"]
-    high_row = frame.loc[frame["observed_aggregate"].idxmax(), "origin"]
-    candidates = [
-        winter.iloc[0]["origin"] if not winter.empty else frame.iloc[0]["origin"],
-        summer.iloc[0]["origin"] if not summer.empty else frame.iloc[0]["origin"],
-        median_row,
-        high_row,
-    ]
-    return list(dict.fromkeys(pd.Timestamp(value) for value in candidates))

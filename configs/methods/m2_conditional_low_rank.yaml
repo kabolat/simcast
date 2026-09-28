@@ -9,19 +9,16 @@ features:
   use_log_spread: true
   use_within_patch_position: true
   use_location: true
-  use_entity_id_embedding: false
   shape_eps: 1.0e-6
   standardize_scalar_features: true
 model:
   latent_rank: 4
   hidden_dims: [256, 128]
-  activation: gelu
   dropout: 0.1
   sigma_floor: 1.0e-3
   jitter: 1.0e-6
 optimization:
   seed: 42
-  optimizer: adamw
   batch_size: 64
   epochs: 100
   learning_rate: 1.0e-3

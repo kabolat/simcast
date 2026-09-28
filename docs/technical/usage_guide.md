@@ -486,10 +486,6 @@ A comparison is valid only when the base fingerprint and complete entity
 ordering coincide. [Chapter 7](../scientific/07_experiments_and_results.md)
 states what must accompany a scientific claim.
 
-Historical artifacts can be inspected read-only with
-`simcast.reporting.read_evaluation_artifacts`; historical execution schemas are
-not accepted.
-
 ## 11. Notebooks
 
 Register the project kernel once, then start Jupyter through the project
@@ -586,8 +582,8 @@ composite entries (§6), so they are recorded in the resolved composite.
 | Hugging Face unauthenticated warning | public retrieval is rate-limited; optionally set `HF_TOKEN` |
 | No crossing figure in notebook 02 | the selected cache has no representative crossing; this is a valid result |
 | `evaluate`/`report` reports several runs | pass `--run-id`, or use `--config` with `--run-root` |
-| Report rejects a metric | add it to the evaluation's `metrics` and re-run `evaluate`, or drop it from the report |
-| Evaluation or report looks stale after a config change | re-run with `--force` |
+| Report rejects a metric | add it to the evaluation's `metrics` and run `evaluate --force`, or drop it from the report |
+| Evaluation or report must reflect a changed config | run it again with `--force` |
 | Configuration rejected | check the [configuration reference](configuration_reference.md); unknown and cross-method fields are invalid |
 
 ## 14. Validation without experiments

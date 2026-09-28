@@ -47,12 +47,9 @@ class DataConfig(ConfigModel):
     local_dir: Path = Path("data/liander2024")
     entity_type: EntityType = "transformer"
     target_column: str = "load"
-    include_epex: bool = False
-    include_profiles: bool = False
 
 
 class ForecastConfig(ConfigModel):
-    timezone: Literal["UTC"] = "UTC"
     frequency_minutes: PositiveInt = 15
     origin_time: time = time(23, 45)
     lookback_steps: PositiveInt = 672
@@ -76,10 +73,6 @@ class CalendarConfig(ConfigModel):
     include_is_weekend: bool = True
 
 
-class OptionalCovariateConfig(ConfigModel):
-    enabled: bool = False
-
-
 class CovariatesConfig(ConfigModel):
     weather: list[str] = Field(
         default_factory=lambda: [
@@ -92,8 +85,6 @@ class CovariatesConfig(ConfigModel):
     )
     future_weather_source: Literal["vintage", "oracle"] = "vintage"
     calendar: CalendarConfig = Field(default_factory=CalendarConfig)
-    epex: OptionalCovariateConfig = Field(default_factory=OptionalCovariateConfig)
-    profiles: OptionalCovariateConfig = Field(default_factory=OptionalCovariateConfig)
 
     @field_validator("weather")
     @classmethod
@@ -119,7 +110,6 @@ class ChronosConfig(ConfigModel):
     device: str = "cuda"
     dtype: Literal["float16", "bfloat16", "float32"] = "bfloat16"
     batch_size: PositiveInt = 16
-    cross_learning: Literal[False] = False
 
     @field_validator("device")
     @classmethod
@@ -143,8 +133,6 @@ class PitConfig(ConfigModel):
 
 
 class ProtocolConfig(ConfigModel):
-    name: Literal["full_group"] = "full_group"
-    full_group_only: Literal[True] = True
     ordered_entity_ids: list[str] = Field(default_factory=list)
     entity_count: PositiveInt | None = None
 
@@ -164,13 +152,11 @@ class FeaturesConfig(ConfigModel):
     use_log_spread: bool = True
     use_within_patch_position: bool = True
     use_location: bool = True
-    use_entity_id_embedding: bool = False
     shape_eps: PositiveFloat = 1.0e-6
     standardize_scalar_features: bool = True
 
 
 class StaticGaussianConfig(ConfigModel):
-    shrinkage: Literal["ledoit_wolf"] = "ledoit_wolf"
     share_across_leads: bool = False
     jitter: PositiveFloat = 1.0e-6
 
@@ -178,7 +164,6 @@ class StaticGaussianConfig(ConfigModel):
 class ConditionalLowRankConfig(ConfigModel):
     latent_rank: PositiveInt = 4
     hidden_dims: list[PositiveInt] = Field(default_factory=lambda: [256, 128], min_length=1)
-    activation: Literal["gelu"] = "gelu"
     dropout: Dropout = 0.1
     sigma_floor: PositiveFloat = 1.0e-3
     jitter: PositiveFloat = 1.0e-6
@@ -203,7 +188,6 @@ class SetAwareLowRankConfig(ConfigModel):
 class ConditionalKernelConfig(ConfigModel):
     hidden_dims: list[PositiveInt] = Field(default_factory=lambda: [256, 128], min_length=1)
     embedding_dim: PositiveInt = 16
-    activation: Literal["gelu"] = "gelu"
     dropout: Dropout = 0.1
     initial_length_scale: PositiveFloat = 1.0
     nugget: PositiveFloat = 1.0e-3
@@ -242,7 +226,6 @@ class DependenceConfig(ConfigModel):
 
 
 class TrainingConfig(ConfigModel):
-    optimizer: Literal["adamw"] = "adamw"
     batch_size: PositiveInt = 64
     epochs: PositiveInt = 100
     learning_rate: PositiveFloat = 1.0e-3
@@ -260,7 +243,6 @@ class TrainingConfig(ConfigModel):
 class SamplingConfig(ConfigModel):
     num_samples: PositiveInt = 4096
     evaluation_seed: NonNegativeInt = 2027
-    empirical_quantile_method: Literal["nearest"] = "nearest"
     common_random_numbers: bool = True
 
 
@@ -268,10 +250,7 @@ class EvaluationConfig(ConfigModel):
     cross_entity_statistic: Literal["sum", "absolute_sum", "max", "absolute_max"] = "sum"
     quantile_levels: list[float] = Field(default_factory=lambda: [0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95])
     interval_levels: list[float] = Field(default_factory=lambda: [0.50, 0.80, 0.90])
-    energy_score: bool = True
-    variogram_score: bool = True
     variogram_power: Annotated[float, Field(gt=0.0, le=2.0)] = 0.5
-    report_by_lead: bool = True
     scenario_batch_size: PositiveInt = 16
     joint_score_num_samples: PositiveInt = 512
 
@@ -294,15 +273,12 @@ class EvaluationFiguresConfig(ConfigModel):
 
 class RuntimeConfig(ConfigModel):
     deterministic: bool = True
-    num_workers: NonNegativeInt = 0
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
 
 class OutputConfig(ConfigModel):
-    root_dir: Path = Path("runs")
     cache_dir: Path = Path("artifacts/cache")
     cache_name: str | None = None
-    experiment_name: str | None = None
     save_resolved_config: bool = True
 
 
@@ -413,15 +389,12 @@ class SetAwareLowRankMethodConfig(ConfigModel):
     optimization: OptimizationConfig
 
 
-KernelModelConfig: TypeAlias = ConditionalKernelConfig
-
-
 class ConditionalKernelMethodConfig(ConfigModel):
     kind: Literal["method"]
     id: Slug
     family: Literal["conditional_kernel"]
     features: FeaturesConfig
-    model: KernelModelConfig
+    model: ConditionalKernelConfig
     optimization: OptimizationConfig
 
 
@@ -459,9 +432,8 @@ class CompositeMethodEntry(ConfigModel):
 class EvaluationDocumentConfig(ConfigModel):
     """A reusable evaluation design: sampling and scoring settings.
 
-    ``base_ids``, ``method_ids``, and ``output_dir`` are used when this
-    document is run standalone against an already-fitted run; the run path is
-    supplied explicitly by the CLI.
+    ``base_ids`` and ``method_ids`` select fits when this document is run
+    standalone against a completed run supplied by the CLI.
     """
 
     kind: Literal["evaluation"]
@@ -482,7 +454,6 @@ class EvaluationDocumentConfig(ConfigModel):
     figures: EvaluationFiguresConfig = Field(default_factory=EvaluationFiguresConfig)
     base_ids: list[Slug] = Field(default_factory=list)
     method_ids: list[Slug] = Field(default_factory=list)
-    output_dir: Path | None = None
 
     @field_validator("base_ids", "method_ids")
     @classmethod
@@ -763,7 +734,6 @@ def marginal_fingerprint(values: Mapping[str, Any]) -> str:
     chronos = values["chronos"]
     payload = {
         "protocol": {
-            "full_group_only": protocol["full_group_only"],
             "ordered_entity_ids": protocol["ordered_entity_ids"],
             "entity_count": protocol["entity_count"],
         },
@@ -805,10 +775,8 @@ def resolve_run_config(
         if key not in {"kind", "id", "output"}
     }
     values["output"] = {
-        "root_dir": "runs",
         "cache_dir": base.output.cache_dir,
         "cache_name": f"{base.id}-{base_fingerprint(base)[:12]}",
-        "experiment_name": f"{base.id}_{method.id}",
         "save_resolved_config": base.output.save_resolved_config,
     }
     values["dependence"] = {"method": method.family, "model": None}

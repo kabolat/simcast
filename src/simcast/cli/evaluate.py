@@ -16,7 +16,7 @@ import pandas as pd
 import torch
 import yaml  # type: ignore[import-untyped]
 
-from simcast.cli.train_dependence import _cache_path, _dependence_scores
+from simcast.cli.train_dependence import _dependence_scores
 from simcast.config import EvaluationFiguresConfig, ResolvedExperimentConfig
 from simcast.dependence import IndependentCopula, StaticGaussianCopula
 from simcast.evaluation.aggregate import AggregateEvaluation, evaluate_aggregate_ensemble
@@ -36,7 +36,7 @@ from simcast.evaluation.plots import (
     plot_score_by_lead,
 )
 from simcast.fm.cache import PITLibrary, load_pit_library
-from simcast.reproducibility import config_sha256, git_commit, sha256_file, utc_run_id
+from simcast.reproducibility import config_sha256, git_commit, sha256_file
 from simcast.sampling.gaussian_copula import generate_scenarios
 from simcast.training.checkpoint import LoadedConditionalModel, load_conditional_checkpoint
 from simcast.training.losses import gaussian_copula_pseudo_nll
@@ -72,37 +72,6 @@ class MethodEvaluation:
     pseudo_nll: torch.Tensor
     correlations: torch.Tensor
     interval_predictions: torch.Tensor
-
-
-def _latest_run(root: Path, method: str) -> Path:
-    candidates = sorted(path for path in root.glob(f"*_{method}") if path.is_dir())
-    if not candidates:
-        raise FileNotFoundError(f"no trained run matching '*_{method}' under {root}")
-    return candidates[-1]
-
-
-def _resolve_runs(
-    config: ResolvedExperimentConfig,
-    methods: Sequence[str],
-    supplied: Mapping[str, str | Path] | None,
-) -> dict[str, Path]:
-    provided = {} if supplied is None else {name: Path(path).expanduser().resolve() for name, path in supplied.items()}
-    root = Path(config.output.root_dir).expanduser().resolve()
-    for method in methods:
-        if method != "independent" and method not in provided:
-            provided[method] = _latest_run(root, method)
-    return provided
-
-
-def _evaluation_directory(config: ResolvedExperimentConfig, override: str | Path | None) -> Path:
-    if override is None:
-        stamp = utc_run_id()
-        path = (Path(config.output.root_dir).expanduser() / f"{stamp}_evaluation").resolve()
-    else:
-        path = Path(override).expanduser().resolve()
-    path.mkdir(parents=True, exist_ok=False)
-    (path / "figures").mkdir()
-    return path
 
 
 def _entity_ids(library: PITLibrary, indices: Sequence[int] | None = None) -> list[str]:
@@ -145,17 +114,15 @@ def _prepare_method(
         return PreparedMethod(name, matrix.expand(n_origin, horizon, n_entity, n_entity).clone())
     if name == "static_gaussian":
         model = StaticGaussianCopula.load(run_paths[name] / "model.npz")
-        if config.protocol.full_group_only and tuple(ids) != model.entity_ids:
-            raise ValueError("full-group evaluation requires the exact ordered M1 entity set")
+        if tuple(ids) != model.entity_ids:
+            raise ValueError("evaluation requires the exact ordered M1 entity set")
         matrices = torch.stack([model.correlation_matrix(lead, entity_ids=ids) for lead in range(1, horizon + 1)])
         return PreparedMethod(name, matrices[None].expand(n_origin, -1, -1, -1).to(torch.float32).clone())
     checkpoint = load_conditional_checkpoint(run_paths[name] / "best.pt", device="cpu")
     if checkpoint.method != name:
         raise ValueError(f"{name} run contains a {checkpoint.method} checkpoint")
-    if config.protocol.full_group_only and tuple(ids) != checkpoint.entity_ids:
-        raise ValueError(f"full-group evaluation requires the exact ordered {name} checkpoint entity set")
-    if not set(ids).issubset(checkpoint.entity_ids):
-        raise ValueError(f"{name} checkpoint entity IDs do not cover the evaluation group")
+    if tuple(ids) != checkpoint.entity_ids:
+        raise ValueError(f"evaluation requires the exact ordered {name} checkpoint entity set")
     levels = torch.tensor(library.dataset["quantile"].values, dtype=torch.float32)
     features = checkpoint.feature_builder.transform(
         embeddings, predictions, levels, _locations(library, entity_indices)
@@ -589,13 +556,13 @@ def _figure_origin_index(origins: pd.DatetimeIndex, requested: datetime | None) 
 def evaluate_from_config(
     config: ResolvedExperimentConfig,
     *,
-    methods: Sequence[str] = CORE_METHODS,
+    methods: Sequence[str],
+    cache_dir: str | Path,
+    output_dir: str | Path,
     metrics: Sequence[str] | None = None,
     figures: EvaluationFiguresConfig | None = None,
     base_figures_dir: str | Path | None = None,
     method_runs: Mapping[str, str | Path] | None = None,
-    cache_dir: str | Path | None = None,
-    output_dir: str | Path | None = None,
 ) -> Path:
     """Open sealed test truth once and perform final evaluation."""
 
@@ -612,10 +579,14 @@ def evaluate_from_config(
         "variogram_score",
         "test_pseudo_nll",
     ])
-    cache_path = _cache_path(config, cache_dir)
+    cache_path = Path(cache_dir).expanduser().resolve()
     library = load_pit_library(cache_path, access="evaluation")
-    runs = _resolve_runs(config, methods, method_runs)
-    output = _evaluation_directory(config, output_dir)
+    runs = {name: Path(path).expanduser().resolve() for name, path in (method_runs or {}).items()}
+    if missing := [name for name in methods if name != "independent" and name not in runs]:
+        raise ValueError(f"method_runs must supply fitted runs for {missing}")
+    output = Path(output_dir).expanduser().resolve()
+    output.mkdir(parents=True, exist_ok=False)
+    (output / "figures").mkdir()
     all_entities = list(range(library.dataset.sizes["entity"]))
     entity_ids = _entity_ids(library)
     if config.protocol.ordered_entity_ids and entity_ids != config.protocol.ordered_entity_ids:
@@ -680,12 +651,6 @@ def evaluate_from_config(
             "name": config.data.entity_type,
             "entity_ids": entity_ids,
             "entity_count": len(all_entities),
-        },
-        "experimental_protocol": {
-            "name": config.protocol.name,
-            "full_group_only": config.protocol.full_group_only,
-            "subset_training": False,
-            "entity_selection_augmentation_enabled": False,
         },
         "joint_score_estimator": "empirical all-pairs estimator on the selected joint ensemble",
         "joint_score_num_samples": config.evaluation.joint_score_num_samples,

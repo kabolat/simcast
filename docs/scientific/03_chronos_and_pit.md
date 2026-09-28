@@ -62,11 +62,11 @@ any of these three marginal forecasts.
 | frozen model identity | `chronos.model_id`, `chronos.model_revision` | `Chronos2FeatureExtractor` |
 | source implementation | `chronos.source_revision` | `src/simcast/fm/chronos2_features.py` |
 | numerical precision | `chronos.dtype`, `chronos.device` | `Chronos2FeatureExtractor.predict` |
-| physical entities remain separate | `chronos.cross_learning: false` | group-ID construction in `Chronos2FeatureExtractor` |
+| physical entities remain separate | always; no configuration | group-ID construction in `Chronos2FeatureExtractor` |
 | lookback and horizon | `forecast.lookback_steps`, `forecast.horizon_steps` | cache construction in `build_cache_from_config` |
 
-`cross_learning: true` would change the scientific intervention and is therefore
-not part of the present study.
+Each entity is a separate Chronos task. Cross-learning between entities would
+change the scientific intervention and is not part of the study.
 
 ## 2. Finite native quantile representation
 
@@ -321,7 +321,7 @@ The analysis never estimates a four-entity correlation for this case.
 
 ### Configuration and implementation
 
-`protocol.full_group_only: true`, `protocol.ordered_entity_ids`, and
+`protocol.ordered_entity_ids` and
 `protocol.entity_count` declare the group. `build_group_pit` applies the
 complete-vector rule and returns `valid_origin_lead`. `PITLibrary` stores all
 invalid group scores as missing values so every dependence method receives the
@@ -415,9 +415,9 @@ draws, never the values of the native quantile knots.
 `GaussianCopulaSampler` combines it with correlated uniforms. The configured
 isotonic-repaired grid, when applicable, is the grid projected here.
 
-`sampling.empirical_quantile_method: nearest` is unrelated to this choice: it
-selects how a reported aggregate quantile is extracted from the finite Monte
-Carlo ensemble after entity scenarios have been summed.
+This choice is unrelated to how a reported aggregate quantile is extracted
+from the finite Monte Carlo ensemble after entity scenarios have been
+combined: that always uses the nearest empirical order statistic.
 
 ## 8. Features for conditional dependence
 

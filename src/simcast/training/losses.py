@@ -80,15 +80,3 @@ def gaussian_copula_pseudo_nll(
     if reduction == "sum":
         return torch.as_tensor(loss.sum())
     return torch.as_tensor(loss)
-
-
-def gaussian_copula_nll(
-    z: torch.Tensor,
-    correlation: torch.Tensor,
-    *,
-    jitter: float = 1.0e-6,
-    reduction: Reduction = "mean",
-) -> torch.Tensor:
-    """Short alias for :func:`gaussian_copula_pseudo_nll`."""
-
-    return gaussian_copula_pseudo_nll(z, correlation, jitter=jitter, reduction=reduction)

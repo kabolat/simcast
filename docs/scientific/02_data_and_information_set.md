@@ -20,7 +20,6 @@ weather_measurements/<entity_type>/*.parquet
 weather_forecasts_versioned/<entity_type>/*.parquet
 ```
 
-The optional EPEX and profile files are disabled in the present experiments.
 The code supports five homogeneous groups:
 
 | Entity type / static group $g$ | Full-group cardinality $K_g$ | Target availability rule |
@@ -139,9 +138,7 @@ $$
 There is no day-of-year covariate. This gives 10 past and 10 future covariate
 channels by default.
 
-The past and future column lists must match exactly. EPEX and profile flags are
-part of the data-download schema but are not incorporated into the implemented
-Chronos covariate construction.
+The past and future column lists must match exactly.
 
 ## Chronological partitioning and purging
 

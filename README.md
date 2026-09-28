@@ -140,9 +140,7 @@ origin-level moving-block bootstrap to retain temporal dependence.
 
 Every run records the complete ordered entity set, revisions, resolved
 configurations, hashes, seeds, environment and Git metadata, fitted methods,
-evaluation manifests, and completion state. Historical evaluation manifests
-remain readable through `simcast.reporting`, but old execution schemas are not
-accepted or rewritten.
+evaluation manifests, and completion state.
 
 ## Validation
 

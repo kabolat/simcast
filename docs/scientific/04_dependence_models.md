@@ -84,8 +84,6 @@ complete full-group vectors are required per estimated matrix.
 
 With `share_across_leads: true`, complete vectors are pooled over leads and one
 matrix is repeated across $H$. The baseline uses the default lead-specific form.
-M1 never applies entity selection, regardless of the legacy subset flag that
-appeared in some old resolved configurations.
 
 ## Shared low-rank parameterization
 

@@ -9,20 +9,15 @@ from typing import Annotated
 import typer
 
 
-def allow_patterns(entity_type: str, *, include_epex: bool = False, include_profiles: bool = False) -> list[str]:
+def allow_patterns(entity_type: str) -> list[str]:
     """Return the minimum snapshot paths needed by the configured entity type."""
 
-    patterns = [
+    return [
         "liander2024_targets.yaml",
         f"load_measurements/{entity_type}/*.parquet",
         f"weather_measurements/{entity_type}/*.parquet",
         f"weather_forecasts_versioned/{entity_type}/*.parquet",
     ]
-    if include_epex:
-        patterns.append("EPEX.parquet")
-    if include_profiles:
-        patterns.append("profiles.parquet")
-    return patterns
 
 
 def download_data(
@@ -50,11 +45,7 @@ def download_data(
         repo_type="dataset",
         revision=data.revision,
         local_dir=local_dir,
-        allow_patterns=allow_patterns(
-            data.entity_type,
-            include_epex=data.include_epex,
-            include_profiles=data.include_profiles,
-        ),
+        allow_patterns=allow_patterns(data.entity_type),
     )
     return Path(downloaded)
 

@@ -185,10 +185,6 @@ outputs pass completion checks. A changed composite must use a new run
 identifier. The exact venue and resume interface is specified in the
 [usage guide](../technical/usage_guide.md#9-venues-identifiers-and-resume).
 
-Existing scientific runs and reports are never migrated in place. The generic
-legacy reader parses historical evaluation manifests as unmodified JSON; it
-does not make them executable under the current protocol.
-
 ## 9. From completed computation to reported evidence
 
 A result is a chain of records, rather than a number copied from a console.

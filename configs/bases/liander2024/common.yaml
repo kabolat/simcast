@@ -1,17 +1,10 @@
-protocol:
-  name: full_group
-  full_group_only: true
-
 data:
   dataset_id: OpenSTEF/liander2024-energy-forecasting-benchmark
   revision: dce7fe9bbae0d62288986fa97fa1ee7e9d3b7044
   local_dir: ${SIMCAST_DATA_DIR:-data/liander2024}
   target_column: load
-  include_epex: false
-  include_profiles: false
 
 forecast:
-  timezone: UTC
   frequency_minutes: 15
   origin_time: "23:45"
   lookback_steps: 672
@@ -26,10 +19,6 @@ covariates:
     include_day_of_week: true
     include_is_weekend: true
   future_weather_source: vintage
-  epex: 
-    enabled: false
-  profiles: 
-    enabled: false
 
 split:
   tune_fraction: 0.80
@@ -44,7 +33,6 @@ chronos:
   device: ${SIMCAST_DEVICE:-cuda}
   dtype: bfloat16
   batch_size: 256
-  cross_learning: false
 
 pit:
   mode: discretized
@@ -54,7 +42,6 @@ pit:
 
 runtime:
   deterministic: true
-  num_workers: 0
   log_level: INFO
 
 output:

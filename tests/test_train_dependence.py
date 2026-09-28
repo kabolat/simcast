@@ -37,7 +37,6 @@ def _cache(path: Path, *, invalid_train_prefix: int = 0) -> Path:
 def _config(tmp_path: Path, method: str) -> ResolvedExperimentConfig:
     return ResolvedExperimentConfig.model_validate(
         {
-            "protocol": {"name": "full_group", "full_group_only": True},
             "chronos": {"device": "cpu"},
             "dependence": {
                 "method": method,
@@ -63,7 +62,6 @@ def _config(tmp_path: Path, method: str) -> ResolvedExperimentConfig:
                 if method in {"conditional_low_rank", "set_aware_low_rank", "conditional_kernel"}
                 else {}
             ),
-            "output": {"root_dir": str(tmp_path / "runs")},
         }
     )
 
@@ -96,12 +94,6 @@ def test_train_and_restore_conditional_model(tmp_path: Path) -> None:
         "name": "transformer",
         "entity_ids": ["e-0", "e-1", "e-2", "e-3"],
         "entity_count": 4,
-    }
-    assert metadata["experimental_protocol"] == {
-        "name": "full_group",
-        "full_group_only": True,
-        "subset_training": False,
-        "entity_selection_augmentation_enabled": False,
     }
 
 

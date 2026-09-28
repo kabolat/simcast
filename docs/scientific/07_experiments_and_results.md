@@ -132,24 +132,13 @@ Sensitivity analyses are separate explicit composites:
 Strict method validation prevents nonsensical contrasts such as assigning a
 factor rank to M4 or conditional features to M0.
 
-## 7. Status of historical results
+## 7. Admissible numerical results
 
-Any existing `runs/` and `reports/` directories that predate this
-configuration migration are untouched, read-only history, not evidence for the
-current composites. The tracked `results/` directory of pre-migration
-exploratory summaries has been retired: some of its neural results were
-produced with random entity-subset augmentation and were never full-group
-evidence. It remains recoverable from Git history for audit purposes, but it
-is not restored, relabeled, or regenerated.
+This chapter reports no numerical headline table. A table becomes
+scientifically admissible only after the explicit composite is run to
+completion and its manifest verifies the full-group design.
 
-No empirical experiment or report was run as part of the configuration
-refactor. Consequently this chapter does not invent a new numerical headline
-table. A current table becomes scientifically admissible only after the
-explicit composite is run to completion and its manifest verifies the current
-schema and full-group design.
-
-Implementation: `read_evaluation_artifacts` provides read-only historical
-inspection. `uv run composite` creates the immutable fits and declared
+Implementation: `uv run composite` creates the immutable fits and declared
 evaluations; `uv run evaluate` adds evaluations to a completed run; and
 `uv run report` creates summaries, paired effects, and figures from recorded
 evaluations.
@@ -207,5 +196,4 @@ The [usage guide's reporting instructions](../technical/usage_guide.md#10-output
 show how to find these records; the
 [artifact reference](../technical/artifact_reference.md#evaluation-directory)
 names their schemas. Do not merge rows across bases with different
-fingerprints or present legacy subset-trained neural artifacts as a result of
-this protocol.
+fingerprints.

@@ -33,27 +33,18 @@ def write_yaml(path: Path, value: Any) -> None:
     path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
 
 
-def _cache_fingerprint(path: Path) -> str | None:
+def _cache_config(path: Path) -> dict[str, Any] | None:
     metadata_path = path / "metadata.json"
     if not metadata_path.is_file():
         return None
-    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    resolved = metadata.get("base_config") or metadata.get("resolved_config")
-    if not isinstance(resolved, dict):
+    resolved = json.loads(metadata_path.read_text(encoding="utf-8")).get("resolved_config")
+    return resolved if isinstance(resolved, dict) else None
+
+
+def _cache_fingerprint(path: Path) -> str | None:
+    resolved = _cache_config(path)
+    if resolved is None:
         return None
-    protocol = resolved.get("protocol")
-    if isinstance(protocol, dict) and not protocol.get("ordered_entity_ids"):
-        group = metadata.get("entity_group", {})
-        resolved = deep_merge(
-            resolved,
-            {
-                "protocol": {
-                    "full_group_only": True,
-                    "ordered_entity_ids": group.get("entity_ids", []),
-                    "entity_count": len(group.get("entity_ids", [])),
-                }
-            },
-        )
     try:
         return marginal_fingerprint(resolved)
     except (KeyError, TypeError):
@@ -61,12 +52,8 @@ def _cache_fingerprint(path: Path) -> str | None:
 
 
 def _cache_dependence_transform(path: Path) -> str | None:
-    metadata_path = path / "metadata.json"
-    if not metadata_path.is_file():
-        return None
-    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    resolved = metadata.get("base_config") or metadata.get("resolved_config")
-    pit = resolved.get("pit") if isinstance(resolved, dict) else None
+    resolved = _cache_config(path)
+    pit = resolved.get("pit") if resolved is not None else None
     return pit.get("dependence_transform") if isinstance(pit, dict) else None
 
 

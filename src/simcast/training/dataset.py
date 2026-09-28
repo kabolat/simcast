@@ -60,7 +60,7 @@ class DependenceBatch:
 
 
 class DependenceCollator:
-    """Collate complete static groups without entity selection."""
+    """Collate complete static groups."""
 
     def __call__(self, samples: list[DependenceSample]) -> DependenceBatch:
         if not samples:

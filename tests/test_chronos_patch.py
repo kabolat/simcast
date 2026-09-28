@@ -65,7 +65,7 @@ def test_exposed_features_are_the_quantile_head_input() -> None:
 
 
 def test_quantile_predictions_match_the_unmodified_numerical_path() -> None:
-    """The extra return value must not alter the legacy quantile computation."""
+    """The extra return value must not alter the unpatched quantile computation."""
 
     model = _tiny_model()
     context = torch.tensor([[1.0, 2.0, 3.0, float("nan"), 5.0, 6.0, 7.0], [7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0]])
@@ -91,9 +91,9 @@ def test_quantile_predictions_match_the_unmodified_numerical_path() -> None:
             .permute(0, 2, 1, 3)
             .reshape(batch_size, num_quantiles, num_output_patches * patch_size)
         )
-        legacy_quantiles = model.instance_norm.inverse(
+        unpatched_quantiles = model.instance_norm.inverse(
             normalized_quantiles.reshape(batch_size, -1), loc_scale
         ).reshape(batch_size, num_quantiles, num_output_patches * patch_size)
 
     assert output.quantile_preds is not None
-    torch.testing.assert_close(output.quantile_preds, legacy_quantiles, rtol=0, atol=0)
+    torch.testing.assert_close(output.quantile_preds, unpatched_quantiles, rtol=0, atol=0)

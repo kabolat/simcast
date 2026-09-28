@@ -46,12 +46,8 @@ The tracks deliberately cross-reference one another. A scientific chapter
 states the statistical object and links to the relevant configuration or
 artifact reference. A technical document links back to the chapter that
 defines the estimand or method it operationalizes.
-
-Earlier exploratory result summaries that predated this configuration system
-have been retired from the tracked tree; they remain recoverable from Git
-history but are not restored or relabeled as evidence for the current
-role-separated composites. [Chapter 7](scientific/07_experiments_and_results.md) states the admissibility
-criteria for new numerical claims and the evidence required for reporting them.
+[Chapter 7](scientific/07_experiments_and_results.md) states the admissibility
+criteria for numerical claims and the evidence required for reporting them.
 
 The [interactive notebook guide](../notebooks/README.md) provides a third,
 didactic route: notebooks use both scientific definitions and technical
@@ -101,12 +97,9 @@ This is a research proof of concept, not a production forecasting service. Its
 strongest safeguards are scientific: exact upstream revision pins, chronological
 splits, point-in-time availability, physically sealed test labels, fixed
 marginals across methods, saved resolved configurations, and explicit model and
-evaluation artifacts. Any historical runs or reports predating this
-configuration system, where still present on disk, are exploratory evidence
-only, not current results. The current composite protocol declares all five
-methods, multi-seed
-fitting for M2--M4, and origin-block uncertainty, but it still cannot establish
-external validity from one year.
+evaluation artifacts. The composite protocol declares all five methods,
+multi-seed fitting for M2--M4, and origin-block uncertainty, but it still
+cannot establish external validity from one year.
 
 All notation used across the documentation is defined in
 [01_research_problem.md](scientific/01_research_problem.md#indices-and-static-groups),
