@@ -102,18 +102,22 @@ metrics_by_lead.csv
 per_origin_lead_metrics.parquet
 per_origin_metrics.parquet
 <method>_aggregate_predictions.npz
-scientific_summary.json
 evaluation_manifest.json
 resolved_config.yaml
-figures/*.png
+figures/*.png                  method-level figures
 ```
+
+In a composite run each directory holds one method and seed, at
+`evaluations/<evaluation-id>/<base-id>/<method-id>/<seed-label>/`; base-level
+figures are written once to `evaluations/<evaluation-id>/<base-id>/figures/`
+(see [Figures](#figures)).
 
 ### `metrics.json`
 
 Top-level keys are method names. Each method includes mean pinball, pinball by
 evaluation quantile, CRPS, coverage/width/interval score by central interval,
-WIS, valid and dropped case counts, and—when enabled—mean Energy and Variogram
-Scores. Values pool all valid test origins and leads.
+WIS, valid and dropped case counts, and—when declared in `metrics`—mean Energy
+and Variogram Scores. Values pool all valid test origins and leads.
 The method payload also includes mean test Gaussian-copula pseudo-NLL.
 
 ### Tidy per-case tables
@@ -123,7 +127,7 @@ method, neural seed, origin, and lead. It records $K_g$, validity, observed and
 forecast aggregate quantiles, aggregate proper scores, joint scores, and test
 pseudo-NLL. Invalid rows remain present with `valid: false`; the group never
 shrinks. The existing `observed_aggregate` and `aggregate_q*` columns refer
-to the configured cross-entity statistic (simple sum or absolute sum).
+to the configured cross-entity statistic (sum, absolute sum, max, or absolute max).
 `per_origin_metrics.parquet` averages metrics across valid leads within each
 origin and is the input to temporal block resampling. The evaluation manifest
 records `cross_entity_statistic` for provenance.
@@ -132,8 +136,7 @@ records `cross_entity_statistic` for provenance.
 
 Each row is `(lead, method)`. It holds mean pinball, CRPS, WIS, interval
 coverage/width/scores, and mean joint scores for that one-based lead. Invalid
-cases at a lead are omitted. Although `evaluation.report_by_lead` is recorded,
-the current evaluator always writes this table.
+cases at a lead are omitted. The table is always written.
 
 ### Per-method NPZ
 
@@ -150,27 +153,29 @@ Entity-level and aggregate Monte Carlo samples are not persisted, which keeps
 artifacts manageable but means exact secondary analyses requiring raw scenarios
 must regenerate them.
 
-### Manifests and summary
+### Evaluation manifest
 
-`evaluation_manifest.json` records cache path, method-run paths, methods,
-test-origin/case counts, the complete ordered group and $K_g$, full-group
-protocol flags, scenario and selected joint ensemble sizes, common-random-number
-status, evaluation seed, revisions, config/model hashes, PIT mode and dependence transform,
-confirmatory labels, Git commit, and time.
-`scientific_summary.json` gives six
-machine-readable descriptive answers; it is not a substitute for inspecting
-proper scores and uncertainty.
+`evaluation_manifest.json` records cache path, method-run paths, methods, the
+declared `metrics`, the `cross_entity_statistic`, test-origin/case counts, the
+complete ordered group and $K_g$, full-group protocol flags, scenario and
+selected joint ensemble sizes, common-random-number status, evaluation seed,
+revisions, config/model hashes, PIT mode and dependence transform, Git commit,
+and time. The declared `metrics` list is the authoritative set of metrics for
+that evaluation; a report may present a subset but cannot add metrics.
 
 ## Figures
 
-Composite evaluation figures are split by scope. Base-level dataset, missingness,
-marginal, and static-reference diagnostics live once under
-`evaluations/<evaluation-id>/<base-id>/figures/`. Method-level figures live
-under each method/seed evaluation directory and include `aggregate_fan.png`,
-`correlation.png`, dependence-dynamics/factor diagnostics, and
-`summary_by_lead_<metric>.png` for every declared metric. Figure origins and
-the correlation lead are selected by the evaluation document's `figures`
-configuration; defaults are the first testing origin and lead 1.
+Evaluation figures are split by scope. Base-level `dataset_locations.png`,
+`dataset_load_traces.png`, `dataset_missingness.png`, `marginal_pit.png`,
+`marginal_quantile_coverage.png`, `marginal_pinball.png`, and the training
+`pit_empirical_correlation.png`, `static_correlation.png`, and
+`static_eigenvalues.png` live once under
+`evaluations/<evaluation-id>/<base-id>/figures/`. Method-level figures live in
+each method/seed evaluation directory: `aggregate_fan.png`, `correlation.png`,
+`dependence_dynamics_<method>.png` and `factors_<method>.png` where
+applicable, and `summary_by_lead_<metric>.png` for every declared metric.
+Figure origins and the correlation lead are selected by the evaluation
+document's `figures` block; defaults are the first test origin and lead 1.
 
 Comparative coverage and paired summaries belong to reports, not individual
 method evaluation directories.
@@ -182,49 +187,47 @@ scientifically more stable objects.
 ## Singular experiment root
 
 A singular root contains `resolved_base.yaml`, `resolved_method.yaml`, an
-optional `resolved_reference_method.yaml`, `singular_manifest.json`, fitted
-method directories, and one evaluation directory. The role separation makes it
-possible to verify which quantities defined the fixed marginal law and which
-defined the dependence hypothesis.
+optional `resolved_reference_method.yaml`, `singular_manifest.json`, one fit
+directory per method under `methods/<method-id>/`, one shared `evaluation/`
+directory covering all its methods, and base-level `figures/`. The role
+separation makes it possible to verify which quantities defined the fixed
+marginal law and which defined the dependence hypothesis.
 
 ## Composite experiment and report roots
 
 Every composite artifact nests under one run root:
 
 ```text
-runs/<venue>/<composite>/<run-id>/models/<base-id>/<method-id>/<seed-label>/
-runs/<venue>/<composite>/<run-id>/evaluations/<evaluation-id>/<base-id>/<method-id>/<seed-label>/
-runs/<venue>/<composite>/<run-id>/reports/<report-id>/
+runs/<venue>/<composite>/<run-id>/
+  resolved_composite.yaml
+  composite_manifest.json
+  environment.json
+  composite.log
+  models/<base-id>/<method-id>/<seed-label>/
+  evaluations/<evaluation-id>/<base-id>/figures/
+  evaluations/<evaluation-id>/<base-id>/<method-id>/<seed-label>/
+  reports/<report-id>/<evaluation-id>/
 ```
 
-The run root contains the resolved composite (`resolved_composite.yaml`), the
-manifest (`composite_manifest.json`, schema `simcast.composite.v3`),
-environment and Git record, one fitted directory per declared base/method/seed
-combination, and (only if `evaluations` was declared) one evaluation
-directory per evaluated base/method/seed combination. It never contains a
-report unless the explicit reporting command is run later, and it never
-contains an evaluation unless either `run_composite` declared `evaluations` or
-`simcast.cli.evaluate_composite` was run afterward. The
+Fit
+directories are written by `uv run composite`. Evaluation directories exist
+only for evaluations declared in the composite or added later with
+`uv run evaluate`. Report directories exist only after `uv run report`; the
+composite command never writes them. The
 [usage guide](usage_guide.md#10-outputs-and-interpretation) gives the
 practical inspection order; this reference defines the meaning and location
 of the files.
 
-The manifest's `"fits"` list records each fit's `fit_id`, `base_id`,
-`method_id`, `seed`, `method_family`, base/marginal/method hashes, cache and
-fit paths, and status. Its `"evaluations"` mapping keys each declared
-evaluation ID to a list of cells recording `base_id`, `method_id`, `seed`,
-`method_family`, `evaluation_path`, and status. Each cell contains the metrics
-for one method only. A fit's directory is independent of any
-`sampling`/`evaluation` setting, so the same fit can appear under multiple
-evaluation IDs without retraining (`simcast.cli.evaluate_composite`, [usage guide
-§14](usage_guide.md#14-re-evaluating-a-completed-run)).
+The manifest (schema `simcast.composite.v3`) has a `"fits"` list recording
+each fit's `fit_id`, `base_id`, `method_id`, `seed`, `method_family`,
+base/marginal/method hashes, cache and fit paths, and status. Its
+`"evaluations"` mapping keys each evaluation ID to a list of cells recording
+`base_id`, `method_id`, `seed`, `method_family`, `evaluation_path`, and
+status. Each cell evaluates one method only. Because fits are independent of
+every evaluation setting, the same fit can appear under several evaluation
+IDs without retraining ([usage guide §7](usage_guide.md#7-evaluating-fits)).
 
-Each `evaluation_manifest.json` records the evaluation document's `metrics`
-list. This is the authoritative set of metrics computed for that evaluation;
-report configurations may select a subset for presentation but cannot add
-metrics afterward.
-
-The current generic report root contains:
+Each report directory contains:
 
 ```text
 per_origin_metrics.parquet          concatenated origin-level records
@@ -238,27 +241,20 @@ report_summary.md                   plain-text index describing every file above
 ```
 
 `per_origin_metrics.parquet` retains the complete evaluation rows for every
-independently evaluated method. The `method_summary.csv` and
-`method_comparison_<metric>` figures include every evaluated method. The
-report's declared reference is used only when constructing `paired_effects.csv`;
-it is not an evaluation setting. Each
-visual uses one panel per base, because absolute score scales are not
-comparable across entity types. `paired_effect_<metric>.png` plots positive
-relative improvement, $-100d/\bar S_{reference}$, so upward values favor the
-tested method.
+evaluated method, with `base_id`, `method_id`, `method`, and configured seed
+so that each comparison can be traced to its resolved declaration.
+`method_summary.csv` and `method_comparison_<metric>.png` include every
+evaluated method. The report's `reference` is used only for
+`paired_effects.csv` and `paired_effect_<metric>.png`; evaluation manifests
+contain no reference. Seeds are averaged within method and origin before the
+moving-block bootstrap. Each figure uses one panel per base, because absolute
+score scales are not comparable across entity types.
+`paired_effect_<metric>.png` plots relative improvement
+$-100d/\bar S_{\mathrm{reference}}$, so upward values favour the tested method.
 
-`run_composite` never writes this report. `simcast.cli.report_composite`
-generates the data files below from an existing run's recorded evaluations,
-using the configured metrics, `evaluation_ids` selection, and analysis
-settings, without re-fitting or re-evaluating; see
-[usage guide §15](usage_guide.md#15-regenerating-or-customizing-a-report) and
-[configuration reference §7](configuration_reference.md#7-evaluation-and-report-configuration).
-Its default output directory is `<run_root>/reports/<report-id>/<evaluation-id>/`.
-
-The report fields retain `base_id`, `method_id`, `method`, and configured
-seed so that a displayed comparison can be traced to its resolved declaration.
-The report configuration supplies the reference method ID; evaluation
-manifests do not.
+Reports are generated from recorded evaluations only, without refitting or
+re-evaluating; see the [usage guide](usage_guide.md#8-reporting) and the
+[report fields](configuration_reference.md#7-evaluation-and-report-configuration).
 
 Resume compares the stored composite SHA-256 digest with the newly resolved
 declaration. A mismatch is rejected; a validated complete fit is preserved.

@@ -40,10 +40,10 @@ running notebooks 00--04.
 
 `reporting/01_report_walkthrough.ipynb` is a third, independent notebook: the
 interactive counterpart to a report's `report_summary.md`. It reads an
-already-generated `reports/<venue>/<composite>/<run-id>/` directory and
-displays its tables and figures; it does not fit, evaluate, or write anything
-unless its regeneration cell is explicitly enabled. See
-[the usage guide](../docs/technical/usage_guide.md#15-regenerating-or-customizing-a-report).
+already-generated `runs/<venue>/<composite>/<run-id>/reports/<report-id>/<evaluation-id>/`
+directory and displays its tables and figures; it does not fit, evaluate, or
+write anything unless its regeneration cell is explicitly enabled. See
+[the usage guide](../docs/technical/usage_guide.md#8-reporting).
 
 The workflow notebooks accept a base file; each method monograph accepts a base
 and exactly one method file. Their separate override lists use the same dotted

@@ -126,9 +126,10 @@ $$
 More generally, evaluation targets a cross-entity statistic $T_g$ of the
 complete vector and applies the same function to each simulated vector and
 its observed counterpart. The supported choices are
-$T_g(\mathbf y)=\sum_k y_k$ (simple sum, the default) and
-$T_g(\mathbf y)=\sum_k |y_k|$ (absolute sum). For the default simple sum, the
-random spatial aggregate and its observation are respectively
+$T_g(\mathbf y)=\sum_k y_k$ (simple sum, the default),
+$\sum_k |y_k|$ (absolute sum), $\max_k y_k$ (maximum), and
+$\max_k |y_k|$ (absolute maximum). For the default simple sum, the random
+spatial aggregate and its observation are respectively
 
 $$
 A_{g,\tau}^{(i)}

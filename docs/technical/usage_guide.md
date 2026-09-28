@@ -1,92 +1,113 @@
-# User guide: running singular and composite experiments
+# Usage guide
 
-This is the practical entry point for installation, data, caches, commands,
-notebooks, and outputs. The [configuration reference](configuration_reference.md)
-defines every valid YAML field, type, option, and constraint; the scientific
-chapters explain the underlying estimands and methods. For the scientific
-reading sequence, begin with the
+This guide covers how to install Simcast, obtain data, build frozen marginals,
+fit dependence methods, evaluate them, and report the comparison. Field-level
+details are in the [configuration reference](configuration_reference.md), file
+schemas in the [artifact reference](artifact_reference.md), and the reasoning
+behind each step in the scientific chapters, starting with the
 [research problem](../scientific/01_research_problem.md).
 
-## Scientific map
+Contents:
 
-Use this guide when you need to act on a declared experiment; use the linked
-scientific chapter when you need to understand why that action is valid. The
-same base, method, and composite files connect both perspectives.
-
-| If you are about to... | Read this scientific account first | Then return here for... |
-|---|---|---|
-| choose a group, target, weather-information policy, or forecast origins | [Data and information sets](../scientific/02_data_and_information_set.md) | data setup and base selection in Sections 1 and 3 |
-| build or inspect frozen Chronos quantiles, crossings, repair, or pseudo-PITs | [Frozen Chronos forecasts and finite PITs](../scientific/03_chronos_and_pit.md) | cache construction in Section 4 and notebooks in Section 11 |
-| select M0, M1, M2, M3, or M4 | [Dependence models](../scientific/04_dependence_models.md) | a singular method run in Section 5 or a composite in Section 6 |
-| interpret fitting diagnostics, scenarios, or proper scores | [Dependence fitting, sampling, and scoring](../scientific/05_training_sampling_scoring.md) | output inspection in Section 10 |
-| understand the declaration-to-evidence chain | [Scientific workflow](../scientific/06_scientific_workflow.md) | cache, run, resume, and notebook procedures below |
-| prepare a table, figure, or claim from a completed study | [Experiments, reporting, and result interpretation](../scientific/07_experiments_and_results.md) | report locations and inspection in Section 10 |
-
-The [configuration reference](configuration_reference.md) is the authoritative
-field-level companion: it specifies which YAML choices are admissible once the
-scientific choice has been made. The [artifact reference](artifact_reference.md)
-identifies the records that preserve it.
+1. [Choose the appropriate interface](#1-choose-the-appropriate-interface)
+2. [Configuration documents](#2-configuration-documents)
+3. [Environment and data](#3-environment-and-data)
+4. [Frozen-marginal construction](#4-frozen-marginal-construction)
+5. [Singular experiment](#5-singular-experiment)
+6. [Composite experiment](#6-composite-experiment)
+7. [Evaluating fits](#7-evaluating-fits)
+8. [Reporting](#8-reporting)
+9. [Venues, identifiers, and resume](#9-venues-identifiers-and-resume)
+10. [Outputs and interpretation](#10-outputs-and-interpretation)
+11. [Notebooks](#11-notebooks)
+12. [Advanced configuration and temporary overrides](#12-advanced-configuration-and-temporary-overrides)
+13. [Common situations](#13-common-situations)
+14. [Validation without experiments](#14-validation-without-experiments)
 
 ## 1. Choose the appropriate interface
 
-| Objective | Interface | Main input | Main output |
+The workflow has three stages: **fit**, **evaluate**, and **report**. Each
+stage reads only the output of the stage before it, so an evaluation can be
+repeated without refitting and a report can be regenerated without
+re-evaluating.
+
+```mermaid
+flowchart LR
+  B[base YAML] --> C[cache: frozen Chronos marginals + PITs]
+  M[method YAML] --> F
+  C --> F[fit: dependence method]
+  F --> E[evaluate: evaluation YAML]
+  E --> R[report: report YAML]
+```
+
+| Objective | Command | Main input | Main output |
 |---|---|---|---|
-| Inspect data, frozen marginals, PITs, or one method interactively | notebook | selected base and, where relevant, method YAML | explanatory calculations and figures |
-| Construct only frozen Chronos marginals and PITs | cache command | one base YAML | `artifacts/cache/<fingerprint>/` |
-| Fit and evaluate one copula hypothesis | singular command | one base and one method YAML | `runs/singular/.../` |
-| Reproduce a declared comparison or sensitivity study | composite command | one venue YAML | `runs/<venue>/.../` (fits, evaluations, and reports all nested under the run) |
+| Download the data needed by one base | `uv run download-data` | base YAML | files under `data/liander2024/` |
+| Build frozen Chronos marginals and PITs only | `uv run cache` | base YAML | `artifacts/cache/<base-id>-<fingerprint>/` |
+| Fit and evaluate one method quickly | `uv run singular` | base and method YAML | `runs/singular/<timestamp>_<base>_<method>/` |
+| Fit a declared study (and run its declared evaluations) | `uv run composite` | composite YAML | `runs/<venue>/<composite>/<run-id>/` |
+| Evaluate existing fits under an evaluation design | `uv run evaluate` | composite or evaluation YAML | `<run-root>/evaluations/<evaluation-id>/` |
+| Compare evaluated methods against a reference | `uv run report` | composite or report YAML | `<run-root>/reports/<report-id>/<evaluation-id>/` |
+| Inspect data, marginals, PITs, or one method interactively | notebooks | base and method YAML | explanatory calculations and figures |
 
-## 2. Scientific objects
+Every command prints its options with `--help`. A typical study is:
 
-The command line distinguishes three objects that answer different questions.
+```bash
+uv run composite --config configs/venues/lab/quick_all_methods.yaml
+uv run evaluate  --composite-config configs/venues/lab/quick_all_methods.yaml
+uv run report    --config configs/reports/lab_main.yaml \
+  --run-root runs/lab/quick_all_methods/<run-id>
+```
 
-1. A **base** fixes the observed sample, complete entity group
-   $\mathcal E_g$, information set $\mathcal I^{(i)}$, Chronos-2 marginal
-   quantiles, PIT rule, scenario law, and evaluation estimands.
-2. A **method** specifies one copula hypothesis M0--M4. It cannot alter the
-   marginal quantile values.
-3. A **composite** explicitly states which base--method combinations and neural
-   seeds form a larger comparison, together with its reference and uncertainty
-   analysis.
+`composite` already runs the evaluations declared in its YAML, so the
+`evaluate` line only computes evaluation cells that are still missing.
 
-This separation prevents irrelevant parameters from entering a hypothesis. M0
-has no features or optimization. M1 has only its static covariance estimator.
-M2, M3, and M4 each have features, a model parameterization, and an
-optimization design.
+## 2. Configuration documents
 
-The reasons for holding the base fixed are developed in the
-[research problem](../scientific/01_research_problem.md) and
-[scientific workflow](../scientific/06_scientific_workflow.md). The
-configuration reference translates those roles into valid fields; it is not a
-second definition of the statistical estimand.
+Every YAML document declares its `kind`. The five kinds separate what is held
+fixed from what is varied and from how results are scored and compared.
 
-Implementation: `BaseExperimentConfig`, the discriminated `MethodConfig`
-union, and `CompositeExperimentConfig` are defined in
-`src/simcast/config.py`. Unknown or cross-method fields are errors.
+| Kind | Declares | Typical location |
+|---|---|---|
+| `base` | data, complete entity group $\mathcal E_g$, information set $\mathcal I^{(i)}$, forecast origins, Chronos-2, and PIT construction | `configs/bases/liander2024/` |
+| `method` | one dependence hypothesis M0--M4 and only its own parameters | `configs/methods/` |
+| `composite` | which bases, method variants, and seeds to fit, plus optional evaluation and report entries | `configs/venues/<venue>/` |
+| `evaluation` | sampling, metrics, cross-entity statistic, quantile and interval levels, and figures | `configs/evaluations/` |
+| `report` | reference method, presented metrics, and moving-block bootstrap settings | `configs/reports/` |
 
-## 3. Environment, data, and pinned sources
+A method cannot change marginal quantiles, an evaluation cannot change a fit,
+and a report cannot add a metric that was not evaluated. M0 has no features or
+optimization, M1 has only its static covariance estimator, and M2--M4 each
+have features, a model parameterization, and an optimization design. Unknown
+fields and fields belonging to another method are validation errors.
 
-Create the locked environment from the repository root:
+The reasons for holding the base fixed are developed in
+[Chapter 1](../scientific/01_research_problem.md) and
+[Chapter 6](../scientific/06_scientific_workflow.md).
+
+## 3. Environment and data
+
+Create the locked environment and install the pinned, patched Chronos source
+from the repository root:
 
 ```bash
 uv sync --group dev
 bash scripts/setup_chronos.sh
 ```
 
-The second command installs the pinned Chronos source with the minimal
-representation-output patch used by the experiment. It does not modify the
-forecast quantiles.
+The patch only exposes the output-patch representation used as a conditioning
+feature; it does not change forecast quantiles.
 
-Chronos weights are retrieved through the Hugging Face cache. An optional
-When a composite declares reports, the command runs all of them by default.
-Select one directly when needed:
+Chronos weights are retrieved through the Hugging Face cache. Public
+retrieval works without authentication but is rate-limited; optionally set a
+token:
 
 ```bash
 export HF_TOKEN=...
 ```
 
-The dataset defaults to `data/liander2024` inside this repository. An absolute
-location may be selected explicitly:
+The dataset defaults to `data/liander2024`. Two environment variables change
+local behaviour without changing any scientific result:
 
 ```bash
 export SIMCAST_DATA_DIR=/absolute/path/to/liander2024
@@ -96,104 +117,110 @@ export SIMCAST_DEVICE=cuda
 Download only the files required by one base:
 
 ```bash
-uv run python -m simcast.cli.download_data \
-  --base configs/bases/liander2024/transformer.yaml
+uv run download-data --base configs/bases/liander2024/transformer.yaml
 ```
 
-Example: selecting the solar base downloads the solar group and applies no
-model fitting. Its base declares isotonic quantile repair; changing to the
-transformer base changes both $\mathcal E_g$ and $K_g$.
+Choosing a different base selects a different group: the transformer base has
+$K_g=15$, the solar and wind bases $K_g=5$. The solar base also declares
+isotonic quantile repair.
 
 ## 4. Frozen-marginal construction
 
-Construct the frozen Chronos marginal record without fitting a dependence
-model:
+Build the Chronos native quantile grids, output-patch representations, and
+finite-quantile PIT observations for one base without fitting any dependence
+method:
 
 ```bash
-uv run python -m simcast.cli.build_cache \
-  --base configs/bases/liander2024/transformer.yaml
+uv run cache --base configs/bases/liander2024/transformer.yaml
 ```
 
-This creates the Chronos native quantile grids, output-patch representations,
-and finite-quantile PIT observations declared by the base. The compatible
-canonical cache location is determined by the base's marginal fingerprint.
-Before interpreting or changing a PIT-related option, read
+The cache location is derived from the base's marginal fingerprint (see
+[cache compatibility](#cache-compatibility)). `singular` and `composite` build
+a missing cache automatically, so this command is only needed to prepare or
+inspect marginals in advance. Options:
+
+- `--output-dir <dir>` writes to an explicit directory.
+- `--overwrite` replaces an existing cache; without it an existing cache is
+  never touched.
+- `--set key=value` applies a temporary override (§12).
+
+Before changing a PIT option, read
 [Chapter 3](../scientific/03_chronos_and_pit.md): the cache stores the
 configured finite-quantile law, which may be discretized or piecewise linear.
-Choose a specific directory only when needed:
 
-```bash
-uv run python -m simcast.cli.build_cache \
-  --base configs/bases/liander2024/solar_park.yaml \
-  --output-dir artifacts/cache/solar_park
-```
+### Cache compatibility
 
-The command will not replace an existing cache. Add `--overwrite` only when
-you intentionally wish to reconstruct that exact output directory. No
-dependence fitting, scenario generation, or report generation occurs in this
-step.
+Let $b$ be a resolved base. Its fingerprint is the SHA-256 digest
 
-Implementation: `simcast.cli.build_cache` and
-`build_cache_from_config` in `src/simcast/cli/build_cache.py`.
+$$
+h(b)=h(\mathcal E_g,\text{data revision},\text{forecast protocol},
+\mathcal I,\text{split},\text{Chronos revision},\text{PIT construction}).
+$$
+
+The default cache directory contains the first 12 hexadecimal characters of
+$h(b)$, but the name is only a convenience. Before reuse, stored metadata are
+normalized and hashed again: a uniquely compatible directory is reused even if
+renamed, a plausible name with incompatible metadata is rejected, and several
+compatible candidates are treated as ambiguous.
+
+Methods, venues, evaluations, and reports do not enter $h(b)$, so changing
+them never rebuilds Chronos. Local data location, device, and Chronos batch
+size are operational and are excluded as well. Changing the ordered entity
+IDs, weather source, split, horizon, Chronos revision, or any `pit.*` field
+selects a different cache.
+
+Implementation: `base_fingerprint` and `locate_compatible_cache`.
 
 ## 5. Singular experiment
 
-To estimate and evaluate exactly M4 for the transformer group:
+A singular experiment fits and evaluates one method on one base. It is the
+quickest way to study a single hypothesis:
 
 ```bash
-uv run python -m simcast.cli.run_singular \
+uv run singular \
   --base configs/bases/liander2024/transformer.yaml \
   --method configs/methods/m4_conditional_kernel.yaml
 ```
 
-The transformation is:
+The command locates or builds the compatible cache, fits only the selected
+method, and evaluates it with the default evaluation design (§7). M4 consumes
+every valid complete training vector; there is no method-specific origin limit
+or implicit epoch reduction.
 
-$$
-(\text{base},\text{method})
-\longrightarrow
-\{\widehat R_{g,\tau}^{(i)}\}
-\longrightarrow
-\{\widetilde{\mathbf Y}_{g,\tau}^{(i,m)}\}
-\longrightarrow
-\text{scores}.
-$$
-
-The command locates or constructs the compatible frozen-marginal cache, fits
-only M4, then evaluates only M4. M4 consumes every valid complete training
-vector and has no method-specific origin limit or implicit epoch reduction.
-The mathematical M4 hypothesis is derived in
-[Chapter 4](../scientific/04_dependence_models.md); the likelihood, projection,
-and scores are defined in [Chapter 5](../scientific/05_training_sampling_scoring.md).
-
-To estimate a paired contrast against M0:
+Add a reference method of a different family to evaluate both on identical
+test cases, marginal grids, and case-keyed Gaussian draws (common random
+numbers):
 
 ```bash
-uv run python -m simcast.cli.run_singular \
+uv run singular \
   --base configs/bases/liander2024/transformer.yaml \
   --method configs/methods/m4_conditional_kernel.yaml \
   --reference-method configs/methods/m0_independent.yaml
 ```
 
-Both methods use the same complete test cases, fixed marginal grids, scenario
-count, evaluation seed, and case-keyed base-normal draws. This is the common
-random numbers design. It reduces Monte Carlo noise in the score difference;
-it does not remove parameter-estimation uncertainty.
+Common random numbers reduce Monte Carlo noise in the score difference; they
+do not remove parameter-estimation uncertainty. A singular run fits each
+method once, with the seed from its method file, and writes no bootstrap
+report; use a composite for declared repetitions.
 
-Implementation: `run_singular` in `src/simcast/cli/run_singular.py` performs
-these transformations and stores `resolved_base.yaml`,
-`resolved_method.yaml`, the optional resolved reference, and
-`singular_manifest.json`.
+Other options: `--output-dir` chooses the run directory (default
+`runs/singular/<UTC-timestamp>_<base-id>_<method-id>/`, which must not exist)
+and `--rebuild-cache` rebuilds the compatible cache first.
+
+The M4 hypothesis is derived in
+[Chapter 4](../scientific/04_dependence_models.md); likelihood, projection, and
+scores are defined in [Chapter 5](../scientific/05_training_sampling_scoring.md).
 
 ## 6. Composite experiment
 
-A composite is an explicit collection rather than an implicit parameter grid.
-Only `bases` and `methods` are compulsory; `evaluations` and `reports` are
-optional and each depends on the section before it:
+A composite is an explicit list of fits, not an implicit parameter grid.
+`bases` and `methods` are required; `evaluations` and `reports` are optional,
+and reports require at least one evaluation:
 
 ```yaml
 kind: composite
-name: main
-venue: example
+name: main              # optional; defaults to the file name
+venue: example          # must match configs/venues/<venue>/
 
 bases:
   - id: transformer
@@ -209,9 +236,11 @@ methods:
 evaluations:
   - id: standard
     config: ../../evaluations/standard.yaml
-    method_ids: [m4]
 
-reports: []
+reports:
+  - id: main
+    config: ../../reports/lab_main.yaml
+    evaluation_ids: [standard]
 ```
 
 Run it with:
@@ -220,34 +249,31 @@ Run it with:
 uv run composite --config configs/venues/<venue>/main.yaml
 ```
 
-If five bases are listed, the M0 entry creates five deterministic fits;
-an M4 entry with ten seeds creates fifty fits. When `evaluations` is declared,
-each entry's non-reference methods are evaluated against its deterministic
-reference fit immediately after fitting, in the same command. When
-`evaluations` is omitted, `run_composite` only fits and stops there; nothing
-else runs automatically. No report is ever generated by `run_composite`,
-regardless of whether `reports` is declared — reports are always a separate,
-explicit step (§15).
-Repeated entries with distinct IDs express feature ablations or sensitivity
-variants. Overrides are validated against the referenced method type, so
+Each method entry is fitted on every listed base unless it names `base_ids`.
+Deterministic M0/M1 entries give one fit per base; conditional M2--M4 entries
+give one fit per base and seed. With five bases, M0 gives five fits and an M4
+entry with ten seeds gives fifty. Identical deterministic fits are shared.
+
+After fitting, `composite` runs every declared evaluation on the fits it
+selects (all fits when `base_ids`/`method_ids` are omitted). It never writes a
+report, even when `reports` is declared: reporting is always the explicit
+`report` step (§8). Without `evaluations`, the command only fits.
+
+Options: `--run-id` sets a stable run identifier, `--resume` continues an
+interrupted run (§9), and `--rebuild-cache` rebuilds compatible caches first.
+
+Repeated method entries with distinct IDs express ablations and sensitivity
+variants. Overrides are validated against the referenced method family, so
 `model.latent_rank` is valid for M2/M3 and invalid for M4.
 
-M0 and M1 fits are reused across neural seeds when their resolved scientific
-definitions are identical. M2, M3, and M4 have equal full-partition status.
-All five appear in generic summaries whenever declared.
+Treat a composite as the execution of a predeclared comparison.
+[Chapter 6](../scientific/06_scientific_workflow.md) explains the resulting
+evidence chain and [Chapter 7](../scientific/07_experiments_and_results.md)
+specifies which comparisons are scientifically interpretable.
 
-Fitting never depends on `evaluations`: a run's fits can be evaluated under a
-different design later without retraining (§14).
+### Laboratory budgets
 
-Treat this command as the execution of a predeclared comparison, rather than
-as a generic model sweep. [Chapter 6](../scientific/06_scientific_workflow.md)
-explains the resulting evidence chain and
-[Chapter 7](../scientific/07_experiments_and_results.md) specifies which paired
-comparisons and uncertainty statements are scientifically interpretable.
-
-## 7. Laboratory budgets
-
-Preliminary computation is expressed at the composite level:
+Preliminary computation is declared as a composite-level override:
 
 ```yaml
 - id: m4_quick
@@ -258,148 +284,239 @@ Preliminary computation is expressed at the composite level:
       patience: 1
 ```
 
-The same override is meaningful for M2 or M3. It says that the *experiment*
-uses a reduced optimization budget; it does not define a special method class.
-The supplied `configs/venues/lab/quick_all_methods.yaml` applies equal reduced
-budgets to all three gradient-fitted methods.
+The same override is valid for M2 and M3. It states that the *experiment* uses
+a reduced budget; it does not define a special method.
+`configs/venues/lab/quick_all_methods.yaml` applies the same reduced budget to
+all three gradient-fitted methods. Such results are preliminary by design.
 
-## 8. Cache compatibility
+## 7. Evaluating fits
 
-Let $b$ denote a resolved base and let $h(b)$ be the SHA-256 digest of:
+Fitting never depends on sampling or scoring, so the same fits can be
+evaluated under several designs. An evaluation document declares one design:
 
-$$
-h(b)=h(\mathcal E_g,\text{data revision},\text{forecast protocol},
-\mathcal I,\text{split},\text{Chronos revision},\text{PIT construction}).
-$$
+```yaml
+kind: evaluation
+id: standard                     # optional; defaults to the file name
+metrics: [mean_pinball, crps, weighted_interval_score,
+          energy_score, variogram_score, test_pseudo_nll]
+sampling:
+  num_samples: 4096
+  evaluation_seed: 2027
+evaluation:
+  cross_entity_statistic: sum    # sum | absolute_sum | max | absolute_max
+  quantile_levels: [0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95]
+  interval_levels: [0.50, 0.80, 0.90]
+figures:
+  correlation_lead: 1
+```
 
-The cache path normally contains the first 12 hexadecimal characters of
-$h(b)$. The path is only a convenience. Before reuse, metadata are normalized
-and hashed again. If a differently named directory is the unique compatible
-cache it may be reused; a plausible name with incompatible metadata is
-rejected; multiple compatible candidates are treated as ambiguous.
+- `metrics` is the authoritative list of metrics computed and persisted.
+  Energy and Variogram Scores are computed only when listed.
+- `cross_entity_statistic` selects the scalar $T(\mathbf y)$ that aggregate
+  scores evaluate: $\sum_k y_k$, $\sum_k|y_k|$, $\max_k y_k$, or
+  $\max_k|y_k|$. It is applied identically to every scenario and to the
+  observation.
+- `quantile_levels` are the aggregate quantiles scored by pinball loss.
+  `interval_levels` are central interval coverages; level $c$ uses the
+  empirical $(1-c)/2$ and $(1+c)/2$ scenario quantiles, independently of
+  `quantile_levels`.
+- `figures` selects the origin shown in the scenario fan and correlation
+  figures and the correlation lead (defaults: first test origin, lead 1).
 
-Method, venue, score presentation, and report settings do not determine the
-frozen marginal record and therefore do not enter $h(b)$. Local data location,
-GPU choice, and Chronos batch size are operational and likewise excluded.
+Every field is listed in the
+[configuration reference](configuration_reference.md#7-evaluation-and-report-configuration).
+A singular run always uses the defaults shown above.
 
-Implementation: `base_fingerprint` and `locate_compatible_cache` implement
-this rule.
+### Running an evaluation
+
+`evaluate` has two mutually exclusive modes.
+
+**Composite mode** runs the evaluation entries declared in a composite:
+
+```bash
+uv run evaluate --composite-config configs/venues/lab/quick_shot.yaml
+uv run evaluate --composite-config configs/venues/lab/quick_shot.yaml \
+  --evaluation-id standard --run-id 2026-09-24_133838
+```
+
+Without `--evaluation-id`, every declared entry runs. The run is found under
+`runs/<venue>/<composite>/`; `--run-id` is required only when that directory
+holds more than one run.
+
+**Standalone mode** applies an evaluation document to any completed run,
+without editing the composite:
+
+```bash
+uv run evaluate --config configs/evaluations/variogram_power_1.yaml \
+  --run-root runs/lab/quick_shot/2026-09-16_093812
+```
+
+The document's optional `base_ids` and `method_ids` restrict the evaluated
+fits; empty lists select all fits in the run.
+
+In both modes the command is idempotent: cells with a completed
+`evaluation_manifest.json` are skipped and only missing cells are computed.
+`--force` discards and recomputes the selected cells. Output is written to
+`<run-root>/evaluations/<evaluation-id>/` and recorded in the run manifest,
+so it is immediately reportable. Progress is logged per cell.
+
+## 8. Reporting
+
+A report reads completed evaluation records only. It never calls Chronos, a
+fitter, or the evaluator, so it is cheap to regenerate while choosing metrics
+or bootstrap settings. A report document declares:
+
+```yaml
+kind: report
+reference: m0                    # method ID used for paired effects
+metrics: [mean_pinball, crps]    # optional; default: every evaluated metric
+evaluation_ids: [standard]       # optional; default: every evaluation in the run
+analysis:
+  bootstrap_replicates: 10000
+  primary_block_length: 7
+  sensitivity_block_lengths: [3, 14]
+```
+
+`report` has the same two modes as `evaluate`.
+
+**Composite mode** runs the report entries declared in a composite, each
+restricted to its own `evaluation_ids`:
+
+```bash
+uv run report --composite-config configs/venues/<venue>/study.yaml
+uv run report --composite-config configs/venues/<venue>/study.yaml --report-id main
+```
+
+**Standalone mode** applies a report document to any completed run:
+
+```bash
+uv run report --config configs/reports/powertech2027_main.yaml \
+  --run-root runs/powertech2027/main/<run-id>
+```
+
+Each selected evaluation gets its own directory,
+`<run-root>/reports/<report-id>/<evaluation-id>/`. The report ID is the
+composite entry ID, or the report file name in standalone mode. Further
+options:
+
+- `--evaluation-id <id>` reports only one evaluation.
+- `--output-dir <dir>` writes to `<dir>/<evaluation-id>/` instead
+  (`<dir>/<report-id>/<evaluation-id>/` when several composite reports run).
+- `--run-id` selects a run in composite mode, as for `evaluate`.
+- `--force` removes the selected report directory before regeneration.
+
+Requesting a metric that the selected evaluations did not declare is an
+error. Seeds are averaged within method and origin before the moving-block
+bootstrap, because a seed repeats parameter estimation rather than adding a
+forecast instance.
 
 ## 9. Venues, identifiers, and resume
 
-A venue is a named reproducible research workspace. It is not a Python virtual
-environment. A composite file must be physically located below
-`configs/venues/<venue>/` and its `venue` field must match that directory.
-Venue, composite, and run identifiers are safe lowercase slugs.
+A venue is a named, cloneable research workspace, not a Python environment. A
+composite must live below `configs/venues/<venue>/` and its `venue` field must
+match that directory. Venue, composite, and run identifiers are lowercase safe
+slugs. Every artifact of a run nests under one root:
 
 ```text
-runs/<venue>/<composite>/<run-id>/models/<base-id>/<method-id>/<seed-label>/
-runs/<venue>/<composite>/<run-id>/evaluations/<evaluation-id>/<base-id>/<method-id>/<seed-label>/
-runs/<venue>/<composite>/<run-id>/reports/<report-id>/
+runs/<venue>/<composite>/<run-id>/
+  models/<base-id>/<method-id>/<seed-label>/
+  evaluations/<evaluation-id>/<base-id>/figures/
+  evaluations/<evaluation-id>/<base-id>/<method-id>/<seed-label>/
+  reports/<report-id>/<evaluation-id>/
 ```
 
-Supply a fixed identifier for a long run:
+`<seed-label>` is `deterministic` for M0/M1 and `seed_<N>` for conditional
+fits. Without `--run-id`, a UTC timestamp is used. Fix the identifier for a
+long run:
 
 ```bash
 uv run composite --config configs/venues/<venue>/main.yaml --run-id replication_01
 ```
 
-After interruption, repeat the command with `--resume`. Resume first recomputes
-the fully resolved composite hash. A mismatch is rejected before fitting. A
-validated complete fit is skipped; missing or incomplete fits continue. No
-existing incompatible directory is overwritten.
+After an interruption, repeat the command with `--resume`. Resume recomputes
+the fully resolved composite hash and rejects a mismatch before fitting.
+Validated complete fits are skipped, missing fits continue, and partial or
+incompatible directories are never overwritten. A changed composite needs a
+new run identifier.
 
 ## 10. Outputs and interpretation
 
-A singular directory records the two resolved roles, fitted method(s), one
-evaluation, and its manifest. A composite run directory records the resolved
-composite, exact expansion, role hashes, environment and Git metadata, every
-base/method/seed fit, any evaluations run alongside fitting, completion state,
-and log. It never creates a report on its own. Run
-`simcast.cli.report_composite` or `simcast.cli.evaluate_composite` explicitly
-for anything beyond fitting. The exact fit, evaluation, and report schemas are
-listed in the [artifact reference](artifact_reference.md).
+The exact contents of every file are defined in the
+[artifact reference](artifact_reference.md). In short:
 
-For a current run, a report lives under
-`runs/<venue>/<composite>/<run-id>/reports/<report-id>/`: `method_summary.csv`
-gives the aggregate summary for each configured metric; `paired_effects.csv`
-contains the declared moving-block contrasts; `per_origin_metrics.parquet` is
-the origin-level input to those contrasts; one `method_comparison_<metric>.png`
-shows vertically stacked base-specific absolute scores; and one
-`paired_effect_<metric>.png` shows vertically stacked base-specific relative
-improvement over the reference, with one marker and interval per configured
-block length. `report_summary.md`
-lists and describes every file the directory contains. Each is a report of
-the resolved composite, not a free-standing result. Their exact columns and
-retained identifiers are defined in the
-[artifact reference](artifact_reference.md#composite-experiment-and-report-roots).
+- **Fit directory** (`models/...`): resolved configuration, run metadata, the
+  fitted model (`model.npz` for M0/M1, `best.pt`/`final.pt` for M2--M4), and
+  training curves for M2--M4.
+- **Evaluation directory** (`evaluations/<evaluation-id>/<base>/<method>/<seed>/`):
+  `metrics.json`, `metrics_by_lead.csv`, per-case and per-origin parquet
+  tables, aggregate predictions, `evaluation_manifest.json`, and method
+  figures (scenario fan, correlation, dependence diagnostics, and
+  `summary_by_lead_<metric>.png` per declared metric). Base-level dataset,
+  marginal, and static-correlation figures are written once to
+  `evaluations/<evaluation-id>/<base>/figures/`.
+- **Report directory** (`reports/<report-id>/<evaluation-id>/`):
+  `per_origin_metrics.parquet`, `method_summary.csv`, `paired_effects.csv`,
+  `method_comparison_<metric>.png`, `paired_effect_<metric>.png`,
+  `summary_coverage.png`, `summary_quantile_calibration.png`, and
+  `report_summary.md`, which describes every file present.
+- **Singular directory**: resolved base and method(s),
+  `singular_manifest.json`, `methods/<method-id>/`, `evaluation/`, and
+  base-level `figures/`.
 
 ### Reading a completed report
 
-Begin with the resolved declaration and completion manifest, then inspect the
-evidence in the following order:
+1. Confirm the base fingerprint, ordered entity IDs, $K_g$, complete-case
+   mask, and marginal diagnostics. These define the common forecast
+   experiment.
+2. For M2--M4, check each seed's fitting curve and validation pseudo-NLL
+   before looking at test scores.
+3. Read `method_summary.csv` together with `paired_effects.csv`. All scores
+   are negatively oriented: a negative paired difference against the
+   reference favours the method, and `paired_effect_<metric>.png` shows it as
+   a positive relative improvement. Judge effects by their moving-block
+   intervals, not by point estimates.
+4. Use `summary_by_lead_<metric>.png` and `metrics_by_lead.csv` to check
+   whether an overall result hides horizon heterogeneity; use coverage and
+   quantile-calibration figures together with interval scores.
+5. Use correlation and scenario figures to explain behaviour, not to select a
+   method after the fact. Keep declared sensitivities separate from the
+   principal comparison.
 
-1. Confirm the base fingerprint, ordered entity IDs, $K_g$, complete-case mask,
-   and marginal diagnostics. These determine the common forecast experiment.
-2. For M2--M4, examine each seed's fitting curve and validation pseudo-NLL
-   before aggregating its test scores.
-3. Read pooled score summaries together with the per-origin paired effects and
-   moving-block intervals. For negatively oriented scores, a negative effect
-   relative to the declared reference favours the method.
-4. Use lead-wise records to test whether an overall result hides horizon
-   heterogeneity. Use correlation and scenario figures to explain behaviour,
-   not to select a method after the fact.
-5. Separate principal comparisons from explicitly declared sensitivities and
-   record any limitation of the fixed marginal, finite-quantile, same-lead
-   Gaussian-copula design.
+A comparison is valid only when the base fingerprint and complete entity
+ordering coincide. [Chapter 7](../scientific/07_experiments_and_results.md)
+states what must accompany a scientific claim.
 
-This is the operational version of the reporting discipline in
-[Chapter 7](../scientific/07_experiments_and_results.md). That chapter states
-what must accompany a scientific claim; this guide tells you where to find the
-supporting records.
-
-Lower scores are better. Interpret paired effects with their temporal
-moving-block intervals, not only point estimates. Inspect marginal diagnostics
-before attributing aggregate error to dependence. A model comparison is valid
-only when the base fingerprint and complete entity ordering coincide.
-
-Historical artifacts can be inspected with
-`simcast.reporting.read_evaluation_artifacts`. The reader returns original JSON
-payloads without validation migration or rewriting. Historical execution
-commands and monolithic configurations are intentionally unsupported.
+Historical artifacts can be inspected read-only with
+`simcast.reporting.read_evaluation_artifacts`; historical execution schemas are
+not accepted.
 
 ## 11. Notebooks
 
-Open notebooks through the project environment:
-
-```bash
-uv run jupyter lab
-```
-
-Start with the [Notebook guide](../../notebooks/README.md). Method-specific
-notebooks are in `notebooks/dependence_methods/`. Notebook 02 accepts one
-selected `BASE_FILE`, constructs that cache when absent, and uses that same
-cache throughout. If the selected cache has no quantile crossings, it reports
-that result rather than attempting to load a different group.
-
-If the Simcast environment is not available as a Jupyter kernel, install it
-once:
+Register the project kernel once, then start Jupyter through the project
+environment:
 
 ```bash
 uv run python -m ipykernel install --user --name simcast --display-name "Python (simcast)"
+uv run jupyter lab
 ```
+
+Select the `Python (simcast)` kernel. The [notebook guide](../../notebooks/README.md)
+describes the reading order. The workflow notebooks and method monographs
+call the same functions as the CLI and keep write-producing cells disabled by
+default. Notebook 02 takes one `BASE_FILE`, builds that cache when absent, and
+reports when the selected cache contains no quantile crossings rather than
+loading another group. `notebooks/reporting/01_report_walkthrough.ipynb`
+displays an existing report directory.
 
 ## 12. Advanced configuration and temporary overrides
 
-Most users can select a supplied base, method, or composite YAML file without
-changing its structure. The following mechanisms are useful when maintaining
-new configuration files or making one temporary change.
+Most work only needs the supplied YAML files. Three mechanisms help when
+writing new files or making a one-off change.
 
 ### Inheriting a common configuration
 
-At the top of a YAML file, `extends` names one or more parent YAML files. The
-child starts from the parent settings and then replaces only the fields it
-states explicitly:
+`extends` names one or more parent YAML files. The child starts from the
+parents and replaces only the fields it states:
 
 ```yaml
 extends: common.yaml
@@ -409,160 +526,71 @@ data:
   entity_type: transformer
 ```
 
-Here the transformer base inherits the common data, Chronos, PIT, and sampling
-settings, while supplying its own entity type and complete ordered group. A
-relative parent path is interpreted relative to the child file. When several
-parents are listed, they are applied in order. Nested mappings combine by
-field; lists, such as `ordered_entity_ids`, are replaced as whole lists.
+Relative parent paths are resolved from the child file, several parents are
+applied in order, nested mappings merge by field, and lists such as
+`ordered_entity_ids` are replaced whole. Composites can extend a shared file
+too, as `configs/venues/powertech2027/main.yaml` does.
 
 ### Reading a local value from the environment
-
-YAML can refer to an environment variable when a setting depends on the local
-machine rather than the scientific design:
 
 ```yaml
 local_dir: ${SIMCAST_DATA_DIR:-data/liander2024}
 ```
 
-This means “use `SIMCAST_DATA_DIR` if it has been set; otherwise use
-`data/liander2024`.” It is why setting `SIMCAST_DATA_DIR` before a command or
-Jupyter session changes the data location without editing the base YAML.
+This uses `SIMCAST_DATA_DIR` when set and `data/liander2024` otherwise, so the
+data location changes without editing the base.
 
-### Making one temporary command-line change
+### Temporary command-line overrides
 
-`--set` changes one nested YAML value for one command; it never edits the YAML
-file. The field name follows the YAML nesting with dots, and the value is read
-as YAML. For example, `pit.dependence_transform=training_frequency` means the
-same setting as the nested YAML block shown below:
+`cache` and `download-data` accept `--set key=value`, which changes one nested
+base value for that command only. The key follows the YAML nesting with dots
+and the value is parsed as YAML:
 
 ```bash
-uv run python -m simcast.cli.build_cache \
-  --base configs/bases/liander2024/transformer.yaml \
+uv run cache --base configs/bases/liander2024/transformer.yaml \
   --set pit.dependence_transform=training_frequency
 ```
+
+is equivalent to:
 
 ```yaml
 pit:
   dependence_transform: training_frequency
 ```
 
-Examples:
+Further examples:
 
 ```bash
 --set chronos.device=cpu
 --set pit.mode=linear_interpolation
---set sampling.num_samples=2048
-When using a composite config, pass `--composite-config`. It runs all declared evaluations
-by default; `--evaluation-id` narrows it to one:
 --set covariates.future_weather_source=oracle
 ```
 
-`pit.mode=linear_interpolation` changes both historical PIT construction and
-entity-scenario projection, so it changes the marginal fingerprint and uses a
-different cache. It cannot be combined with
-`pit.dependence_transform=training_frequency`, which is defined only for the
-default discretized cells. The mathematical distinction is derived in
-[Chapter 3](../scientific/03_chronos_and_pit.md#4-two-finite-quantile-pit-constructions),
-and every PIT option is enumerated in the
-[configuration reference](configuration_reference.md#25-finite-quantile-marginal-law-and-pit).
+`pit.mode=linear_interpolation` changes both historical PITs and scenario
+projection, hence the fingerprint and cache. It cannot be combined with
+`pit.dependence_transform=training_frequency`, which is defined only for
+discretized cells. See
+[Chapter 3](../scientific/03_chronos_and_pit.md#4-two-finite-quantile-pit-constructions)
+and the [PIT fields](configuration_reference.md#25-finite-quantile-marginal-law-and-pit).
 
-For a method field, use a command or composite entry that resolves that method;
-for example, `model.latent_rank=8` is valid for M2/M3 and invalid for M4.
-Unknown fields and cross-method fields fail validation.
+Method and base changes inside a study are declared as `overrides` on
+composite entries (§6), so they are recorded in the resolved composite.
 
 ## 13. Common situations
 
-| Situation | Interpretation and action |
+| Situation | Action |
 |---|---|
-| `ModuleNotFoundError: simcast` in Jupyter | select/install `Python (simcast)` and start Jupyter with `uv run jupyter lab` |
-| Dataset file missing | set `SIMCAST_DATA_DIR` or run `download_data` for the selected base |
-| Cache file or `.zmetadata` missing | the cache is absent or incomplete; build it, adding `--overwrite` only for a deliberate replacement |
-| Hugging Face unauthenticated warning | public retrieval is permitted but rate-limited; optionally set `HF_TOKEN` |
+| `ModuleNotFoundError: simcast` in Jupyter | select or install the `Python (simcast)` kernel and start Jupyter with `uv run jupyter lab` |
+| Dataset file missing | set `SIMCAST_DATA_DIR` or run `uv run download-data` for the base |
+| Cache file or `.zmetadata` missing | the cache is absent or incomplete; rebuild it, using `--overwrite` only for a deliberate replacement |
+| Hugging Face unauthenticated warning | public retrieval is rate-limited; optionally set `HF_TOKEN` |
 | No crossing figure in notebook 02 | the selected cache has no representative crossing; this is a valid result |
-| Configuration rejected | consult [Configuration reference](configuration_reference.md); unknown or cross-method fields are invalid |
+| `evaluate`/`report` reports several runs | pass `--run-id`, or use `--config` with `--run-root` |
+| Report rejects a metric | add it to the evaluation's `metrics` and re-run `evaluate`, or drop it from the report |
+| Evaluation or report looks stale after a config change | re-run with `--force` |
+| Configuration rejected | check the [configuration reference](configuration_reference.md); unknown and cross-method fields are invalid |
 
-## 15. Regenerating or customizing a report
-
-`run_composite` stops after fitting (and evaluation, if declared) and
-run-manifest finalization. It never reports automatically. This keeps
-immutable experiment outputs under `runs/` separate from user-selected
-reporting choices.
-
-`simcast.cli.report_composite` regenerates a report from an existing
-`runs/<venue>/<composite>/<run-id>/composite_manifest.json` alone. It reads
-only already-completed evaluation cells' `per_origin_metrics.parquet` files;
-it never calls Chronos, a dependence fitter, or the evaluator, so it is cheap
-to rerun repeatedly while iterating on which metrics, bootstrap settings, or
-figures to produce.
-
-```bash
-uv run report \
-  --config configs/reports/powertech2027_main.yaml \
-  --run-root runs/powertech2027/main/<run-id>
-```
-
-A report document (§7 of the [configuration reference](configuration_reference.md#7-evaluation-and-report-configuration))
-names the optional `metrics` presentation subset, which recorded `evaluation_ids` to report on,
-and its own `reference` method plus an `analysis` block (bootstrap replicates
-and block lengths). Unless
-`output_dir` is set explicitly (in the YAML or via `--output-dir`), the report
-is written under `<run_root>/reports/<report-config-stem>/<evaluation-id>/`.
-When `metrics` is omitted, all metrics declared by the selected evaluations are
-reported. A report cannot add a metric that was not computed by those
-evaluations. Running it twice with different presentation subsets produces
-independent, comparable report directories from the same recorded evaluations.
-Use `--evaluation-id <id>` to report only one evaluation without changing the
-report YAML.
-Pass `--force` to replace the selected report directory and remove stale
-artifacts before regeneration.
-
-When a composite declares reports, the command runs all of them by default.
-Select one directly when needed:
-
-```bash
-uv run report --composite-config configs/venues/<venue>/study.yaml --report-id standard_report
-```
-
-The command loads that report entry, selects only its declared evaluation IDs,
-and reads the completed evaluation cells from the referenced run.
-
-## 14. Re-evaluating a completed run
-
-Fitting a dependence method never depends on `sampling` or `evaluation`
-settings, so a completed run's fits can be evaluated under a new design
-without retraining. `simcast.cli.evaluate_composite` adds a new evaluation to
-an existing `runs/<venue>/<composite>/<run-id>/` directory, reusing its
-recorded fits:
-
-```bash
-uv run evaluate --config configs/evaluations/variogram_power_1.yaml \
-  --run-root runs/lab/quick_shot/2026-09-16_093812
-```
-
-A standalone evaluation document (§2.6 and §7 of the
-[configuration reference](configuration_reference.md)) carries `base_ids` and
-`method_ids`, while `--run-root` identifies the completed run. When using a
-composite config, pass `--composite-config`. It runs all declared evaluations
-by default; `--evaluation-id` narrows it to one:
-
-```bash
-uv run evaluate \
-  --composite-config configs/venues/lab/quick_shot.yaml \
-  --evaluation-id standard \
-  --run-id 2026-09-24_133838
-```
-
-With one run under `runs/<venue>/<composite>/`, `--run-id` may be omitted. If
-multiple runs exist, provide `--run-id`; the command errors rather than
-guessing. The standalone and composite modes reject the other mode's options.
-The command is idempotent:
-rerunning it skips any fit whose evaluation directory already has a completed
-`evaluation_manifest.json`, and only computes the missing ones. Its output
-nests under `runs/<venue>/<composite>/<run-id>/evaluations/<evaluation-id>/`
-and is immediately reportable with `report_composite` (§15).
-Pass `--force` to discard and recompute the selected evaluation cells.
-
-## 16. Scientific validation without experiments
+## 14. Validation without experiments
 
 ```bash
 uv run ruff check src tests
@@ -570,8 +598,7 @@ uv run mypy src
 uv run pytest
 ```
 
-These commands test schemas, matrix properties, complete-vector invalidation,
-permutation equivariance, finite PIT/projection laws, cache identity, expansion,
-resume, and reporting on synthetic temporary data. They do not run Chronos,
-fit the empirical experiments, or alter existing `runs/` directories.
-
+These checks cover schemas, matrix properties, complete-vector invalidation,
+permutation equivariance, finite PIT and projection laws, cache identity,
+expansion, resume, evaluation, and reporting on synthetic temporary data. They
+do not run Chronos, fit the empirical experiments, or alter `runs/`.

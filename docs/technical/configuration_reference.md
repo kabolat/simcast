@@ -1,25 +1,29 @@
 # Configuration reference
 
-## 1. Why the configuration has three roles
+## 1. Document kinds
 
 A scientific comparison needs to distinguish what is held fixed from what is
-varied. Simcast therefore validates three YAML document kinds.
+varied, and both from how results are scored and compared. Simcast therefore
+validates five YAML document kinds.
 
-| Kind | Statistical role | Contents |
-|---|---|---|
-| `base` | defines the common marginal experiment | data, $\mathcal E_g$, information set, origins, Chronos, PIT, sampling, estimands |
-| `method` | defines one dependence hypothesis | exactly one of M0--M4 and only its meaningful parameters |
-| `composite` | defines a family of comparisons | explicit bases, method variants, repetitions, reference, uncertainty analysis, venue |
+| Kind | Statistical role | Contents | Section |
+|---|---|---|---|
+| `base` | defines the common marginal experiment | data, $\mathcal E_g$, information set, origins, split, Chronos, PIT | §2 |
+| `method` | defines one dependence hypothesis | exactly one of M0--M4 and only its meaningful parameters | §3 |
+| `composite` | defines a declared study | venue, bases, method variants, seeds, optional evaluation and report entries | §4 |
+| `evaluation` | defines one scoring design | sampling, metrics, cross-entity statistic, quantile/interval levels, figures | §7.1 |
+| `report` | defines one cross-method comparison | reference method, presented metrics, bootstrap design | §7.2 |
 
-Begin with one supplied base, method, or composite file; the tables then help
-you understand or deliberately change a particular field. Each table states the
-YAML type, admissible values, default (when one exists), and scientific role. A
-value marked **required** has no default. Practical YAML composition—inheritance,
-local environment values, and one-time command-line changes—is explained later
-in the [user guide](usage_guide.md#12-advanced-configuration-and-temporary-overrides).
+Begin with a supplied file; the tables then help you understand or
+deliberately change a particular field. Each table states the YAML type,
+admissible values, default (when one exists), and scientific role. A value
+marked **required** has no default. Unknown fields are errors. Inheritance,
+environment values, and temporary command-line changes are explained in the
+[usage guide](usage_guide.md#12-advanced-configuration-and-temporary-overrides).
 
-Implementation: the three public loaders are `load_base_config`,
-`load_method_config`, and `load_composite_config` in `simcast.config`.
+Implementation: `load_base_config`, `load_method_config`,
+`load_composite_config`, `load_evaluation_config`, and `load_report_config` in
+`simcast.config`.
 
 ## 2. Base configuration
 
@@ -76,7 +80,6 @@ have $K_g=5$. The group is invalid at $(i,\tau)$ if any member is invalid.
 | `covariates.calendar.enabled` | Boolean | `true` | include calendar covariates as a block |
 | `covariates.calendar.include_hour` | Boolean | `true` | hour-of-day coordinates |
 | `covariates.calendar.include_day_of_week` | Boolean | `true` | weekday coordinates |
-| `metrics` | non-empty list of unique metric names to compute and persist | `[mean_pinball, crps, weighted_interval_score, energy_score, variogram_score, test_pseudo_nll]` | authoritative metric declaration for this evaluation |
 | `covariates.calendar.include_is_weekend` | Boolean | `true` | binary Saturday/Sunday indicator |
 | `covariates.epex.enabled` | Boolean | `false` | request optional EPEX covariate input |
 | `covariates.profiles.enabled` | Boolean | `false` | request optional profile covariate input |
@@ -138,42 +141,19 @@ rejects it with `linear_interpolation`. Changing `pit.mode` changes the
 scientific marginal fingerprint and therefore selects a different cache. See
 [Chapter 3](../scientific/03_chronos_and_pit.md) for equations and numerical examples.
 
-### 2.6 Evaluation settings
-
-Sampling and score settings are no longer valid base fields. They belong to
-the optional `kind: evaluation` documents referenced by composite evaluation
-entries (or run standalone against an existing run; see
-[usage guide §14](usage_guide.md#14-re-evaluating-a-completed-run)). The
-legacy table below is retained only as a field reference for those evaluation
-documents; it must not be copied into a base.
+### 2.6 Runtime and output
 
 | Key | YAML type and admissible values | Default | Meaning |
 |---|---|---|---|
-| `sampling.num_samples` | positive integer | `4096` | aggregate scenarios $M$ per valid case |
-| `sampling.evaluation_seed` | non-negative integer | `2027` | scenario randomness |
-| `sampling.common_random_numbers` | Boolean | `true` | case-keyed Gaussian draws shared across methods |
-| `sampling.empirical_quantile_method` | literal string `nearest` | `nearest` | order-statistic convention for aggregate quantiles after Monte Carlo sampling; it does not control entity-level marginal projection |
-| `evaluation.cross_entity_statistic` | `sum` or `absolute_sum` | `sum` | complete-group statistic applied to each scenario and observation: $\sum_k y_k$ or $\sum_k |y_k|$ |
-| `evaluation.quantile_levels` | sorted, unique non-empty list in $(0,1)$ | `[.05,.10,.25,.50,.75,.90,.95]` | reported aggregate quantiles |
-| `evaluation.interval_levels` | sorted, unique non-empty list in $(0,1)$ | `[.50,.80,.90]` | central interval levels |
-| `evaluation.energy_score` | Boolean | `true` | evaluate empirical all-pairs Energy Score |
-| `evaluation.variogram_score` | Boolean | `true` | evaluate Variogram Score |
-| `evaluation.variogram_power` | real number in $(0,2]$ | `0.5` | pairwise-difference exponent |
-| `evaluation.report_by_lead` | Boolean | `true` | retain lead-specific summaries |
-| `evaluation.scenario_batch_size` | positive integer | `16` | scenario-generation batch size |
-| `evaluation.joint_score_num_samples` | positive integer | `512` | selected joint-ensemble size for Energy/Variogram Scores |
 | `runtime.deterministic` | Boolean | `true` | request deterministic numerical execution |
 | `runtime.num_workers` | non-negative integer | `0` | data-loading worker count |
 | `runtime.log_level` | `DEBUG`, `INFO`, `WARNING`, or `ERROR` | `INFO` | console verbosity only |
 | `output.cache_dir` | path string | `artifacts/cache` | cache root; not part of the marginal fingerprint |
-| `output.save_resolved_config` | Boolean | `true` | save the resolved scientific configuration with the cache/run |
+| `output.save_resolved_config` | Boolean | `true` | save the resolved configuration with the cache, fit, and evaluation |
 
-These settings do not alter cached Chronos quantiles. They define Monte Carlo
-resolution and reported estimands and therefore belong to the common base,
-not to a dependence method. The score definitions are in
-[Chapter 5](../scientific/05_training_sampling_scoring.md), and the way their
-records support a report is in
-[Chapter 7](../scientific/07_experiments_and_results.md).
+These fields are operational and do not enter the marginal fingerprint.
+Sampling and scoring are not base fields; they belong to evaluation
+documents (§7.1).
 
 ## 3. Method configuration
 
@@ -331,22 +311,18 @@ validation rather than silently doing nothing.
 
 `bases` assigns local IDs to base files and optional valid base overrides.
 `methods` assigns distinct IDs to method files, optional base selections,
-optional conditional seeds, and role-valid method overrides. `evaluations`,
-when declared, assigns post-fit evaluation designs to selected base/method
-combinations and runs immediately after fitting completes in the same
-`simcast.cli.run_composite` invocation. `reports` only declares which report
-designs refer to which evaluations; reports are never generated automatically
-and must be run explicitly with `simcast.cli.report_composite`.
+optional conditional seeds, and role-valid method overrides. `evaluations`
+assigns evaluation documents (§7.1) to selected base/method fits; `uv run
+composite` runs them immediately after fitting. `reports` assigns report
+documents (§7.2) to evaluation IDs; reports are never generated by
+`composite` and are run explicitly with `uv run report`.
 
 Deterministic M0/M1 entries cannot declare repeated seeds. Conditional entries
-without `seeds` use their method file's optimization seed. Each evaluation
-document names its deterministic M0/M1-family reference, which must resolve to
-exactly one deterministic fit per base. Bootstrap replicate count and block
-lengths belong to a report, not to fitting or evaluation. A run's fits are
-independent of any `sampling`/`evaluation` settings, so a new evaluation
-design can be applied to an existing run without retraining, using
-`simcast.cli.evaluate_composite` (see
-[usage guide §14](usage_guide.md#14-re-evaluating-a-completed-run)).
+without `seeds` use their method file's optimization seed. The reference
+method and bootstrap settings belong to a report, not to fitting or
+evaluation. Fits are independent of every evaluation setting, so a new
+evaluation can be applied to an existing run without retraining (see
+[usage guide §7](usage_guide.md#7-evaluating-fits)).
 The scientific purpose of this declaration and the resulting claim discipline
 are explained in [Chapters 6](../scientific/06_scientific_workflow.md) and
 [7](../scientific/07_experiments_and_results.md); the executable command is in
@@ -361,9 +337,11 @@ A composite at `configs/venues/<venue>/study.yaml` must declare the same safe
 slug in `venue`. Every artifact of a run nests under one output root:
 
 ```text
-runs/<venue>/<composite>/<run-id>/models/<base-id>/<method-id>/<seed-label>/
-runs/<venue>/<composite>/<run-id>/evaluations/<evaluation-id>/<base-id>/<method-id>/<seed-label>/
-runs/<venue>/<composite>/<run-id>/reports/<report-id>/
+runs/<venue>/<composite>/<run-id>/
+  models/<base-id>/<method-id>/<seed-label>/
+  evaluations/<evaluation-id>/<base-id>/figures/
+  evaluations/<evaluation-id>/<base-id>/<method-id>/<seed-label>/
+  reports/<report-id>/<evaluation-id>/
 ```
 
 This rule makes a venue cloneable and prevents path escape. `run-id` is either
@@ -372,12 +350,13 @@ a UTC timestamp or an explicit lowercase safe slug. `seed-label` is
 
 ## 6. Cache fingerprint
 
-See [usage guide §8](usage_guide.md#8-cache-compatibility) for the SHA-256
+See the [usage guide](usage_guide.md#cache-compatibility) for the SHA-256
 definition and compatibility rule; this section lists only its field-level
 consequences. `base_fingerprint` hashes precisely the base fields that determine the frozen
 marginal/PIT record. It excludes the local data path, Chronos device and batch
-size, sampling, evaluation, runtime, method, composite, venue, and reporting.
-`locate_compatible_cache` verifies metadata, not a user-supplied cache label.
+size, runtime, output, method, composite, venue, evaluation, and report
+settings. `locate_compatible_cache` verifies metadata, not a user-supplied
+cache label.
 
 Example: changing `evaluation.joint_score_num_samples` reuses the same marginal
 cache. Changing `pit.monotone_repair`, ordered entity IDs, weather source,
@@ -385,11 +364,14 @@ forecast horizon, or Chronos model revision requires a different cache.
 
 ## 7. Evaluation and report configuration
 
-A `kind: evaluation` document (§2.6) can also be run standalone against an
-already-completed run, without a composite `evaluations` entry, using
-`simcast.cli.evaluate_composite`. The run is supplied with `--run-root`; it is
-not stored in the evaluation YAML. `base_ids` and `method_ids` select the
-target fits:
+Evaluation and report documents are reusable: a composite references them by
+path, and `uv run evaluate --config` / `uv run report --config` apply them to
+any completed run supplied with `--run-root`. The run path is never stored in
+the YAML. Commands and output locations are described in the usage guide
+([evaluating](usage_guide.md#7-evaluating-fits),
+[reporting](usage_guide.md#8-reporting)).
+
+### 7.1 Evaluation document
 
 ```yaml
 kind: evaluation
@@ -397,29 +379,41 @@ id: variogram_power_1
 metrics: [mean_pinball, crps, energy_score, variogram_score]
 evaluation:
   variogram_power: 1.0
-```
-
-The evaluation document's `id` defaults to its YAML filename stem when omitted.
-The composite evaluation entry's `id` remains the run-local name used for the
-evaluation directory and manifest key. The document's `metrics` list is the
-authoritative set of metrics computed and persisted for that evaluation.
-
-Optional figure selection is configured separately:
-
-```yaml
 figures:
   aggregate_origin: "2024-01-15T23:45:00Z"
-  correlation_origin: "2024-01-15T23:45:00Z"
   correlation_lead: 1
 ```
 
-When omitted, both figures use the first testing origin and the correlation
-figure uses lead 1. The requested origins must exist in the testing split.
+| Key | YAML type and admissible values | Default | Meaning |
+|---|---|---|---|
+| `kind` | literal string `evaluation` | **required** | declares one scoring design |
+| `id` | safe slug | evaluation YAML filename stem | evaluation directory name in standalone mode; a composite entry's own `id` takes precedence |
+| `metrics` | non-empty list of unique per-origin metric names | `[mean_pinball, crps, weighted_interval_score, energy_score, variogram_score, test_pseudo_nll]` | authoritative list of metrics computed and persisted; Energy and Variogram Scores are computed only when listed |
+| `sampling.num_samples` | positive integer | `4096` | scenarios $M$ per valid case |
+| `sampling.evaluation_seed` | non-negative integer | `2027` | scenario randomness |
+| `sampling.common_random_numbers` | Boolean | `true` | case-keyed Gaussian draws shared across methods |
+| `sampling.empirical_quantile_method` | literal string `nearest` | `nearest` | order-statistic convention for aggregate quantiles; does not affect entity-level projection |
+| `evaluation.cross_entity_statistic` | `sum`, `absolute_sum`, `max`, or `absolute_max` | `sum` | scalar $T(\mathbf y)$ scored by aggregate metrics: $\sum_k y_k$, $\sum_k \lvert y_k\rvert$, $\max_k y_k$, or $\max_k \lvert y_k\rvert$, applied to every scenario and the observation |
+| `evaluation.quantile_levels` | sorted, unique non-empty list in $(0,1)$ | `[.05,.10,.25,.50,.75,.90,.95]` | aggregate quantiles scored by pinball loss |
+| `evaluation.interval_levels` | sorted, unique non-empty list in $(0,1)$ | `[.50,.80,.90]` | central interval coverages $c$, using the $(1-c)/2$ and $(1+c)/2$ scenario quantiles |
+| `evaluation.variogram_power` | real number in $(0,2]$ | `0.5` | Variogram Score pairwise-difference exponent |
+| `evaluation.joint_score_num_samples` | positive integer | `512` | selected joint-ensemble size for Energy/Variogram Scores |
+| `evaluation.scenario_batch_size` | positive integer | `16` | scenario-generation batch size; operational only |
+| `evaluation.energy_score`, `evaluation.variogram_score`, `evaluation.report_by_lead` | Boolean | `true` | accepted for compatibility but ignored; joint scores follow `metrics` and lead tables are always written |
+| `figures.aggregate_origin` | ISO timestamp of a test origin | first test origin | origin shown in `aggregate_fan.png` |
+| `figures.correlation_origin` | ISO timestamp of a test origin | first test origin | origin shown in `correlation.png` |
+| `figures.correlation_lead` | positive integer no greater than the horizon | `1` | lead shown in `correlation.png` |
+| `base_ids` | list of unique base IDs | `[]` | standalone mode only: bases to evaluate; empty means all |
+| `method_ids` | list of unique method IDs | `[]` | standalone mode only: methods to evaluate; empty means all |
+| `output_dir` | path | none | accepted but unused; evaluations are always written below `<run-root>/evaluations/` |
 
-A `kind: report` document regenerates a report from an already-completed run's
-recorded evaluations, without re-fitting or re-evaluating anything. See
-[usage guide §15](usage_guide.md#15-regenerating-or-customizing-a-report) for
-when and how to use it; this section lists its fields.
+Metric names are columns of `per_origin_metrics.parquet`. Besides the six
+defaults, per-level columns such as `pinball_q0.5`, `coverage_0.9`,
+`interval_width_0.9`, and `interval_score_0.9` are available for every
+configured level. The score definitions are in
+[Chapter 5](../scientific/05_training_sampling_scoring.md).
+
+### 7.2 Report document
 
 ```yaml
 kind: report
@@ -429,16 +423,23 @@ evaluation_ids: [standard]
 analysis:
   bootstrap_replicates: 10000
   primary_block_length: 7
+  sensitivity_block_lengths: [3, 14]
 ```
 
 | Key | YAML type and admissible values | Default | Meaning |
 |---|---|---|---|
-| `kind` | literal string `report` | **required** | declares a standalone report-regeneration document |
-| `metrics` | list of unique names declared by the selected evaluations | `[]` | optional presentation subset; empty means all declared evaluation metrics |
-| `evaluation_ids` | list of known evaluation IDs recorded in the run's manifest | `[]` | which recorded evaluations to report on; empty means every evaluation in the manifest |
-| `analysis` | a composite `analysis` block (§4) | **required** | bootstrap replicates and block lengths for this report only |
-| `output_dir` | path | `<run_root>/reports/<report-id>/<evaluation-id>` | where the regenerated report is written |
+| `kind` | literal string `report` | **required** | declares one cross-method comparison |
+| `reference` | safe slug naming a composite method ID | **required** | method against which paired effects are computed |
+| `metrics` | list of unique names declared by the selected evaluations | `[]` | presentation subset; empty means every declared metric |
+| `evaluation_ids` | list of evaluation IDs recorded in the run manifest | `[]` | standalone mode only: evaluations to report; empty means all. In composite mode the entry's `evaluation_ids` are used |
+| `analysis` | mapping | **required** | bootstrap design for this report; its fields have the defaults below |
+| `analysis.bootstrap_replicates` | positive integer | `10000` | moving-block bootstrap replicates |
+| `analysis.primary_block_length` | positive integer | `7` | primary block length, in origins |
+| `analysis.sensitivity_block_lengths` | list of unique positive integers | `[3, 14]` | additional block lengths shown alongside the primary one |
+| `output_dir` | path | `<run-root>/reports/<report-id>/` | report root; each evaluation is written to `<output_dir>/<evaluation-id>/` |
 
-Evaluation `metrics` is authoritative: the evaluator records it in
-`evaluation_manifest.json`. Report `metrics` is only a presentation filter;
-it cannot request a metric that the selected evaluations did not declare.
+Evaluation `metrics` is authoritative and recorded in
+`evaluation_manifest.json`. Report `metrics` is only a presentation filter: it
+cannot request a metric the selected evaluations did not declare. Paired
+effects are computed for every reported metric, after averaging seeds within
+method and origin.

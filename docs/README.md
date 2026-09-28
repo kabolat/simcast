@@ -38,9 +38,9 @@ implementation guidance needed to reproduce that mathematical choice.
 
 Use these documents to operate or inspect the repository:
 
-1. [Usage guide: installation, commands, notebooks, and outputs](technical/usage_guide.md)
-2. [Configuration reference: valid YAML fields, types, defaults, and constraints](technical/configuration_reference.md)
-3. [Artifact reference: cache, run, and report schemas](technical/artifact_reference.md)
+1. [Usage guide: installation, fitting, evaluation, reporting, and outputs](technical/usage_guide.md)
+2. [Configuration reference: base, method, composite, evaluation, and report fields](technical/configuration_reference.md)
+3. [Artifact reference: cache, fit, evaluation, and report schemas](technical/artifact_reference.md)
 
 The tracks deliberately cross-reference one another. A scientific chapter
 states the statistical object and links to the relevant configuration or
@@ -89,7 +89,10 @@ Liander targets + point-in-time weather + entity metadata
        matching configured marginal projection (identical marginals)
                            |
                            v
-           entity scenarios --> spatial sum --> test scores
+           entity scenarios --> cross-entity statistic T --> test scores
+                           |
+                           v
+          report: paired effects against a declared reference
 ```
 
 ## Scope and status

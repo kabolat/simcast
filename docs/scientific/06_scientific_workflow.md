@@ -4,7 +4,7 @@
 the evidence it must leave behind. The [usage guide](../technical/usage_guide.md)
 turns that sequence into commands and notebooks; the
 [configuration reference](../technical/configuration_reference.md) defines the
-three declarations used below; and the
+declarations used below; and the
 [artifact reference](../technical/artifact_reference.md) defines the resulting
 records. The interpretation of a completed comparison belongs in
 [Chapter 7](07_experiments_and_results.md).
@@ -31,7 +31,9 @@ $$
 
 The base declaration fixes every transformation through the pseudo-PIT. The
 method declaration changes only the map to $R_{g,\tau}^{(i)}$. A composite
-declaration makes repeated comparisons and their uncertainty analysis explicit.
+declaration makes the repeated fits explicit; an evaluation declaration fixes
+the sampling design and scores; and a report declaration fixes the reference
+and the uncertainty analysis of paired differences.
 The mathematical definitions of the information set, PIT, copulas, and scores
 are given in Chapters [2](02_data_and_information_set.md),
 [3](03_chronos_and_pit.md), [4](04_dependence_models.md), and
@@ -39,18 +41,18 @@ are given in Chapters [2](02_data_and_information_set.md),
 
 ## 2. Scientific declaration and operational evidence
 
-The three configuration objects are not merely an interface convention. They
+The five configuration objects are not merely an interface convention. They
 separate quantities that must remain common from the hypothesis that is allowed
-to vary. This correspondence makes a completed result auditable.
+to vary, and both from the way the outcome is scored and compared. This
+correspondence makes a completed result auditable.
 
 | Scientific object | What it fixes or varies | Operational declaration | Evidence retained |
 |---|---|---|---|
-| Base | population, ordered $\mathcal E_g$, $\mathcal I^{(i)}$, marginal grid, PIT rule, split, sampling, and scores | a `base` YAML file; [base fields](../technical/configuration_reference.md#2-base-configuration) | fingerprinted PIT library and resolved base |
+| Base | population, ordered $\mathcal E_g$, $\mathcal I^{(i)}$, marginal grid, PIT rule, and split | a `base` YAML file; [base fields](../technical/configuration_reference.md#2-base-configuration) | fingerprinted PIT library and resolved base |
 | Method | one map from features or historical scores to $R_{g,\tau}^{(i)}$ | a `method` YAML file; [method fields](../technical/configuration_reference.md#3-method-configuration) | resolved method, fitted parameters or checkpoint, fitting diagnostics |
-| Composite | declared bases, method variants, and seeds; optional evaluation designs | a `composite` YAML file; [composite fields](../technical/configuration_reference.md#4-composite-configuration) | expansion manifest, run status, independent evaluation records, and reports |
-
-The report configuration separately declares the reference method and
-block-bootstrap design used for cross-method paired summaries.
+| Composite | declared bases, method variants, and seeds | a `composite` YAML file; [composite fields](../technical/configuration_reference.md#4-composite-configuration) | expansion manifest and run status |
+| Evaluation | scenario count and seed, cross-entity statistic $T$, quantile and interval levels, and scores | an `evaluation` YAML file; [evaluation fields](../technical/configuration_reference.md#7-evaluation-and-report-configuration) | per-method evaluation records and manifest |
+| Report | reference method and block-bootstrap design | a `report` YAML file; [report fields](../technical/configuration_reference.md#7-evaluation-and-report-configuration) | method summaries, paired effects, and figures |
 
 The [usage guide's interface map](../technical/usage_guide.md#1-choose-the-appropriate-interface)
 shows which command creates each record. The separation prevents a method
@@ -132,7 +134,7 @@ reference is fitted and evaluated with common random numbers. The saved base
 and method remain separate, preserving the logic of controlled comparison.
 
 ```bash
-uv run python -m simcast.cli.run_singular \
+uv run singular \
   --base configs/bases/liander2024/transformer.yaml \
   --method configs/methods/m3_set_aware_low_rank.yaml \
   --reference-method configs/methods/m0_independent.yaml
@@ -147,26 +149,29 @@ a composite.
 
 ## 7. Composite transformation
 
-`run_composite` resolves only explicitly listed entries. Each cell is the tuple
+The `composite` command resolves only explicitly listed entries. Each fit is the tuple
 
 $$c=(\text{base entry},\text{method entry},\text{seed or deterministic}).$$
 
 The expansion manifest is an auditable enumeration of these tuples. Identical
 deterministic fits are shared. Conditional fits remain seed-specific. Each
-non-reference cell is evaluated with its declared reference on identical cases
-and random draws. The composite schema makes this claim checkable rather than
-implicit; see the [configuration reference](../technical/configuration_reference.md#4-composite-configuration).
+evaluation scores every selected fit independently under one declared design,
+with identical cases and common random numbers across methods, so any two
+evaluated methods can later be paired. The composite schema makes this claim
+checkable rather than implicit; see the
+[configuration reference](../technical/configuration_reference.md#4-composite-configuration).
 
 ```bash
-uv run python -m simcast.cli.run_composite \
-  --config configs/venues/<venue>/main.yaml
+uv run composite --config configs/venues/<venue>/main.yaml
 ```
 
-The paired origin-level loss for method $a$ against reference $b$ is
+A report then chooses a reference $b$. The paired origin-level loss for method
+$a$ is
 
 $$d_{a,b,g}^{(i)}=S_{a,g}^{(i)}-S_{b,g}^{(i)},$$
 
-where valid leads are averaged within origin. A moving-block bootstrap samples
+where valid leads are averaged within origin and seeds are averaged within
+method and origin. A moving-block bootstrap samples
 chronological blocks of $d^{(i)}$ to retain short-range temporal dependence.
 The command, venue paths, and repeatable-resume procedure are given in the
 [composite section of the usage guide](../technical/usage_guide.md#6-composite-experiment).

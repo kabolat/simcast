@@ -3,7 +3,9 @@
 **Technical counterparts.** The [usage guide](../technical/usage_guide.md#6-composite-experiment)
 explains how to execute a declared composite, the
 [configuration reference](../technical/configuration_reference.md#4-composite-configuration)
-defines its bases, repetitions, reference, and bootstrap settings, and the
+defines its bases and repetitions (and, in
+[§7](../technical/configuration_reference.md#7-evaluation-and-report-configuration),
+the evaluation design, reference, and bootstrap settings), and the
 [artifact reference](../technical/artifact_reference.md#composite-experiment-and-report-roots)
 defines the records from which a report is made. The scientific workflow in
 [Chapter 6](06_scientific_workflow.md) explains why these records must remain
@@ -102,13 +104,13 @@ interval scores. Energy Score uses the empirical all-pairs estimator on the
 selected 512-member joint ensemble; ensemble selection is distinct from the
 formula. Variogram Score emphasizes pairwise entity contrasts.
 
-The current generic composite report designates mean aggregate pinball as its
-primary paired metric: `method_summary.csv` and `paired_effects.csv` therefore
-summarize that score. The per-method evaluation records retain the other
-configured scores, but a pooled paired interval for CRPS, Energy Score, or
-Variogram Score must not be claimed unless the composite reporting procedure is
-explicitly extended to aggregate that score with the same declared case and
-bootstrap rules. See the [evaluation schema](../technical/artifact_reference.md#evaluation-directory)
+A report computes a paired effect and its moving-block interval for every
+metric it presents, using the same retained origins and the same bootstrap
+design. Which of these is the *primary* claim is a scientific declaration: it
+must be fixed before test results are inspected, typically by listing it
+first in the report's `metrics` or by a report that presents only that metric.
+Other reported scores are secondary evidence and should be presented as such.
+See the [evaluation schema](../technical/artifact_reference.md#evaluation-directory)
 and [report schema](../technical/artifact_reference.md#composite-experiment-and-report-roots).
 
 ## 6. Sensitivity and ablation declarations
@@ -142,9 +144,10 @@ explicit composite is run to completion and its manifest verifies the current
 schema and full-group design.
 
 Implementation: `read_evaluation_artifacts` provides read-only historical
-inspection. `run_composite` creates the immutable run artifacts; the explicit
-`simcast.cli.report_composite` command creates summaries, paired effects, and
-figures from a completed run.
+inspection. `uv run composite` creates the immutable fits and declared
+evaluations; `uv run evaluate` adds evaluations to a completed run; and
+`uv run report` creates summaries, paired effects, and figures from recorded
+evaluations.
 
 ## 8. Reading and reporting a completed composite
 
@@ -181,12 +184,11 @@ claim rather than merely reproduce a number:
 3. **Dependence alternatives.** State the exact M0--M4 entries, conditional
    feature/model choices, and the number of independently fitted seeds. A
    conditional result without its seed aggregation is incomplete evidence.
-4. **Primary paired result.** For the predeclared primary score—currently mean
-   aggregate pinball in the generic composite report—give the reference, the
-   mean $d_{m,r,g}^{(i)}$, its orientation, the number of retained origins, and
-   the moving-block interval with its configured block length. Report a second
-   score as a paired result only when its aggregation and interval procedure
-   have also been declared and generated.
+4. **Primary paired result.** For the predeclared primary score, give the
+   reference, the cross-entity statistic $T$, the mean $d_{m,r,g}^{(i)}$, its
+   orientation, the number of retained origins, and the moving-block interval
+   with its configured block length. Present other paired scores as
+   secondary results.
 5. **Heterogeneity and diagnostics.** Present lead-wise and group-wise patterns
    alongside marginal diagnostics and conditional-fitting diagnostics. Treat a
    correlation illustration as a mechanism diagnostic, not as proof of better

@@ -12,11 +12,10 @@ P\!\left(Y_{k,\tau}^{(i)}\le y_k,\ k\in\mathcal E_g\mid\mathcal I^{(i)}\right)
 =C_{g,\tau}^{(i)}\!\left(\{F_{k,\tau}^{(i)}(y_k)\}_{k\in\mathcal E_g}\right).
 $$
 
-The evaluation targets a cross-entity statistic of the complete group. Two
-choices are currently supported: the simple sum
-$\sum_{k\in\mathcal E_g}Y_{k,\tau}^{(i)}$ and the absolute sum
-$\sum_{k\in\mathcal E_g}|Y_{k,\tau}^{(i)}|$. The evaluation YAML selects the
-statistic; `sum` is the default.
+The evaluation targets a cross-entity statistic of the complete group: the
+simple sum $\sum_k Y_k$, absolute sum $\sum_k |Y_k|$, maximum $\max_k Y_k$,
+or absolute maximum $\max_k |Y_k|$. The evaluation YAML selects the statistic;
+`sum` is the default.
 
 Every training, validation, and test case uses all $K_g$ entities. If one
 entity is invalid at $(i,\tau)$, the complete vector is invalid; the group is
@@ -52,137 +51,98 @@ construction and scenario projection.
 
 ## Configuration as scientific design
 
-Human-authored YAML files represent three distinct objects:
+Human-authored YAML files declare five distinct objects:
 
 ```text
 configs/
-  bases/liander2024/       # data, group, information set, Chronos, PIT, estimands
-  methods/                 # exactly one of M0--M4
-  venues/<venue>/          # explicit composite experiments and analyses
+  bases/liander2024/   # data, group, information set, Chronos, PIT
+  methods/             # exactly one of M0--M4
+  venues/<venue>/      # composites: which bases, methods, and seeds to fit
+  evaluations/         # sampling, metrics, cross-entity statistic, figures
+  reports/             # reference method and bootstrap design
 ```
 
 A base defines the frozen-marginal experiment. A method file contains only
 parameters meaningful to one dependence hypothesis. A composite explicitly
-lists bases, method variants, repetitions, and paired analyses; no hidden
-Cartesian grid is generated.
+lists bases, method variants, and seeds; no hidden Cartesian grid is generated.
+Evaluations score fits and reports compare evaluated methods; neither changes
+a fit, so both can be repeated on a completed run.
 
 The marginal cache is identified by a SHA-256 fingerprint of the scientific
 inputs that determine it, so method, venue, evaluation, and report settings
-never invalidate it. Cache directory names are never trusted without
-compatible metadata; see
-[docs/technical/usage_guide.md](docs/technical/usage_guide.md#8-cache-compatibility)
-for the exact fingerprinted fields and compatibility rule.
+never invalidate it; see
+[cache compatibility](docs/technical/usage_guide.md#cache-compatibility).
 
-## Setup with uv
+## Quick start
 
-For a task-oriented guide to installation, data, caches, commands, notebooks,
-temporary overrides, and output locations, start with
-[docs/technical/usage_guide.md](docs/technical/usage_guide.md).
+The [usage guide](docs/technical/usage_guide.md) covers every step in detail.
 
 ```bash
 uv sync --group dev
 bash scripts/setup_chronos.sh
+uv run download-data --base configs/bases/liander2024/transformer.yaml
 ```
 
 Pinned revisions are recorded in the base configuration and lockfile. The
 Chronos patch exposes the already computed output-patch representation; it does
 not change Chronos attention, normalization, loss, or quantile values.
+`SIMCAST_DATA_DIR` and `SIMCAST_DEVICE` change the data location and device
+without changing cache identity.
 
-The default data path is `data/liander2024`. It can be changed without changing
-cache identity:
-
-```bash
-export SIMCAST_DATA_DIR=/absolute/path/to/liander2024
-export SIMCAST_DEVICE=cuda
-uv run python -m simcast.cli.download_data \
-  --base configs/bases/liander2024/transformer.yaml
-```
-
-## Frozen-marginal cache
-
-Construct the Chronos quantile, representation, and finite-PIT record for one
-base without fitting a dependence method:
+Fit and evaluate one method, optionally alongside a reference:
 
 ```bash
-uv run python -m simcast.cli.build_cache \
-  --base configs/bases/liander2024/transformer.yaml
-```
-
-The canonical cache location is determined by the scientific marginal
-fingerprint of the base. To choose a location explicitly, use `--output-dir`.
-An existing cache is never replaced unless `--overwrite` is supplied.
-
-## Singular experiment
-
-A singular experiment fits and evaluates exactly one selected method:
-
-```bash
-uv run python -m simcast.cli.run_singular \
-  --base configs/bases/liander2024/transformer.yaml \
-  --method configs/methods/m4_conditional_kernel.yaml
-```
-
-An explicit reference can be evaluated on the same valid cases, fixed
-marginals, and case-keyed Gaussian draws:
-
-```bash
-uv run python -m simcast.cli.run_singular \
+uv run singular \
   --base configs/bases/liander2024/transformer.yaml \
   --method configs/methods/m4_conditional_kernel.yaml \
   --reference-method configs/methods/m0_independent.yaml
 ```
 
-## Composite experiment
-
-A composite performs only the experiments explicitly declared in its YAML:
+Run a declared study, evaluate it, and report it:
 
 ```bash
-uv run python -m simcast.cli.run_composite \
-  --config configs/venues/<venue>/main.yaml
+uv run composite --config configs/venues/lab/quick_all_methods.yaml
+uv run evaluate  --composite-config configs/venues/lab/quick_all_methods.yaml
+uv run report    --config configs/reports/lab_main.yaml \
+  --run-root runs/lab/quick_all_methods/<run-id>
 ```
 
-Long composites can use a stable identifier and resume validated completed
-cells:
+`composite` fits every declared base/method/seed and runs the evaluations the
+composite declares; `evaluate` adds or completes evaluations; `report`
+computes method summaries and moving-block paired effects against the report's
+reference. Missing caches are built automatically; `uv run cache` builds one
+in advance. Every command documents its options with `--help`.
 
-```bash
-uv run python -m simcast.cli.run_composite \
-  --config configs/venues/<venue>/main.yaml \
-  --run-id replication_01 --resume
-```
-
-Resume is accepted only when the stored resolved-composite hash is identical.
-Completed compatible cells are preserved; changed designs and partial outputs
-are never silently overwritten.
-
-A venue is a reproducible research workspace, not a Python environment.
-Outputs follow:
+Outputs nest under one run root:
 
 ```text
-runs/<venue>/<composite>/<run-id>/models/<base-id>/<method-id>/<seed-label>/
-runs/<venue>/<composite>/<run-id>/evaluations/<evaluation-id>/<base-id>/<method-id>/<seed-label>/
-runs/<venue>/<composite>/<run-id>/reports/<report-id>/
+runs/<venue>/<composite>/<run-id>/
+  models/<base-id>/<method-id>/<seed-label>/
+  evaluations/<evaluation-id>/<base-id>/<method-id>/<seed-label>/
+  reports/<report-id>/<evaluation-id>/
 ```
 
-The repository includes `lab` composites with deliberately small explicit
-budgets for understanding the workflow. Such results are preliminary by
-design, regardless of which trainable method is selected.
+Long composites accept `--run-id <id>` and `--resume`; resume is accepted only
+when the stored resolved-composite hash is identical, and partial outputs are
+never silently overwritten. The `lab` venue has deliberately small budgets for
+understanding the workflow; its results are preliminary by design.
 
 ## Evaluation
 
-Aggregate scenario quantiles, coverage, interval width and score, WIS, and CRPS
-are evaluated from $\widetilde A_{g,\tau}^{(i,m)}$. Energy Score uses the
-empirical all-pairs estimator on the selected 512-member joint ensemble;
-chunking changes only memory consumption. Variogram Score assesses pairwise
-spatial contrasts. Each selected method is evaluated independently under the
-same declared sampling design. Cross-method effects are a reporting concern:
-the report config selects the reference method and uses a moving-block
-bootstrap at the origin level to retain temporal dependence.
+Aggregate quantiles, pinball loss, CRPS, interval coverage, width, and score,
+and WIS are evaluated on the selected cross-entity statistic of the scenarios
+$\widetilde A_{g,\tau}^{(i,m)}$. Energy Score uses the empirical all-pairs
+estimator on the selected 512-member joint ensemble; Variogram Score assesses
+pairwise contrasts. Each method is evaluated independently under the same
+declared sampling design with common random numbers. Cross-method effects are
+a reporting concern: the report selects the reference method and uses an
+origin-level moving-block bootstrap to retain temporal dependence.
 
 Every run records the complete ordered entity set, revisions, resolved
-role-specific configurations, hashes, seeds, environment and Git metadata,
-fitted methods, evaluation manifests, and completion state. Historical
-evaluation manifests remain readable through `simcast.reporting`, but the old
-execution schemas are not accepted or rewritten.
+configurations, hashes, seeds, environment and Git metadata, fitted methods,
+evaluation manifests, and completion state. Historical evaluation manifests
+remain readable through `simcast.reporting`, but old execution schemas are not
+accepted or rewritten.
 
 ## Validation
 

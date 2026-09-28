@@ -112,7 +112,8 @@ $$
 
 `evaluation.cross_entity_statistic: sum` uses
 $T_g(\mathbf y)=\sum_k y_k$; `absolute_sum` uses
-$T_g(\mathbf y)=\sum_k |y_k|$. The same function is applied to the
+$T_g(\mathbf y)=\sum_k |y_k|$; `max` uses $\max_k y_k$; and
+`absolute_max` uses $\max_k |y_k|$. The same function is applied to the
 observed entity vector before aggregate quantile, interval, CRPS, and pinball
 scoring. Energy and Variogram Scores continue to score the full entity vector,
 independent of this choice.
