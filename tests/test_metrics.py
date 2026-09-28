@@ -40,6 +40,29 @@ def test_energy_and_variogram_scores_are_zero_for_perfect_ensemble() -> None:
     assert variogram_score(samples, truth).item() == pytest.approx(0.0)
 
 
+def test_variogram_score_sums_over_all_ordered_pairs() -> None:
+    torch.manual_seed(3)
+    samples = torch.randn(7, 4)
+    truth = torch.randn(4)
+    weights = torch.rand(4, 4)
+    observed = (truth[:, None] - truth[None, :]).abs().sqrt()
+    predicted = (samples[:, :, None] - samples[:, None, :]).abs().sqrt().mean(dim=0)
+    expected = (weights * (observed - predicted).square()).sum()
+    torch.testing.assert_close(variogram_score(samples, truth, power=0.5, weights=weights), expected)
+
+
+def test_weighted_interval_score_is_twice_mean_pinball_over_implied_levels() -> None:
+    torch.manual_seed(5)
+    samples = torch.randn(2, 3, 401)
+    truth = torch.randn(2, 3)
+    coverages = (0.5, 0.8, 0.9)
+    implied = torch.tensor([0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95])
+    result = evaluate_aggregate_ensemble(samples, truth, implied, interval_coverages=coverages)
+    torch.testing.assert_close(
+        result.case_metrics["weighted_interval_score"], 2.0 * result.case_metrics["mean_pinball"]
+    )
+
+
 def test_energy_and_variogram_scores_support_batched_ensembles() -> None:
     torch.manual_seed(17)
     samples = torch.randn(3, 11, 4)

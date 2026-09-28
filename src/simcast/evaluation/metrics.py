@@ -75,7 +75,7 @@ def weighted_interval_score(
     uppers: torch.Tensor,
     coverages: torch.Tensor,
 ) -> torch.Tensor:
-    """Weighted interval score over central intervals, preserving case axes."""
+    """Weighted interval score of Bracher et al. (2021), preserving case axes."""
 
     truth = torch.as_tensor(observation)
     med = torch.as_tensor(median, dtype=truth.dtype, device=truth.device)
@@ -93,7 +93,7 @@ def weighted_interval_score(
     )
     weights = alphas / 2.0
     numerator = 0.5 * torch.abs(truth - med) + (scores * weights).sum(dim=-1)
-    return numerator / (0.5 + weights.sum())
+    return numerator / (levels.numel() + 0.5)
 
 
 def crps_ensemble(samples: torch.Tensor, observation: torch.Tensor) -> torch.Tensor:
@@ -146,7 +146,7 @@ def variogram_score(
     power: float = 0.5,
     weights: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """Variogram score over unique entity pairs for one or more ensembles ``[..., M, K]``.
+    """Variogram score of Scheuerer & Hamill (2015) over all ordered entity pairs ``[..., M, K]``.
 
     Leading batch dimensions, if any, are preserved in the returned tensor.
     """
@@ -167,4 +167,6 @@ def variogram_score(
     row, column = torch.triu_indices(entities, entities, offset=1, device=draws.device)
     observed = torch.abs(truth[..., row] - truth[..., column]).pow(power)
     predicted = torch.abs(draws[..., row] - draws[..., column]).pow(power).mean(dim=-2)
-    return (pair_weights[row, column] * (observed - predicted).square()).sum(dim=-1)
+    # (i, j) and (j, i) contribute identical squared terms; the diagonal is zero.
+    pair_weights = pair_weights[row, column] + pair_weights[column, row]
+    return (pair_weights * (observed - predicted).square()).sum(dim=-1)

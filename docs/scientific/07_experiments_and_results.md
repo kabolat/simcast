@@ -100,9 +100,14 @@ whether an overall mean hides forecast-horizon heterogeneity.
 
 Aggregate pinball loss and CRPS assess the distribution of
 $A_{g,\tau}^{(i)}$. Coverage must be interpreted with interval width and proper
-interval scores. Energy Score uses the empirical all-pairs estimator on the
+interval scores. WIS depends on the declared interval levels and, under the
+default levels, equals twice the mean pinball loss; CRPS is the level-free
+aggregate score. Energy Score uses the empirical all-pairs estimator on the
 selected 512-member joint ensemble; ensemble selection is distinct from the
-formula. Variogram Score emphasizes pairwise entity contrasts.
+formula. Variogram Score emphasizes pairwise entity contrasts, ignores shifts
+common to all entities, and scales with $K_g$, so it is compared only within a
+group. See [Chapter 5](05_training_sampling_scoring.md#wis-versus-crps) for
+these caveats.
 
 A report computes a paired effect and its moving-block interval for every
 metric it presents, using the same retained origins and the same bootstrap

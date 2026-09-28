@@ -410,8 +410,11 @@ figures:
 Metric names are columns of `per_origin_metrics.parquet`. Besides the six
 defaults, per-level columns such as `pinball_q0.5`, `coverage_0.9`,
 `interval_width_0.9`, and `interval_score_0.9` are available for every
-configured level. The score definitions are in
-[Chapter 5](../scientific/05_training_sampling_scoring.md).
+configured level. The score definitions, references, and caveats are in
+[Chapter 5](../scientific/05_training_sampling_scoring.md#aggregate-scores).
+`weighted_interval_score` uses the levels implied by `interval_levels`; when
+those equal `quantile_levels` (as by default) it is exactly twice
+`mean_pinball`.
 
 ### 7.2 Report document
 

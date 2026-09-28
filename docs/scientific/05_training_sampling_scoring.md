@@ -176,42 +176,77 @@ in general.
 ## Aggregate scores
 
 All metrics pool the same valid full-group origin-lead cases unless reported by
-lead. Lower loss/score is better.
+lead. Lower loss/score is better. The aggregate scores evaluate the scalar
+cross-entity statistic $a=T(\mathbf y)$ of the observation against the $M$
+scenario statistics $x_m=T(\mathbf x_m)$; see the
+[references](#references) at the end of this chapter.
 
 ### Pinball loss
 
-For aggregate quantile forecast $q_\alpha$ and observation $a$,
+For aggregate quantile forecast $q_\alpha$ and observation $a$, the quantile
+(pinball) loss of Koenker and Bassett (1978) is
 
 $$
 \rho_\alpha(a-q_\alpha)
 =\max\{\alpha(a-q_\alpha),(\alpha-1)(a-q_\alpha)\}.
 $$
 
-`mean_pinball` averages over evaluation levels
-$0.05,0.10,0.25,0.50,0.75,0.90,0.95$ and all cases. It is the headline
-descriptive ranking score.
+`mean_pinball` averages over the configured `evaluation.quantile_levels`
+(default $0.05,0.10,0.25,0.50,0.75,0.90,0.95$) and all cases. It is the headline
+descriptive ranking score. Aggregate quantiles are nearest empirical order
+statistics of the $M$ scenario statistics (Hyndman and Fan, 1996).
 
-The score is proper for an individual aggregate quantile. Averaging over the
-declared levels approximates an integral quantile score. It rewards sharp
-quantiles only when they are calibrated under the realized aggregate, which is
-why a narrower interval alone is not evidence of improvement.
+The score is consistent for an individual aggregate quantile (Gneiting, 2011).
+It rewards sharp quantiles only when they are calibrated under the realized
+aggregate, which is why a narrower interval alone is not evidence of
+improvement.
 
 ### Ensemble CRPS
 
-For aggregate ensemble $x_1,\ldots,x_M$,
+The continuous ranked probability score of Matheson and Winkler (1976) is
 
 $$
-\operatorname{CRPS}
+\operatorname{CRPS}(F,a)=\int_{-\infty}^{\infty}\bigl(F(x)-\mathbf 1\{a\le x\}\bigr)^2\,dx .
+$$
+
+For $F$ with a finite mean it has the kernel (energy) representation of
+Gneiting and Raftery (2007),
+
+$$
+\operatorname{CRPS}(F,a)=\mathbb E_F|X-a|-\tfrac12\,\mathbb E_F|X-X'|,
+\qquad X,X'\overset{\text{iid}}{\sim}F .
+$$
+
+Simcast evaluates this for the empirical distribution $\widehat F_M$ of the
+ensemble $x_1,\ldots,x_M$, which replaces both expectations by averages:
+
+$$
+\operatorname{CRPS}(\widehat F_M,a)
 =\frac1M\sum_m|x_m-a|
 -\frac1{2M^2}\sum_{m,n}|x_m-x_n|.
 $$
 
-The implementation evaluates the pair term in $O(M\log M)$ through sorted
-order-statistic coefficients.
+This is the exact integral CRPS of the ensemble's step-function CDF, not an
+approximation of it. Three equivalent views are useful:
 
-### Central intervals and WIS
+- **Order statistics.** With sorted members $x_{(1)}\le\cdots\le x_{(M)}$,
+  $\sum_{m,n}|x_m-x_n|=2\sum_{i=1}^M(2i-M-1)\,x_{(i)}$. The implementation uses
+  this identity, so the pair term costs $O(M\log M)$ instead of $O(M^2)$.
+- **Quantile decomposition.** $\operatorname{CRPS}(\widehat F_M,a)
+  =\frac2M\sum_{i=1}^M\rho_{\tau_i}(a-x_{(i)})$ with $\tau_i=(2i-1)/(2M)$, that
+  is, twice the mean pinball loss over $M$ evenly spaced levels (Laio and
+  Tamea, 2007; Bröcker, 2012). This is the bridge to WIS below.
+- **Fair version.** Replacing $1/(2M^2)$ by $1/(2M(M-1))$ gives the fair CRPS
+  of Ferro (2014), an unbiased estimator of $\operatorname{CRPS}(F,a)$ for the
+  distribution $F$ that generated the members. The version used here exceeds
+  it by about $\mathbb E|X-X'|/(2M)$, which is negligible at $M=4096$. Zamo
+  and Naveau (2018) compare these estimators.
 
-For central coverage $c=1-\alpha$ with bounds $(l,u)$,
+### Central intervals
+
+For central coverage $c=1-\alpha$ with bounds $(l,u)$ set to the empirical
+$\alpha/2$ and $1-\alpha/2$ scenario quantiles, the interval score of Winkler
+(1972) (see also Gneiting and Raftery, 2007) is
 
 $$
 \operatorname{IS}_\alpha(l,u;a)
@@ -219,34 +254,81 @@ $$
 +\frac{2}{\alpha}(a-u)\mathbf1(a>u).
 $$
 
-Coverage is the fraction with $l\le a\le u$; width is $u-l$. The baseline reports
-central 0.50, 0.80, and 0.90 intervals. Coverage must be read with width and a
-proper score.
+Coverage is the fraction with $l\le a\le u$; width is $u-l$. The default
+evaluation reports central 0.50, 0.80, and 0.90 intervals from
+`evaluation.interval_levels`, independently of `quantile_levels`. Coverage
+must be read with width and a proper score.
 
-For interval miscoverages $\alpha_j$, implemented WIS is
+### Weighted interval score
+
+For $K$ central intervals with miscoverages $\alpha_1,\ldots,\alpha_K$ and the
+empirical aggregate median $m$, Simcast uses the weighted interval score of
+Bracher et al. (2021) with $w_0=\tfrac12$ and $w_k=\alpha_k/2$:
 
 $$
 \operatorname{WIS}
-=\frac{
+=\frac{1}{K+\tfrac12}\left(
 \tfrac12|a-m|+
-\sum_j\tfrac{\alpha_j}{2}\operatorname{IS}_{\alpha_j}
-}{
-\tfrac12+\sum_j\tfrac{\alpha_j}{2}
-},
+\sum_{k=1}^K\tfrac{\alpha_k}{2}\operatorname{IS}_{\alpha_k}
+\right).
 $$
 
-where $m$ is the empirical aggregate median.
+Because $\tfrac{\alpha}{2}\operatorname{IS}_\alpha=\rho_{\alpha/2}(a-l)+\rho_{1-\alpha/2}(a-u)$
+and $\tfrac12|a-m|=\rho_{1/2}(a-m)$,
+
+$$
+\operatorname{WIS}=\frac{2}{2K+1}\sum_{j=1}^{2K+1}\rho_{\tau_j}(a-q_{\tau_j}),
+\qquad \tau\in\{\alpha_k/2,\ \tfrac12,\ 1-\alpha_k/2\},
+$$
+
+twice the mean pinball loss over the $2K+1$ levels implied by the intervals.
+
+### WIS versus CRPS
+
+Both scores are integrals of the same quantile loss: the quantile
+decomposition gives $\operatorname{CRPS}=2\int_0^1\rho_\tau\,d\tau$, and WIS is
+an equally weighted $(2K+1)$-point approximation of that integral. Bracher et
+al. (2021) show that WIS approaches CRPS for many, roughly evenly spaced
+levels. In Simcast the distinction matters for four reasons.
+
+1. **The levels are few and uneven.** The default intervals imply
+   $\tau\in\{0.05,0.10,0.25,0.50,0.75,0.90,0.95\}$: four of the seven levels
+   lie in the outer 10% tails and only three between 0.25 and 0.75. With equal
+   weights, WIS is therefore a tail-emphasizing quantile score, not the CRPS.
+   A set of central intervals such as 0.10--0.80 does the opposite: it weights
+   the centre and ignores the tails beyond the 0.10 and 0.90 quantiles.
+2. **Values depend on the declared levels.** Changing `interval_levels` changes
+   what WIS measures, so WIS values from evaluations with different interval
+   sets are not comparable. CRPS does not depend on any declared level.
+3. **WIS can duplicate `mean_pinball`.** When `quantile_levels` equal the
+   implied levels, as in the default evaluation,
+   $\operatorname{WIS}=2\times$`mean_pinball` case by case, and it adds no
+   information. WIS is useful mainly for its decomposition into widths and
+   penalties (`interval_width_*`, `interval_score_*`) and for comparison with
+   interval-format benchmarks. One half of this WIS, as an average pinball
+   loss, was the GEFCom2014 score (Hong et al., 2016).
+4. **CRPS uses the whole ensemble.** Because the complete scenario ensemble is
+   available, CRPS is the exact, level-free score for the aggregate
+   distribution. WIS and `mean_pinball` summarize it at chosen quantiles. When
+   they rank methods differently from CRPS, the differences are concentrated
+   at quantiles that the chosen grid over- or under-weights.
+
+Both are proper and negatively oriented, and both are on the scale of the
+observation, so each reduces to the absolute error for a point forecast.
 
 ## Joint full-group scores
 
 Joint scores use the first `min(M,512)` members of the already generated
 full-group ensemble. This is an ensemble-size selection, not entity
-subsampling.
+subsampling. They evaluate the entity vector $\mathbf y\in\mathbb R^{K_g}$,
+not the cross-entity statistic.
 
 ### Energy Score
 
-For selected ensemble $x_1,\ldots,x_{M_J}\in\mathbb R^{K_g}$ and observed
-vector $\mathbf y$, the baseline uses the empirical all-pairs estimator
+The Energy Score generalizes the CRPS kernel form to vectors (Gneiting and
+Raftery, 2007; Gneiting et al., 2008). For selected ensemble
+$x_1,\ldots,x_{M_J}\in\mathbb R^{K_g}$ and observed vector $\mathbf y$, the
+baseline uses the empirical all-pairs estimator
 
 $$
 \widehat{\operatorname{ES}}
@@ -257,22 +339,59 @@ $$
 
 The pair sum is exact for the selected 512-member ensemble. `torch.cdist` is
 chunked over 128 first-sample rows solely to limit memory; no cyclic pairing or
-pair subsampling remains.
+pair subsampling remains. The Energy Score is strictly proper, but its ability
+to detect misspecified correlations between components is limited
+(Scheuerer and Hamill, 2015; Pinson and Tastu, 2013). Because Simcast holds
+marginals fixed and varies only dependence, this weakness bears directly on
+method comparisons, and the Variogram Score is reported alongside it.
 
 ### Variogram Score
 
-With $p=0.5$ and unit weights over unique entity pairs,
+The Variogram Score of order $p$ (Scheuerer and Hamill, 2015) is
 
 $$
 \operatorname{VS}_p
-=\sum_{a<b}\left(
-|y_a-y_b|^p
--\frac1{M_J}\sum_m|x_{m,a}-x_{m,b}|^p
-\right)^2.
+=\sum_{i=1}^{K_g}\sum_{j=1}^{K_g}w_{ij}\left(
+|y_i-y_j|^p
+-\mathbb E|X_i-X_j|^p
+\right)^2,
 $$
 
-Its magnitude depends on scale and the number of entity pairs, so it is not
-comparable across differently scaled groups.
+where the expectation is estimated by the mean over the $M_J$ selected
+members. Simcast uses unit weights $w_{ij}=1$ and
+$p=$ `evaluation.variogram_power` (default $0.5$). The diagonal terms are zero
+and the $(i,j)$ and $(j,i)$ terms are equal, so the sum is twice the sum over
+unordered pairs.
+
+Interpretation requires care:
+
+1. **Proper, not strictly proper.** The score depends on the forecast only
+   through the expected pairwise variogram $\mathbb E|X_i-X_j|^p$. A shift
+   common to all components leaves every difference unchanged, and two
+   forecasts with the same pairwise variograms score identically. VS
+   therefore does not assess marginal accuracy. In Simcast marginals are
+   fixed across methods, so VS differences between methods isolate
+   dependence, but a good VS says nothing about the fixed marginals.
+2. **Discrimination.** Scheuerer and Hamill (2015) find VS distinctly more
+   discriminative than the Energy Score with respect to correlation
+   structure. This is why both are reported.
+3. **Scale and group size.** VS has units of $|y|^{2p}$ and sums
+   $K_g(K_g-1)$ non-zero terms. Its magnitude grows with entity scale and
+   with $K_g$, so it is not comparable across groups. With unit weights,
+   pairs of large or volatile entities dominate; non-uniform weights, which
+   Scheuerer and Hamill discuss, are not currently used.
+4. **Order $p$.** Smaller $p$ gives less weight to large pairwise differences
+   and is more robust to outliers. scoringRules uses $p=0.5$ by default and
+   lists $p=0.5$ and $p=1$ as standard choices (Jordan et al., 2019).
+5. **Monte Carlo estimate.** Squaring the difference between the observed term
+   and an ensemble mean biases the estimate upward by
+   $\operatorname{Var}(|X_i-X_j|^p)/M_J$ per term. With $M_J=512$ this is
+   small, and it is the same selected ensemble size for every method.
+
+Evaluations computed before this definition was adopted used a Variogram Score
+over unordered pairs (half the current value) and a WIS divided by
+$\tfrac12+\sum_k\alpha_k/2$. Re-run `evaluate --force` before comparing such
+records with current ones.
 
 ## Full-group output scope
 
@@ -290,11 +409,64 @@ $(|48-58|+|55-58|+|63-58|)/3=6$; the second term uses all nine ordered pairs to
 account for ensemble dispersion. Energy Score applies the same principle to
 vectors of entity values and therefore evaluates the joint spatial law.
 
-For M2--M4, `method.optimization.*` controls optimization. In the base,
-`sampling.num_samples`,
-`sampling.evaluation_seed`, and `sampling.common_random_numbers` control joint
-draws; base `evaluation.*` declares the score levels and joint-ensemble size.
+For M2--M4, `method.optimization.*` controls optimization. In an evaluation
+document, `sampling.num_samples`, `sampling.evaluation_seed`, and
+`sampling.common_random_numbers` control joint draws, and `evaluation.*`
+declares the cross-entity statistic, score levels, variogram order, and
+joint-ensemble size.
 Training is in `training/trainer.py`, sampling in
 `sampling/gaussian_copula.py`, finite projection in
 `sampling/quantile_projection.py`, and scoring in `evaluation/metrics.py` and
 `evaluation/aggregate.py`, all below `src/simcast/`.
+
+## References
+
+- Bracher, J., Ray, E. L., Gneiting, T., & Reich, N. G. (2021). Evaluating
+  epidemic forecasts in an interval format. *PLoS Computational Biology*,
+  17(2), e1008618. https://doi.org/10.1371/journal.pcbi.1008618
+- Bröcker, J. (2012). Evaluating raw ensembles with the continuous ranked
+  probability score. *Quarterly Journal of the Royal Meteorological Society*,
+  138(667), 1611--1617. https://doi.org/10.1002/qj.1891
+- Ferro, C. A. T. (2014). Fair scores for ensemble forecasts. *Quarterly
+  Journal of the Royal Meteorological Society*, 140(683), 1917--1923.
+  https://doi.org/10.1002/qj.2270
+- Gneiting, T. (2011). Quantiles as optimal point forecasts. *International
+  Journal of Forecasting*, 27(2), 197--207.
+  https://doi.org/10.1016/j.ijforecast.2009.12.015
+- Gneiting, T., & Raftery, A. E. (2007). Strictly proper scoring rules,
+  prediction, and estimation. *Journal of the American Statistical
+  Association*, 102(477), 359--378. https://doi.org/10.1198/016214506000001437
+- Gneiting, T., Stanberry, L. I., Grimit, E. P., Held, L., & Johnson, N. A.
+  (2008). Assessing probabilistic forecasts of multivariate quantities, with
+  an application to ensemble predictions of surface winds. *TEST*, 17,
+  211--235. https://doi.org/10.1007/s11749-008-0114-x
+- Hong, T., Pinson, P., Fan, S., Zareipour, H., Troccoli, A., & Hyndman, R. J.
+  (2016). Probabilistic energy forecasting: Global Energy Forecasting
+  Competition 2014 and beyond. *International Journal of Forecasting*, 32(3),
+  896--913. https://doi.org/10.1016/j.ijforecast.2016.02.001
+- Hyndman, R. J., & Fan, Y. (1996). Sample quantiles in statistical packages.
+  *The American Statistician*, 50(4), 361--365.
+  https://doi.org/10.1080/00031305.1996.10473566
+- Jordan, A., Krüger, F., & Lerch, S. (2019). Evaluating probabilistic
+  forecasts with scoringRules. *Journal of Statistical Software*, 90(12),
+  1--37. https://doi.org/10.18637/jss.v090.i12
+- Koenker, R., & Bassett, G. (1978). Regression quantiles. *Econometrica*,
+  46(1), 33--50. https://doi.org/10.2307/1913643
+- Laio, F., & Tamea, S. (2007). Verification tools for probabilistic forecasts
+  of continuous hydrological variables. *Hydrology and Earth System Sciences*,
+  11(4), 1267--1277. https://doi.org/10.5194/hess-11-1267-2007
+- Matheson, J. E., & Winkler, R. L. (1976). Scoring rules for continuous
+  probability distributions. *Management Science*, 22(10), 1087--1096.
+  https://doi.org/10.1287/mnsc.22.10.1087
+- Pinson, P., & Tastu, J. (2013). *Discrimination ability of the Energy
+  score*. Technical report, Technical University of Denmark.
+- Scheuerer, M., & Hamill, T. M. (2015). Variogram-based proper scoring rules
+  for probabilistic forecasts of multivariate quantities. *Monthly Weather
+  Review*, 143(4), 1321--1334. https://doi.org/10.1175/MWR-D-14-00269.1
+- Winkler, R. L. (1972). A decision-theoretic approach to interval
+  estimation. *Journal of the American Statistical Association*, 67(337),
+  187--191. https://doi.org/10.1080/01621459.1972.10481224
+- Zamo, M., & Naveau, P. (2018). Estimation of the continuous ranked
+  probability score with limited information and applications to ensemble
+  weather forecasts. *Mathematical Geosciences*, 50(2), 209--234.
+  https://doi.org/10.1007/s11004-017-9709-7
