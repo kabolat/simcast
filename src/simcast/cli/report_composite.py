@@ -132,15 +132,12 @@ def _write_report(
     ]
     if not cells:
         raise ValueError(f"{manifest_path} records no complete evaluation cells to report on")
-    declared_metrics = {
-        metric
-        for cell in cells
-        for metric in _cell_metrics(cell)
-    }
+    declared_metric_sets = [set(_cell_metrics(cell)) for cell in cells]
+    declared_metrics = set.intersection(*declared_metric_sets)
     if config.metrics:
-        if declared_metrics and not set(config.metrics).issubset(declared_metrics):
+        if not set(config.metrics).issubset(declared_metrics):
             missing = sorted(set(config.metrics) - declared_metrics)
-            raise ValueError(f"report metrics were not declared by the selected evaluations: {missing}")
+            raise ValueError(f"report metrics were not declared by every selected evaluation cell: {missing}")
         metrics = config.metrics
     else:
         metrics = sorted(declared_metrics)

@@ -114,19 +114,19 @@ figures are written once to `evaluations/<evaluation-id>/<base-id>/figures/`
 
 ### `metrics.json`
 
-Top-level keys are method names. Each method includes mean pinball, pinball by
-evaluation quantile, CRPS, coverage/width/interval score by central interval,
-WIS, valid and dropped case counts, and—when declared in `metrics`—mean Energy
-and Variogram Scores. Values pool all valid test origins and leads.
-The method payload also includes mean test Gaussian-copula pseudo-NLL.
+Top-level keys are method names. Each method includes valid and dropped case
+counts plus exactly its declared metrics. `mean_pinball` includes per-quantile
+pinball values; `weighted_interval_score` includes coverage, width, and
+interval-score values for its configured central intervals. Values pool all
+valid test origins and leads.
 
 ### Tidy per-case tables
 
 `per_origin_lead_metrics.parquet` has one row per complete declared group,
 method, neural seed, origin, and lead. It records $K_g$, validity, observed and
-forecast aggregate quantiles, aggregate proper scores, joint scores, and test
-pseudo-NLL. Invalid rows remain present with `valid: false`; the group never
-shrinks. The existing `observed_aggregate` and `aggregate_q*` columns refer
+forecast aggregate quantiles, and exactly the declared metrics. Invalid rows
+remain present with `valid: false`; the group never shrinks. The existing
+`observed_aggregate` and `aggregate_q*` columns refer
 to the configured cross-entity statistic (sum, absolute sum, max, or absolute max).
 `per_origin_metrics.parquet` averages metrics across valid leads within each
 origin and is the input to temporal block resampling. The evaluation manifest
@@ -134,9 +134,9 @@ records `cross_entity_statistic` for provenance.
 
 ### `metrics_by_lead.csv`
 
-Each row is `(lead, method)`. It holds mean pinball, CRPS, WIS, interval
-coverage/width/scores, and mean joint scores for that one-based lead. Invalid
-cases at a lead are omitted. The table is always written.
+Each row is `(lead, method)`. It holds exactly the declared metrics and the
+diagnostics implied by `mean_pinball` or `weighted_interval_score` for that
+one-based lead. Invalid cases at a lead are omitted. The table is always written.
 
 ### Per-method NPZ
 
@@ -144,9 +144,9 @@ cases at a lead are omitted. The table is always written.
 |---|---|---|
 | `quantile_predictions` | `[N_test,H,Q_eval]` | empirical aggregate quantiles |
 | `correlations` | `[N_test,H,K,K]` | evaluated copula correlations |
-| `energy_score` | `[N_test,H]` | empirical all-pairs score on the selected joint ensemble, or NaN |
-| `variogram_score` | `[N_test,H]` | score or NaN |
-| `pseudo_nll` | `[N_test,H]` | finite-quantile Gaussian-copula pseudo-NLL or NaN |
+| `energy_score` | `[N_test,H]` | empirical all-pairs score on the selected joint ensemble; present only when declared |
+| `variogram_score` | `[N_test,H]` | score; present only when declared |
+| `pseudo_nll` | `[N_test,H]` | finite-quantile Gaussian-copula pseudo-NLL; present only when declared |
 | `valid` | `[N_test,H]` | common evaluation mask |
 
 Entity-level and aggregate Monte Carlo samples are not persisted, which keeps

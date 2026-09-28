@@ -310,8 +310,10 @@ figures:
   correlation_lead: 1
 ```
 
-- `metrics` is the authoritative list of metrics computed and persisted.
-  Energy and Variogram Scores are computed only when listed.
+- `metrics` is the exact list of canonical metrics computed and persisted.
+  `mean_pinball` also retains `pinball_q*`; `weighted_interval_score` retains
+  coverage, width, and interval-score diagnostics. The report may select only
+  metrics declared by every evaluation cell it includes.
 - `cross_entity_statistic` selects the scalar $T(\mathbf y)$ that aggregate
   scores evaluate: $\sum_k y_k$, $\sum_k|y_k|$, $\max_k y_k$, or
   $\max_k|y_k|$. It is applied identically to every scenario and to the

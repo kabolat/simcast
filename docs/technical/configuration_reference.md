@@ -372,7 +372,7 @@ figures:
 |---|---|---|---|
 | `kind` | literal string `evaluation` | **required** | declares one scoring design |
 | `id` | safe slug | evaluation YAML filename stem | evaluation directory name in standalone mode; a composite entry's own `id` takes precedence |
-| `metrics` | non-empty list of unique per-origin metric names | `[mean_pinball, crps, weighted_interval_score, energy_score, variogram_score, test_pseudo_nll]` | authoritative list of metrics computed and persisted; Energy and Variogram Scores are computed only when listed |
+| `metrics` | non-empty unique subset of `mean_pinball`, `crps`, `weighted_interval_score`, `energy_score`, `variogram_score`, `test_pseudo_nll` | all six | exact computation contract: only listed scores are computed and persisted |
 | `sampling.num_samples` | positive integer | `4096` | scenarios $M$ per valid case |
 | `sampling.evaluation_seed` | non-negative integer | `2027` | scenario randomness |
 | `sampling.common_random_numbers` | Boolean | `true` | case-keyed Gaussian draws shared across methods |
@@ -390,10 +390,10 @@ figures:
 
 Evaluations are always written to `<run-root>/evaluations/<evaluation-id>/`.
 Aggregate quantiles are nearest empirical order statistics of the scenarios.
-Metric names are columns of `per_origin_metrics.parquet`. Besides the six
-defaults, per-level columns such as `pinball_q0.5`, `coverage_0.9`,
-`interval_width_0.9`, and `interval_score_0.9` are available for every
-configured level. The score definitions, references, and caveats are in
+`mean_pinball` also persists its per-level `pinball_q*` values;
+`weighted_interval_score` also persists `coverage_*`, `interval_width_*`, and
+`interval_score_*` values. No score is present unless its corresponding
+canonical metric is listed. The score definitions, references, and caveats are in
 [Chapter 5](../scientific/05_training_sampling_scoring.md#aggregate-scores).
 `weighted_interval_score` uses the levels implied by `interval_levels`; when
 those equal `quantile_levels` (as by default) it is exactly twice

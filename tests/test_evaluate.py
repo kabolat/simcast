@@ -47,7 +47,7 @@ def test_cross_entity_statistic_changes_samples_and_observations(tmp_path: Path)
     config = _config(tmp_path)
 
     simple = _sample_and_evaluate(
-        prepared, truth, predictions, torch.tensor([0.1, 0.5, 0.9]), valid, config, compute_joint=False
+        prepared, truth, predictions, torch.tensor([0.1, 0.5, 0.9]), valid, config, metrics=("mean_pinball",)
     )
     absolute_config = config.model_copy(
         update={"evaluation": config.evaluation.model_copy(update={"cross_entity_statistic": "absolute_sum"})}
@@ -59,7 +59,7 @@ def test_cross_entity_statistic_changes_samples_and_observations(tmp_path: Path)
         torch.tensor([0.1, 0.5, 0.9]),
         valid,
         absolute_config,
-        compute_joint=False,
+        metrics=("mean_pinball",),
     )
 
     assert simple.aggregate.quantile_predictions[0, 0, 1].item() == pytest.approx(-1.0)
@@ -71,7 +71,7 @@ def test_cross_entity_statistic_changes_samples_and_observations(tmp_path: Path)
             update={"evaluation": config.evaluation.model_copy(update={"cross_entity_statistic": statistic})}
         )
         result = _sample_and_evaluate(
-            prepared, truth, predictions, torch.tensor([0.1, 0.5, 0.9]), valid, chosen, compute_joint=False
+            prepared, truth, predictions, torch.tensor([0.1, 0.5, 0.9]), valid, chosen, metrics=("mean_pinball",)
         )
         assert result.aggregate.quantile_predictions[0, 0, 1].item() == pytest.approx(expected)
         assert result.aggregate.overall["mean_pinball"] == pytest.approx(0.0)
@@ -143,6 +143,30 @@ def test_full_group_evaluation_uses_only_the_complete_group(tmp_path: Path) -> N
     assert (output / "figures" / "independent" / "summary_by_lead_mean_pinball.png").is_file()
     manifest = json.loads((output / "evaluation_manifest.json").read_text(encoding="utf-8"))
     assert manifest["group"]["entity_count"] == 4
+
+
+def test_evaluation_persists_only_declared_metrics(tmp_path: Path) -> None:
+    cache = _cache(tmp_path / "cache")
+    output = evaluate_from_config(
+        _config(tmp_path),
+        methods=("independent",),
+        metrics=("mean_pinball",),
+        cache_dir=cache,
+        output_dir=tmp_path / "evaluation",
+    )
+
+    summary = json.loads((output / "metrics.json").read_text(encoding="utf-8"))["independent"]
+    assert "mean_pinball" in summary
+    assert "crps" not in summary
+    assert "weighted_interval_score" not in summary
+    assert "energy_score" not in summary
+    assert "variogram_score" not in summary
+    assert "test_pseudo_nll" not in summary
+    case_columns = set(pd.read_parquet(output / "per_origin_metrics.parquet").columns)
+    assert {"mean_pinball", "pinball_q0.1", "pinball_q0.5", "pinball_q0.9"} <= case_columns
+    assert not {"crps", "weighted_interval_score", "energy_score", "variogram_score", "test_pseudo_nll"} & case_columns
+    with np.load(output / "independent_aggregate_predictions.npz") as arrays:
+        assert set(arrays.files) == {"quantile_predictions", "correlations", "valid"}
 
 
 def test_evaluation_rejects_a_shrunken_correlation_matrix(tmp_path: Path) -> None:

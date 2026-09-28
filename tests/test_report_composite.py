@@ -37,6 +37,10 @@ def _synthetic_run_root(tmp_path: Path) -> Path:
     frame[frame["method"] == "conditional_kernel"].to_parquet(
         method_evaluation / "per_origin_metrics.parquet", index=False
     )
+    for evaluation_path in (reference_evaluation, method_evaluation):
+        (evaluation_path / "evaluation_manifest.json").write_text(
+            json.dumps({"metrics": ["mean_pinball", "crps"]}), encoding="utf-8"
+        )
     manifest = {
         "fits": [],
         "evaluations": {
@@ -135,6 +139,16 @@ def test_report_composite_rejects_unknown_metric_without_writing_anything(
         report_composite(config_path, run_root=run_root)
 
     assert not (run_root / "reports").exists()
+
+
+def test_report_composite_rejects_metric_not_declared_by_every_cell(tmp_path: Path) -> None:
+    run_root = _synthetic_run_root(tmp_path)
+    evaluation_manifest = next((run_root / "evaluations").rglob("m4/seed_1/evaluation_manifest.json"))
+    evaluation_manifest.write_text(json.dumps({"metrics": ["mean_pinball"]}), encoding="utf-8")
+    config_path = _write_report_config(tmp_path / "report.yaml", run_root, metrics=["crps"])
+
+    with pytest.raises(ValueError, match="every selected evaluation cell"):
+        report_composite(config_path, run_root=run_root)
 
 
 def test_report_composite_plots_noncovering_bootstrap_interval(

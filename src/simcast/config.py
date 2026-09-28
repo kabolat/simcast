@@ -322,6 +322,22 @@ class ResolvedExperimentConfig(ConfigModel):
 # models below. ResolvedExperimentConfig is only their selected numerical view.
 
 Slug = Annotated[str, Field(pattern=r"^[a-z0-9]+(?:[a-z0-9_-]*[a-z0-9])?$")]
+EvaluationMetric: TypeAlias = Literal[
+    "mean_pinball",
+    "crps",
+    "weighted_interval_score",
+    "energy_score",
+    "variogram_score",
+    "test_pseudo_nll",
+]
+DEFAULT_EVALUATION_METRICS: tuple[EvaluationMetric, ...] = (
+    "mean_pinball",
+    "crps",
+    "weighted_interval_score",
+    "energy_score",
+    "variogram_score",
+    "test_pseudo_nll",
+)
 
 
 class BaseOutputConfig(ConfigModel):
@@ -438,17 +454,7 @@ class EvaluationDocumentConfig(ConfigModel):
 
     kind: Literal["evaluation"]
     id: Slug
-    metrics: list[str] = Field(
-        default_factory=lambda: [
-            "mean_pinball",
-            "crps",
-            "weighted_interval_score",
-            "energy_score",
-            "variogram_score",
-            "test_pseudo_nll",
-        ],
-        min_length=1,
-    )
+    metrics: list[EvaluationMetric] = Field(default_factory=lambda: list(DEFAULT_EVALUATION_METRICS), min_length=1)
     sampling: SamplingConfig = Field(default_factory=SamplingConfig)
     evaluation: EvaluationConfig = Field(default_factory=EvaluationConfig)
     figures: EvaluationFiguresConfig = Field(default_factory=EvaluationFiguresConfig)

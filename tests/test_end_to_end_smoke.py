@@ -41,7 +41,12 @@ def test_cpu_data_to_pit_static_sampling_and_aggregate_metrics() -> None:
 
     true_aggregate = truth[40:].sum(dim=1)
     for samples in method_samples.values():
-        report = evaluate_aggregate_ensemble(samples, true_aggregate, levels)
+        report = evaluate_aggregate_ensemble(
+            samples,
+            true_aggregate,
+            levels,
+            metrics=("mean_pinball", "crps", "weighted_interval_score"),
+        )
         assert report.quantile_predictions.shape == (10, 2, 3)
         assert np.isfinite(list(report.overall.values())).all()
         assert list(report.by_lead.index) == [1, 2]

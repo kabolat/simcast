@@ -180,7 +180,7 @@ def _sample_and_evaluate(
     *,
     dependence_z: torch.Tensor | None = None,
     num_samples: int | None = None,
-    compute_joint: bool = True,
+    metrics: Sequence[str] = ("mean_pinball", "crps", "weighted_interval_score"),
 ) -> MethodEvaluation:
     sample_count = config.sampling.num_samples if num_samples is None else num_samples
     n_origin, n_entity, horizon = truth.shape
@@ -197,6 +197,7 @@ def _sample_and_evaluate(
     marginal = predictions.permute(0, 2, 1, 3).reshape(-1, n_entity, predictions.shape[-1])
     realized = truth.permute(0, 2, 1).reshape(-1, n_entity)
     flattened_z = None if dependence_z is None else dependence_z.permute(0, 2, 1).reshape(-1, n_entity)
+    selected = set(metrics)
     case_indices = valid.reshape(-1).nonzero(as_tuple=False).flatten()
     device = torch.device(config.chronos.device if torch.cuda.is_available() else "cpu")
     for offset in range(0, case_indices.numel(), config.evaluation.scenario_batch_size):
@@ -222,15 +223,17 @@ def _sample_and_evaluate(
         aggregate[positions] = _cross_entity_statistic(
             scenarios.entity_samples, config.evaluation.cross_entity_statistic, dim=-1
         ).cpu()
-        if compute_joint:
+        if {"energy_score", "variogram_score"} & selected:
             joint_count = min(sample_count, config.evaluation.joint_score_num_samples)
             joint_samples = scenarios.entity_samples[:, :joint_count]
             joint_truth = realized.index_select(0, positions).to(device)
-            energy[positions] = energy_score(joint_samples, joint_truth, pair_chunk_size=128).cpu()
-            variogram[positions] = variogram_score(
-                joint_samples, joint_truth, power=config.evaluation.variogram_power
-            ).cpu()
-        if flattened_z is not None:
+            if "energy_score" in selected:
+                energy[positions] = energy_score(joint_samples, joint_truth, pair_chunk_size=128).cpu()
+            if "variogram_score" in selected:
+                variogram[positions] = variogram_score(
+                    joint_samples, joint_truth, power=config.evaluation.variogram_power
+                ).cpu()
+        if "test_pseudo_nll" in selected and flattened_z is not None:
             pseudo_nll[positions] = gaussian_copula_pseudo_nll(
                 flattened_z.index_select(0, positions).to(device),
                 correlations.index_select(0, positions).to(device),
@@ -251,6 +254,7 @@ def _sample_and_evaluate(
         aggregate,
         aggregate_truth,
         quantile_levels=torch.tensor(config.evaluation.quantile_levels),
+        metrics=selected,
         interval_coverages=tuple(config.evaluation.interval_levels),
         valid_mask=valid,
     )
@@ -259,39 +263,50 @@ def _sample_and_evaluate(
     )
 
 
-def _serializable_metrics(result: MethodEvaluation, valid: torch.Tensor) -> dict[str, float | int]:
-    metrics: dict[str, float | int] = dict(result.aggregate.overall)
-    metrics["valid_origin_lead_count"] = int(valid.sum())
-    metrics["dropped_origin_lead_count"] = int(valid.numel() - valid.sum())
-    if torch.isfinite(result.energy_score).any():
-        metrics["energy_score"] = float(result.energy_score[torch.isfinite(result.energy_score)].mean())
-        metrics["variogram_score"] = float(result.variogram_score[torch.isfinite(result.variogram_score)].mean())
-    if torch.isfinite(result.pseudo_nll).any():
-        metrics["test_pseudo_nll"] = float(result.pseudo_nll[torch.isfinite(result.pseudo_nll)].mean())
-    return metrics
+def _serializable_metrics(
+    result: MethodEvaluation, valid: torch.Tensor, metrics: Sequence[str]
+) -> dict[str, float | int]:
+    summary: dict[str, float | int] = dict(result.aggregate.overall)
+    selected = set(metrics)
+    summary["valid_origin_lead_count"] = int(valid.sum())
+    summary["dropped_origin_lead_count"] = int(valid.numel() - valid.sum())
+    if "energy_score" in selected:
+        summary["energy_score"] = float(result.energy_score[torch.isfinite(result.energy_score)].mean())
+    if "variogram_score" in selected:
+        summary["variogram_score"] = float(result.variogram_score[torch.isfinite(result.variogram_score)].mean())
+    if "test_pseudo_nll" in selected:
+        summary["test_pseudo_nll"] = float(result.pseudo_nll[torch.isfinite(result.pseudo_nll)].mean())
+    return summary
 
 
-def _save_method_result(run_dir: Path, result: MethodEvaluation, valid: torch.Tensor) -> dict[str, float | int]:
-    metrics = _serializable_metrics(result, valid)
-    np.savez_compressed(
-        run_dir / f"{result.name}_aggregate_predictions.npz",
-        quantile_predictions=result.aggregate.quantile_predictions.numpy(),
-        correlations=result.correlations.numpy(),
-        energy_score=result.energy_score.numpy(),
-        variogram_score=result.variogram_score.numpy(),
-        pseudo_nll=result.pseudo_nll.numpy(),
-        valid=valid.numpy(),
-    )
-    return metrics
+def _save_method_result(
+    run_dir: Path, result: MethodEvaluation, valid: torch.Tensor, metrics: Sequence[str]
+) -> dict[str, float | int]:
+    summary = _serializable_metrics(result, valid, metrics)
+    payload: dict[str, np.ndarray] = {
+        "quantile_predictions": result.aggregate.quantile_predictions.numpy(),
+        "correlations": result.correlations.numpy(),
+        "valid": valid.numpy(),
+    }
+    if "energy_score" in metrics:
+        payload["energy_score"] = result.energy_score.numpy()
+    if "variogram_score" in metrics:
+        payload["variogram_score"] = result.variogram_score.numpy()
+    if "test_pseudo_nll" in metrics:
+        payload["pseudo_nll"] = result.pseudo_nll.numpy()
+    np.savez_compressed(file=run_dir / f"{result.name}_aggregate_predictions.npz", **payload)  # type: ignore[arg-type]
+    return summary
 
 
-def _lead_table(result: MethodEvaluation) -> pd.DataFrame:
+def _lead_table(result: MethodEvaluation, metrics: Sequence[str]) -> pd.DataFrame:
     table = result.aggregate.by_lead.copy()
     for name, values in (
         ("energy_score", result.energy_score),
         ("variogram_score", result.variogram_score),
         ("test_pseudo_nll", result.pseudo_nll),
     ):
+        if name not in metrics:
+            continue
         table[name] = [
             float(column[torch.isfinite(column)].mean()) if torch.isfinite(column).any() else np.nan
             for lead in table.index
@@ -314,6 +329,7 @@ def _case_tables(
     results: Mapping[str, MethodEvaluation],
     run_paths: Mapping[str, Path],
     valid: torch.Tensor,
+    metrics: Sequence[str],
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     test = library.test_data()
     origins = pd.to_datetime(test["origin_timestamp"].values, utc=True)
@@ -341,13 +357,14 @@ def _case_tables(
         for quantile_index, level in enumerate(config.evaluation.quantile_levels):
             values = result.aggregate.quantile_predictions[..., quantile_index].numpy().reshape(-1)
             table[f"aggregate_q{level:g}"] = values
-        metrics = {
-            **result.aggregate.case_metrics,
-            "energy_score": result.energy_score,
-            "variogram_score": result.variogram_score,
-            "test_pseudo_nll": result.pseudo_nll,
-        }
-        for metric, metric_values in metrics.items():
+        case_metrics = dict(result.aggregate.case_metrics)
+        if "energy_score" in metrics:
+            case_metrics["energy_score"] = result.energy_score
+        if "variogram_score" in metrics:
+            case_metrics["variogram_score"] = result.variogram_score
+        if "test_pseudo_nll" in metrics:
+            case_metrics["test_pseudo_nll"] = result.pseudo_nll
+        for metric, metric_values in case_metrics.items():
             array = metric_values.detach().cpu().numpy().reshape(-1)
             table[metric] = np.where(table["valid"], array, np.nan)
         rows.append(table)
@@ -608,18 +625,20 @@ def evaluate_from_config(
             valid,
             config,
             dependence_z=test_z,
-            compute_joint=bool({"energy_score", "variogram_score"} & set(declared_metrics)),
+            metrics=declared_metrics,
         )
         for name, item in prepared.items()
     }
-    result_metrics = {name: _save_method_result(output, result, valid) for name, result in results.items()}
+    result_metrics = {
+        name: _save_method_result(output, result, valid, declared_metrics) for name, result in results.items()
+    }
     (output / "metrics.json").write_text(
         json.dumps(result_metrics, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
-    pd.concat([_lead_table(result) for result in results.values()], ignore_index=True).to_csv(
+    pd.concat([_lead_table(result, declared_metrics) for result in results.values()], ignore_index=True).to_csv(
         output / "metrics_by_lead.csv", index=False
     )
-    per_case, per_origin = _case_tables(config, library, results, runs, valid)
+    per_case, per_origin = _case_tables(config, library, results, runs, valid, declared_metrics)
     per_case.to_parquet(output / "per_origin_lead_metrics.parquet", index=False)
     per_origin.to_parquet(output / "per_origin_metrics.parquet", index=False)
     if frequency_mapping is not None:

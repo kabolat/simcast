@@ -295,3 +295,11 @@ def test_override_parser_and_deep_merge() -> None:
 def test_invalid_override_is_rejected() -> None:
     with pytest.raises(ValueError, match="dotted.key=value"):
         parse_overrides(["optimization.epochs"])
+
+
+def test_evaluation_rejects_an_unknown_metric(tmp_path: Path) -> None:
+    path = tmp_path / "evaluation.yaml"
+    path.write_text("kind: evaluation\nid: invalid\nmetrics: [not_a_metric]\n", encoding="utf-8")
+
+    with pytest.raises(ValidationError, match="not_a_metric"):
+        load_evaluation_config(path)

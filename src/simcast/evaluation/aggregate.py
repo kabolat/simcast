@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from dataclasses import dataclass
 
 import pandas as pd
@@ -31,6 +32,7 @@ def evaluate_aggregate_ensemble(
     true_aggregate: torch.Tensor,
     quantile_levels: torch.Tensor,
     *,
+    metrics: Collection[str],
     interval_coverages: tuple[float, ...] = (0.5, 0.8, 0.9),
     valid_mask: torch.Tensor | None = None,
 ) -> AggregateEvaluation:
@@ -52,73 +54,76 @@ def evaluate_aggregate_ensemble(
     if not bool(valid.any()):
         raise ValueError("aggregate evaluation has no complete finite cases")
 
+    selected = set(metrics)
     quantiles = empirical_quantiles(samples, levels)
-    pinball = pinball_loss(truth, quantiles, levels, reduction="none")
-    crps = crps_ensemble(samples, truth)
-    median = empirical_quantiles(samples, samples.new_tensor([0.5]))[..., 0]
-    overall: dict[str, float] = {
-        "mean_pinball": float(pinball[valid].mean()),
-        "crps": float(crps[valid].mean()),
-    }
-    case_metrics: dict[str, torch.Tensor] = {
-        "mean_pinball": pinball.mean(dim=-1),
-        "crps": crps,
-    }
-    for index, level in enumerate(levels):
-        case_metrics[f"pinball_q{float(level):g}"] = pinball[..., index]
-    for index, level in enumerate(levels):
-        overall[f"pinball_q{float(level):g}"] = float(pinball[..., index][valid].mean())
-
-    lower_columns: list[torch.Tensor] = []
-    upper_columns: list[torch.Tensor] = []
-    coverages = samples.new_tensor(interval_coverages)
-    interval_scores: list[torch.Tensor] = []
-    coverage_arrays: list[torch.Tensor] = []
-    width_arrays: list[torch.Tensor] = []
-    for coverage in interval_coverages:
-        alpha = 1.0 - coverage
-        bounds = empirical_quantiles(samples, samples.new_tensor([alpha / 2.0, 1.0 - alpha / 2.0]))
-        lower, upper = bounds[..., 0], bounds[..., 1]
-        covered = (truth >= lower) & (truth <= upper)
-        width = upper - lower
-        score = interval_score(truth, lower, upper, coverage)
-        lower_columns.append(lower)
-        upper_columns.append(upper)
-        coverage_arrays.append(covered)
-        width_arrays.append(width)
-        interval_scores.append(score)
-        suffix = f"{coverage:g}"
-        overall[f"coverage_{suffix}"] = float(covered[valid].float().mean())
-        overall[f"interval_width_{suffix}"] = float(width[valid].mean())
-        overall[f"interval_score_{suffix}"] = float(score[valid].mean())
-        case_metrics[f"coverage_{suffix}"] = covered.to(samples.dtype)
-        case_metrics[f"interval_width_{suffix}"] = width
-        case_metrics[f"interval_score_{suffix}"] = score
-    lowers = torch.stack(lower_columns, dim=-1)
-    uppers = torch.stack(upper_columns, dim=-1)
-    wis = weighted_interval_score(truth, median, lowers, uppers, coverages)
-    overall["weighted_interval_score"] = float(wis[valid].mean())
-    case_metrics["weighted_interval_score"] = wis
-
-    rows: list[dict[str, float | int]] = []
-    for lead_index in range(samples.shape[1]):
-        lead_valid = valid[:, lead_index]
-        if not bool(lead_valid.any()):
-            continue
-        row: dict[str, float | int] = {
-            "lead": lead_index + 1,
-            "mean_pinball": float(pinball[:, lead_index][lead_valid].mean()),
-            "crps": float(crps[:, lead_index][lead_valid].mean()),
-            "weighted_interval_score": float(wis[:, lead_index][lead_valid].mean()),
-        }
-        for coverage, covered, width, score in zip(
-            interval_coverages, coverage_arrays, width_arrays, interval_scores, strict=True
-        ):
+    overall: dict[str, float] = {}
+    case_metrics: dict[str, torch.Tensor] = {}
+    rows: list[dict[str, float | int]] = [{"lead": lead + 1} for lead in range(samples.shape[1])]
+    if "mean_pinball" in selected:
+        pinball = pinball_loss(truth, quantiles, levels, reduction="none")
+        overall["mean_pinball"] = float(pinball[valid].mean())
+        case_metrics["mean_pinball"] = pinball.mean(dim=-1)
+        for index, level in enumerate(levels):
+            suffix = f"pinball_q{float(level):g}"
+            case_metrics[suffix] = pinball[..., index]
+            overall[suffix] = float(pinball[..., index][valid].mean())
+        for lead_index, row in enumerate(rows):
+            lead_valid = valid[:, lead_index]
+            if bool(lead_valid.any()):
+                row["mean_pinball"] = float(pinball[:, lead_index][lead_valid].mean())
+    if "crps" in selected:
+        crps = crps_ensemble(samples, truth)
+        overall["crps"] = float(crps[valid].mean())
+        case_metrics["crps"] = crps
+        for lead_index, row in enumerate(rows):
+            lead_valid = valid[:, lead_index]
+            if bool(lead_valid.any()):
+                row["crps"] = float(crps[:, lead_index][lead_valid].mean())
+    if "weighted_interval_score" in selected:
+        median = empirical_quantiles(samples, samples.new_tensor([0.5]))[..., 0]
+        coverages = samples.new_tensor(interval_coverages)
+        interval_scores: list[torch.Tensor] = []
+        lower_columns: list[torch.Tensor] = []
+        upper_columns: list[torch.Tensor] = []
+        coverage_arrays: list[torch.Tensor] = []
+        width_arrays: list[torch.Tensor] = []
+        for coverage in interval_coverages:
+            alpha = 1.0 - coverage
+            bounds = empirical_quantiles(samples, samples.new_tensor([alpha / 2.0, 1.0 - alpha / 2.0]))
+            lower, upper = bounds[..., 0], bounds[..., 1]
+            covered = (truth >= lower) & (truth <= upper)
+            width = upper - lower
+            score = interval_score(truth, lower, upper, coverage)
+            lower_columns.append(lower)
+            upper_columns.append(upper)
+            interval_scores.append(score)
+            coverage_arrays.append(covered)
+            width_arrays.append(width)
             suffix = f"{coverage:g}"
-            row[f"coverage_{suffix}"] = float(covered[:, lead_index][lead_valid].float().mean())
-            row[f"interval_width_{suffix}"] = float(width[:, lead_index][lead_valid].mean())
-            row[f"interval_score_{suffix}"] = float(score[:, lead_index][lead_valid].mean())
-        rows.append(row)
+            overall[f"coverage_{suffix}"] = float(covered[valid].float().mean())
+            overall[f"interval_width_{suffix}"] = float(width[valid].mean())
+            overall[f"interval_score_{suffix}"] = float(score[valid].mean())
+            case_metrics[f"coverage_{suffix}"] = covered.to(samples.dtype)
+            case_metrics[f"interval_width_{suffix}"] = width
+            case_metrics[f"interval_score_{suffix}"] = score
+        wis = weighted_interval_score(
+            truth, median, torch.stack(lower_columns, dim=-1), torch.stack(upper_columns, dim=-1), coverages
+        )
+        overall["weighted_interval_score"] = float(wis[valid].mean())
+        case_metrics["weighted_interval_score"] = wis
+        for lead_index, row in enumerate(rows):
+            lead_valid = valid[:, lead_index]
+            if not bool(lead_valid.any()):
+                continue
+            row["weighted_interval_score"] = float(wis[:, lead_index][lead_valid].mean())
+            for coverage, covered, width, score in zip(
+                interval_coverages, coverage_arrays, width_arrays, interval_scores, strict=True
+            ):
+                suffix = f"{coverage:g}"
+                row[f"coverage_{suffix}"] = float(covered[:, lead_index][lead_valid].float().mean())
+                row[f"interval_width_{suffix}"] = float(width[:, lead_index][lead_valid].mean())
+                row[f"interval_score_{suffix}"] = float(score[:, lead_index][lead_valid].mean())
+
     return AggregateEvaluation(
         overall=overall,
         by_lead=pd.DataFrame(rows).set_index("lead"),
