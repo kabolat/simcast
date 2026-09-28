@@ -3,19 +3,22 @@ from math import erf
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import pytest
 import torch
 
 from simcast.cli.evaluate import PreparedMethod, _base_normal_draws, _sample_and_evaluate, evaluate_from_config
 from simcast.cli.train_dependence import train_from_config
 from simcast.config import DependenceConfig, ResolvedExperimentConfig, StaticGaussianConfig
-from simcast.fm.cache import build_cache_dataset, save_pit_library
+from simcast.fm.cache import build_cache_dataset, load_pit_library, save_pit_library
 
 
-def _cache(path: Path) -> Path:
+def _cache(path: Path, *, signed: bool = False) -> Path:
     rng = np.random.default_rng(8)
     n_origin, n_entity, horizon = 10, 4, 3
     truth = rng.normal(10.0, 1.0, size=(n_origin, n_entity, horizon)).astype(np.float32)
+    if signed:
+        truth[:, 0] *= -1
     predictions = np.stack((truth - 1.0, truth, truth + 1.0), axis=-1)
     pit_z = rng.normal(size=(n_origin, n_entity, horizon)).astype(np.float32)
     pit_u = (0.5 * (1.0 + np.vectorize(erf)(pit_z / np.sqrt(2.0)))).astype(np.float32)
@@ -34,6 +37,57 @@ def _cache(path: Path) -> Path:
     )
     dataset.attrs["output_patch_size"] = 2
     return save_pit_library(path, dataset, {"fixture": True})
+
+
+def test_cross_entity_statistic_changes_samples_and_observations(tmp_path: Path) -> None:
+    truth = torch.tensor([[[-2.0], [1.0]]])
+    predictions = torch.stack((truth, truth, truth), dim=-1)
+    prepared = PreparedMethod("independent", torch.eye(2).reshape(1, 1, 2, 2))
+    valid = torch.ones((1, 1), dtype=torch.bool)
+    config = _config(tmp_path)
+
+    simple = _sample_and_evaluate(
+        prepared, truth, predictions, torch.tensor([0.1, 0.5, 0.9]), valid, config, compute_joint=False
+    )
+    absolute_config = config.model_copy(
+        update={"evaluation": config.evaluation.model_copy(update={"cross_entity_statistic": "absolute_sum"})}
+    )
+    absolute = _sample_and_evaluate(
+        prepared,
+        truth,
+        predictions,
+        torch.tensor([0.1, 0.5, 0.9]),
+        valid,
+        absolute_config,
+        compute_joint=False,
+    )
+
+    assert simple.aggregate.quantile_predictions[0, 0, 1].item() == pytest.approx(-1.0)
+    assert absolute.aggregate.quantile_predictions[0, 0, 1].item() == pytest.approx(3.0)
+    assert simple.aggregate.overall["mean_pinball"] == pytest.approx(0.0)
+    assert absolute.aggregate.overall["mean_pinball"] == pytest.approx(0.0)
+
+
+def test_absolute_sum_is_retained_in_evaluation_artifacts(tmp_path: Path) -> None:
+    cache = _cache(tmp_path / "cache", signed=True)
+    config = _config(tmp_path)
+    config = config.model_copy(
+        update={"evaluation": config.evaluation.model_copy(update={"cross_entity_statistic": "absolute_sum"})}
+    )
+
+    output = evaluate_from_config(
+        config,
+        methods=("independent",),
+        cache_dir=cache,
+        output_dir=tmp_path / "evaluation",
+    )
+
+    truth = load_pit_library(cache, access="evaluation").test_data()["true_y"].values
+    expected = np.abs(truth).sum(axis=1).reshape(-1)
+    cases = pd.read_parquet(output / "per_origin_lead_metrics.parquet")
+    assert np.allclose(cases["observed_aggregate"], expected)
+    assert (cases["observed_aggregate"] > truth.sum(axis=1).reshape(-1)).all()
+    assert json.loads((output / "evaluation_manifest.json").read_text())["cross_entity_statistic"] == "absolute_sum"
 
 
 def _config(tmp_path: Path) -> ResolvedExperimentConfig:

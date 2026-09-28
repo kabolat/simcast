@@ -153,6 +153,7 @@ documents; it must not be copied into a base.
 | `sampling.evaluation_seed` | non-negative integer | `2027` | scenario randomness |
 | `sampling.common_random_numbers` | Boolean | `true` | case-keyed Gaussian draws shared across methods |
 | `sampling.empirical_quantile_method` | literal string `nearest` | `nearest` | order-statistic convention for aggregate quantiles after Monte Carlo sampling; it does not control entity-level marginal projection |
+| `evaluation.cross_entity_statistic` | `sum` or `absolute_sum` | `sum` | complete-group statistic applied to each scenario and observation: $\sum_k y_k$ or $\sum_k |y_k|$ |
 | `evaluation.quantile_levels` | sorted, unique non-empty list in $(0,1)$ | `[.05,.10,.25,.50,.75,.90,.95]` | reported aggregate quantiles |
 | `evaluation.interval_levels` | sorted, unique non-empty list in $(0,1)$ | `[.50,.80,.90]` | central interval levels |
 | `evaluation.energy_score` | Boolean | `true` | evaluate empirical all-pairs Energy Score |

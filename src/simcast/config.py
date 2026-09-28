@@ -265,6 +265,7 @@ class SamplingConfig(ConfigModel):
 
 
 class EvaluationConfig(ConfigModel):
+    cross_entity_statistic: Literal["sum", "absolute_sum"] = "sum"
     quantile_levels: list[float] = Field(default_factory=lambda: [0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95])
     interval_levels: list[float] = Field(default_factory=lambda: [0.50, 0.80, 0.90])
     energy_score: bool = True

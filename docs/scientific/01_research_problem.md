@@ -123,7 +123,12 @@ $$
 \qquad 0<q_1<\cdots<q_Q<1.
 $$
 
-The random spatial aggregate and its observation are respectively
+More generally, evaluation targets a cross-entity statistic $T_g$ of the
+complete vector and applies the same function to each simulated vector and
+its observed counterpart. The supported choices are
+$T_g(\mathbf y)=\sum_k y_k$ (simple sum, the default) and
+$T_g(\mathbf y)=\sum_k |y_k|$ (absolute sum). For the default simple sum, the
+random spatial aggregate and its observation are respectively
 
 $$
 A_{g,\tau}^{(i)}

@@ -247,7 +247,11 @@ def _sample_and_evaluate(
             base_normals=base_normals,
             marginal_mode=config.pit.mode,
         )
-        aggregate[positions] = scenarios.aggregate_samples.cpu()
+        aggregate[positions] = (
+            scenarios.entity_samples.abs().sum(dim=-1)
+            if config.evaluation.cross_entity_statistic == "absolute_sum"
+            else scenarios.aggregate_samples
+        ).cpu()
         if compute_joint:
             joint_count = min(sample_count, config.evaluation.joint_score_num_samples)
             joint_samples = scenarios.entity_samples[:, :joint_count]
@@ -266,7 +270,9 @@ def _sample_and_evaluate(
     energy = energy.reshape(n_origin, horizon)
     variogram = variogram.reshape(n_origin, horizon)
     pseudo_nll = pseudo_nll.reshape(n_origin, horizon)
-    aggregate_truth = truth.sum(dim=1)
+    aggregate_truth = (
+        truth.abs() if config.evaluation.cross_entity_statistic == "absolute_sum" else truth
+    ).sum(dim=1)
     interval_levels = torch.tensor(config.evaluation.interval_levels, dtype=aggregate.dtype)
     interval_bounds = empirical_quantiles(
         aggregate,
@@ -344,7 +350,10 @@ def _case_tables(
     test = library.test_data()
     origins = pd.to_datetime(test["origin_timestamp"].values, utc=True)
     origin_indices = np.asarray(test["origin"].values, dtype=np.int64)
-    observed_aggregate = np.asarray(test["true_y"].values).sum(axis=1)
+    observed = np.asarray(test["true_y"].values)
+    observed_aggregate = (
+        np.abs(observed) if config.evaluation.cross_entity_statistic == "absolute_sum" else observed
+    ).sum(axis=1)
     n_origin, horizon = valid.shape
     rows: list[pd.DataFrame] = []
     for name, result in results.items():
@@ -497,7 +506,11 @@ def _plots(
     if correlation_lead >= truth.shape[-1]:
         raise ValueError("figures.correlation_lead exceeds the configured forecast horizon")
     if valid[aggregate_origin].any():
-        aggregate_truth = truth[aggregate_origin].sum(dim=0).numpy()
+        aggregate_truth = (
+            truth[aggregate_origin].abs()
+            if config.evaluation.cross_entity_statistic == "absolute_sum"
+            else truth[aggregate_origin]
+        ).sum(dim=0).numpy()
         for _name, result in results.items():
             method_figures = output / "figures" if len(results) == 1 else output / "figures" / _name
             method_figures.mkdir(parents=True, exist_ok=True)
@@ -508,7 +521,7 @@ def _plots(
                 method_figures / "aggregate_fan.png",
                 interval_predictions=result.interval_predictions[aggregate_origin].numpy(),
                 interval_levels=config.evaluation.interval_levels,
-                title="Aggregate forecast",
+                title="Cross-entity forecast",
             )
     if valid[correlation_origin, correlation_lead]:
         for name, result in results.items():
@@ -704,6 +717,7 @@ def evaluate_from_config(
         "method_runs": {name: str(path) for name, path in runs.items()},
         "methods": list(methods),
         "metrics": declared_metrics,
+        "cross_entity_statistic": config.evaluation.cross_entity_statistic,
         "test_origin_count": int(truth.shape[0]),
         "valid_origin_lead_count": int(valid.sum()),
         "entity_ids": entity_ids,

@@ -209,7 +209,7 @@ def plot_aggregate_fan(
         lower, upper = interval_predictions[:, index, 0], interval_predictions[:, index, 1]
         axis.fill_between(lead, lower, upper, alpha=0.15, label=f"{level:g} interval")
     axis.plot(lead, truth, color="black", linewidth=1, label="Realized aggregate")
-    axis.set(xlabel="Lead", ylabel="Aggregate load", title=title)
+    axis.set(xlabel="Lead", ylabel="Cross-entity statistic", title=title)
     axis.legend()
     return _finish(figure, path)
 

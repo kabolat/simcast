@@ -122,8 +122,11 @@ The method payload also includes mean test Gaussian-copula pseudo-NLL.
 method, neural seed, origin, and lead. It records $K_g$, validity, observed and
 forecast aggregate quantiles, aggregate proper scores, joint scores, and test
 pseudo-NLL. Invalid rows remain present with `valid: false`; the group never
-shrinks. `per_origin_metrics.parquet` averages metrics across valid leads within
-each origin and is the input to temporal block resampling.
+shrinks. The existing `observed_aggregate` and `aggregate_q*` columns refer
+to the configured cross-entity statistic (simple sum or absolute sum).
+`per_origin_metrics.parquet` averages metrics across valid leads within each
+origin and is the input to temporal block resampling. The evaluation manifest
+records `cross_entity_statistic` for provenance.
 
 ### `metrics_by_lead.csv`
 

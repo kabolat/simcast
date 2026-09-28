@@ -54,6 +54,16 @@ def test_method_and_evaluation_ids_default_to_filename(tmp_path: Path) -> None:
     assert load_evaluation_config(evaluation_path).id == "filename_evaluation"
 
 
+def test_evaluation_cross_entity_statistic_is_validated(tmp_path: Path) -> None:
+    path = tmp_path / "absolute_sum.yaml"
+    path.write_text("kind: evaluation\nevaluation: {cross_entity_statistic: absolute_sum}\n", encoding="utf-8")
+    assert load_evaluation_config(path).evaluation.cross_entity_statistic == "absolute_sum"
+
+    path.write_text("kind: evaluation\nevaluation: {cross_entity_statistic: maximum}\n", encoding="utf-8")
+    with pytest.raises(ValidationError, match="cross_entity_statistic"):
+        load_evaluation_config(path)
+
+
 def test_composite_name_defaults_to_filename(tmp_path: Path) -> None:
     venue_dir = tmp_path / "configs" / "venues" / "lab"
     venue_dir.mkdir(parents=True)

@@ -12,9 +12,11 @@ P\!\left(Y_{k,\tau}^{(i)}\le y_k,\ k\in\mathcal E_g\mid\mathcal I^{(i)}\right)
 =C_{g,\tau}^{(i)}\!\left(\{F_{k,\tau}^{(i)}(y_k)\}_{k\in\mathcal E_g}\right).
 $$
 
-The estimand of primary interest is the distribution of the spatial aggregate
-
-$$A_{g,\tau}^{(i)}=\sum_{k\in\mathcal E_g}Y_{k,\tau}^{(i)}.$$
+The evaluation targets a cross-entity statistic of the complete group. Two
+choices are currently supported: the simple sum
+$\sum_{k\in\mathcal E_g}Y_{k,\tau}^{(i)}$ and the absolute sum
+$\sum_{k\in\mathcal E_g}|Y_{k,\tau}^{(i)}|$. The evaluation YAML selects the
+statistic; `sum` is the default.
 
 Every training, validation, and test case uses all $K_g$ entities. If one
 entity is invalid at $(i,\tau)$, the complete vector is invalid; the group is

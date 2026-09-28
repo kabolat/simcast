@@ -103,12 +103,19 @@ For every valid $(g,i,\tau)$ and method:
    $u_{k,\tau}^{(i,m)}=\Phi([L_{g,\tau}^{(i)}\eta^{(m)}]_k)$;
 5. project each uniform through the configured fixed marginal law, producing
    $\widetilde Y_{k,\tau}^{(i,m)}$;
-6. sum the complete group:
+6. apply the evaluation's cross-entity statistic to the complete group:
 
 $$
-\widetilde A_{g,\tau}^{(i,m)}
-=\sum_{k\in\mathcal E_g}\widetilde Y_{k,\tau}^{(i,m)}.
+\widetilde T_{g,\tau}^{(i,m)}
+=T_g\!\left(\widetilde{\mathbf Y}_{g,\tau}^{(i,m)}\right).
 $$
+
+`evaluation.cross_entity_statistic: sum` uses
+$T_g(\mathbf y)=\sum_k y_k$; `absolute_sum` uses
+$T_g(\mathbf y)=\sum_k |y_k|$. The same function is applied to the
+observed entity vector before aggregate quantile, interval, CRPS, and pinball
+scoring. Energy and Variogram Scores continue to score the full entity vector,
+independent of this choice.
 
 Cases are processed in batches of 16. Base normals are keyed by the separately
 recorded evaluation seed and flattened `(origin, lead)` index. They therefore
@@ -154,9 +161,9 @@ isotonic-repaired grid and the same projection mode are held fixed across all
 methods. See [Chapter 3](03_chronos_and_pit.md#7-probability-space-projection-for-scenarios)
 for the formal maps and a numerical comparison.
 
-Aggregate quantiles are nearest empirical order statistics of the $M$
-full-group aggregate samples. They are not sums of equally labeled marginal
-quantiles:
+Cross-entity-statistic quantiles are nearest empirical order statistics of
+the $M$ full-group scenario statistics. For the simple sum, they are not sums
+of equally labeled marginal quantiles:
 
 $$
 Q_\alpha\!\left(\sum_kY_k\right)
