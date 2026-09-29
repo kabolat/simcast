@@ -83,6 +83,7 @@ def test_composite_name_defaults_to_filename(tmp_path: Path) -> None:
 def test_linear_interpolation_is_a_valid_consistent_pit_mode() -> None:
     pit = PitConfig(mode="linear_interpolation")
     assert pit.mode == "linear_interpolation"
+    assert pit.monotone_repair == "isotonic"
     with pytest.raises(ValidationError, match="training_frequency is defined only for discretized PIT cells"):
         PitConfig(mode="linear_interpolation", dependence_transform="training_frequency")
 
@@ -122,9 +123,9 @@ def test_method_files_are_strictly_role_specific(
     [
         ("transformer.yaml", "transformer", 15, "isotonic"),
         ("solar_park.yaml", "solar_park", 5, "isotonic"),
-        ("wind_park.yaml", "wind_park", 5, "none"),
-        ("mv_feeder.yaml", "mv_feeder", 15, "none"),
-        ("station_installation.yaml", "station_installation", 15, "none"),
+        ("wind_park.yaml", "wind_park", 5, "isotonic"),
+        ("mv_feeder.yaml", "mv_feeder", 15, "isotonic"),
+        ("station_installation.yaml", "station_installation", 15, "isotonic"),
     ],
 )
 def test_bases_predeclare_complete_ordered_groups(

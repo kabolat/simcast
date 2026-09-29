@@ -11,10 +11,10 @@ Simcast studies whether spatial aggregate forecasts improve when residual
 cross-entity forecast dependence is modeled explicitly while the
 foundation-model-derived marginal quantile grids are held fixed.
 
-Chronos-2 remains frozen. Three supplied Liander bases use the raw native
-quantile grid. The solar and transformer bases declare deterministic isotonic
-monotonicity repair; the resulting repaired grid is fixed across every
-dependence method. No dependence model can change any marginal quantile value.
+Chronos-2 remains frozen. All supplied Liander bases use deterministic
+isotonic monotonicity repair inherited from their shared configuration; the
+resulting repaired grid is fixed across every dependence method. No dependence
+model can change any marginal quantile value.
 
 This is a controlled predictive comparison of copulas. It is not a causal
 experiment and does not claim novelty for joint probabilistic energy

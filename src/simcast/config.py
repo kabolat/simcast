@@ -121,7 +121,7 @@ class ChronosConfig(ConfigModel):
 
 class PitConfig(ConfigModel):
     mode: Literal["discretized", "linear_interpolation"] = "discretized"
-    monotone_repair: Literal["none", "isotonic"] = "none"
+    monotone_repair: Literal["none", "isotonic"] = "isotonic"
     dependence_transform: Literal["nominal_cells", "training_frequency"] = "nominal_cells"
     eps: Annotated[float, Field(gt=0.0, lt=0.5)] = 1.0e-7
 

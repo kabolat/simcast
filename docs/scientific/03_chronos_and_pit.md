@@ -148,9 +148,10 @@ $(20,33.5,33.5)$. The repaired row is nondecreasing, although two quantiles are
 tied. Ties are valid and are treated deterministically.
 
 The solar data provide an important empirical example: night-time forecasts
-contain many raw crossings. The current solar and transformer bases apply
-isotonic repair before both historical PIT construction and future scenario
-projection. The other supplied bases declare `none`.
+contain many raw crossings. All supplied bases apply isotonic repair before
+both historical PIT construction and future scenario projection by default.
+The `none` option remains available when crossed rows should instead be marked
+invalid.
 
 ### Configuration and implementation
 

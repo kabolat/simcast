@@ -120,7 +120,7 @@ def discretized_pit(
     quantile_predictions: torch.Tensor,
     quantile_levels: torch.Tensor,
     *,
-    monotone_repair: MonotoneRepair = "none",
+    monotone_repair: MonotoneRepair = "isotonic",
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Compute deterministic discretized PIT pseudo-observations.
 
@@ -162,7 +162,7 @@ def interpolated_pit(
     quantile_predictions: torch.Tensor,
     quantile_levels: torch.Tensor,
     *,
-    monotone_repair: MonotoneRepair = "none",
+    monotone_repair: MonotoneRepair = "isotonic",
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Invert the piecewise-linear quantile function using a deterministic mid-PIT for atoms.
 
@@ -312,7 +312,7 @@ def build_group_pit(
     quantile_levels: torch.Tensor,
     *,
     mode: PITMode = "discretized",
-    monotone_repair: MonotoneRepair = "none",
+    monotone_repair: MonotoneRepair = "isotonic",
     eps: float = 1e-7,
 ) -> PITResult:
     """Build PIT arrays while retaining only complete ``(origin, lead)`` vectors.

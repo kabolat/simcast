@@ -56,14 +56,18 @@ def test_linear_interpolated_pit_uses_probability_midpoint_for_isotonic_ties() -
 def test_crossing_is_flagged_or_repaired_explicitly() -> None:
     predictions = torch.tensor([[1.0, 3.0, 2.0]])
     assert quantile_crossings(predictions).item()
-    u, valid = discretized_pit(torch.tensor([2.5]), predictions, torch.tensor([0.1, 0.5, 0.9]))
+    truth = torch.tensor([2.5])
+    levels = torch.tensor([0.1, 0.5, 0.9])
+    u, valid = discretized_pit(truth, predictions, levels, monotone_repair="none")
     assert not valid.item()
     assert torch.isnan(u).item()
-    repaired_u, repaired_valid = discretized_pit(
-        torch.tensor([2.5]), predictions, torch.tensor([0.1, 0.5, 0.9]), monotone_repair="isotonic"
-    )
+    repaired_u, repaired_valid = discretized_pit(truth, predictions, levels)
     assert repaired_valid.item()
     assert torch.isfinite(repaired_u).item()
+    _, interpolated_valid = interpolated_pit(truth, predictions, levels)
+    assert interpolated_valid.item()
+    group_result = build_group_pit(truth.reshape(1, 1, 1), predictions.reshape(1, 1, 1, 3), levels)
+    assert group_result.valid_origin_lead.item()
 
 
 def test_invalid_entity_drops_complete_spatial_vector() -> None:

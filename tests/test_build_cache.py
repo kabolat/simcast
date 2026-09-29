@@ -54,7 +54,7 @@ class _MockForecaster:
         )
 
 
-def _config(tmp_path: Path, *, monotone_repair: str = "none") -> ResolvedExperimentConfig:
+def _config(tmp_path: Path, *, monotone_repair: str = "isotonic") -> ResolvedExperimentConfig:
     return ResolvedExperimentConfig.model_validate(
         {
             "data": {"local_dir": str(tmp_path), "entity_type": "transformer"},
@@ -118,7 +118,15 @@ def test_mocked_cache_pipeline_seals_test_truth(monkeypatch, tmp_path: Path) -> 
     )
 
     training = load_pit_library(destination)
-    assert training.dataset.sizes == {"origin": 4, "entity": 3, "lead": 2, "quantile": 5, "patch": 1, "hidden": 4}
+    assert training.dataset.sizes == {
+        "origin": 4,
+        "entity": 3,
+        "lead": 2,
+        "quantile": 5,
+        "patch": 1,
+        "hidden": 4,
+        "crossing": 0,
+    }
     assert list(training.dataset["split"].values) == ["train", "train", "train", "test"]
     assert np.isnan(training.dataset["true_y"].isel(origin=-1)).all()
     assert forecaster.calls == 4

@@ -112,7 +112,7 @@ forecast as a separate Chronos task, without cross-entity attention.
 | Key | YAML type and admissible values | Default | Meaning |
 |---|---|---|---|
 | `pit.mode` | `discretized` or `linear_interpolation` | `discretized` | fixes both historical PIT construction and scenario projection; `discretized` uses $Q+1$ cell midpoints and nearest native values, while `linear_interpolation` is piecewise linear between native quantiles with constant boundary segments |
-| `pit.monotone_repair` | `none` or `isotonic` | `none` | `none` invalidates a crossed row; `isotonic` applies least-squares monotone repair before PIT construction and projection |
+| `pit.monotone_repair` | `none` or `isotonic` | `isotonic` | `isotonic` applies least-squares monotone repair before PIT construction and projection; `none` invalidates a crossed row |
 | `pit.dependence_transform` | `nominal_cells` or `training_frequency` | `nominal_cells` | `nominal_cells` Gaussianizes declared cell midpoints; `training_frequency` replaces each midpoint by its training-only empirical cell-mass midpoint before Gaussianization |
 | `pit.eps` | real number strictly between 0 and 0.5 | `1.0e-7` | clamp used before $\Phi^{-1}$ |
 
