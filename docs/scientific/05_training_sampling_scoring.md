@@ -295,6 +295,56 @@ $$
 
 twice the mean pinball loss over the $2K+1$ levels implied by the intervals.
 
+### Calibration summaries
+
+The report includes two descriptive calibration plots, with one panel per
+base and one curve per evaluated method. They use the valid rows of
+`per_origin_lead_metrics.parquet`, not origin-averaged values. Thus each
+complete test origin-lead case contributes a hit or miss; each fitted seed
+contributes its own cases. The curves pool forecast leads and seeds within a
+base/method. They are not paired comparisons and have no confidence bands.
+
+For interval level $c$ with scenario-derived bounds $[l_{c,v},u_{c,v}]$,
+`summary_coverage.png` plots nominal coverage $c$ against the empirical hit
+rate
+
+$$
+\widehat C(c)=\frac1N\sum_{v\in\mathcal V}
+\mathbf1\{l_{c,v}\le a_v\le u_{c,v}\},
+$$
+
+where $\mathcal V$ is the set of valid test origin-lead-seed records and $N$
+is its size. A calibrated interval lies on the diagonal. Below the diagonal
+means undercoverage; above means overcoverage. For example, a nominal 90%
+interval that covers only 75% of cases is too narrow, shifted, or both.
+
+For quantile probability $\alpha$ with forecast $q_{\alpha,v}$,
+`summary_quantile_calibration.png` plots nominal $\alpha$ against
+
+$$
+\widehat Q(\alpha)=\frac1N\sum_{v\in\mathcal V}
+\mathbf1\{a_v\le q_{\alpha,v}\}.
+$$
+
+This is the empirical frequency with which observations fall at or below the
+forecast quantile. Calibration means $\widehat Q(\alpha)\approx\alpha$. A curve
+above the diagonal indicates the forecasts are too high at those levels; a
+curve below indicates they are too low. Ties are counted as hits, matching the
+quantile definition used by the evaluator. Finite test samples and nearest
+empirical scenario quantiles make departures from the diagonal inevitable.
+
+These plots diagnose **calibration only**, not sharpness or overall forecast
+quality. An excessively wide interval can attain or exceed nominal coverage;
+similarly, the quantile-calibration curve says nothing about how far the
+forecast quantiles are from the observations. Read the interval curve with
+`interval_width_*`, and read the quantile curve with `pinball_q<level>`.
+CRPS, pinball loss, and WIS are proper scores that reward calibration while
+also penalizing unnecessary spread; WIS additionally decomposes interval
+width and misses. The curves summarize reliability, while the proper scores
+support method ranking. Different bases have different cross-entity scales,
+so these calibration plots are faceted by base rather than pooled across
+groups.
+
 ### How the aggregate scores relate
 
 `mean_pinball`, CRPS, and WIS are not three independent criteria. All three

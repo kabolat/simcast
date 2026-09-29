@@ -37,6 +37,7 @@ def write_composite_report(
     """Write pooled per-origin metrics, paired effects, and per-metric figures."""
 
     origin_frames: list[pd.DataFrame] = []
+    case_frames: list[pd.DataFrame] = []
     primary_frames: list[pd.DataFrame] = []
     comparisons: set[tuple[str, str, str, str]] = set()
     reference_families: dict[str, str] = {}
@@ -48,6 +49,11 @@ def write_composite_report(
         frame["configured_seed"] = "deterministic" if cell["seed"] is None else str(cell["seed"])
         origin_frames.append(frame)
         primary_frames.append(frame)
+        cases = pd.read_parquet(evaluation / "per_origin_lead_metrics.parquet")
+        cases["base_id"] = str(cell["base_id"])
+        cases["method_id"] = str(cell["method_id"])
+        cases["configured_seed"] = "deterministic" if cell["seed"] is None else str(cell["seed"])
+        case_frames.append(cases)
         if str(cell["method_id"]) == reference:
             reference_families[str(cell["base_id"])] = str(cell["method_family"])
     for cell in cells:
@@ -110,8 +116,9 @@ def write_composite_report(
     method_summary = pd.concat(summary_frames, ignore_index=True)
     method_summary.to_csv(report_dir / "method_summary.csv", index=False)
     pd.DataFrame(effect_rows).to_csv(report_dir / "paired_effects.csv", index=False)
-    _write_coverage_figure(per_origin, report_dir)
-    _write_quantile_coverage_figure(per_origin, report_dir)
+    per_origin_lead = pd.concat(case_frames, ignore_index=True)
+    _write_coverage_figure(per_origin_lead, report_dir)
+    _write_quantile_coverage_figure(per_origin_lead, report_dir)
 
     for metric in metrics:
         figure_data = method_summary[method_summary["metric"] == metric]
@@ -182,6 +189,8 @@ def write_composite_report(
 
 
 def _write_coverage_figure(per_origin: pd.DataFrame, report_dir: Path) -> None:
+    if "valid" in per_origin:
+        per_origin = per_origin[per_origin["valid"]]
     coverage_columns = sorted(
         (column for column in per_origin.columns if column.startswith("coverage_")),
         key=lambda column: float(column.removeprefix("coverage_")),
@@ -221,6 +230,8 @@ def _write_quantile_coverage_figure(per_origin: pd.DataFrame, report_dir: Path) 
     )
     if "observed_aggregate" not in per_origin or not quantile_columns:
         return
+    if "valid" in per_origin:
+        per_origin = per_origin[per_origin["valid"]]
     nominal = np.asarray([float(column.removeprefix("aggregate_q")) for column in quantile_columns])
     base_ids = list(per_origin["base_id"].drop_duplicates())
     figure, axes = plt.subplots(len(base_ids), 1, squeeze=False, figsize=(7.0, 4.5 * len(base_ids)))

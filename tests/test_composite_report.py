@@ -25,6 +25,11 @@ def test_generic_composite_report_includes_m4(tmp_path: Path) -> None:
         for origin in range(12)
     ]
     pd.DataFrame(rows).to_parquet(evaluation / "per_origin_metrics.parquet", index=False)
+    pd.DataFrame(rows).assign(
+        lead=1, valid=True, **{"interval_score_0.9": 0.0, "interval_width_0.9": 1.0}
+    ).to_parquet(
+        evaluation / "per_origin_lead_metrics.parquet", index=False
+    )
     cells: list[dict[str, object]] = [
         {
             "evaluation_path": str(evaluation),
@@ -78,6 +83,11 @@ def test_calibration_figures_facet_multiple_bases(tmp_path: Path) -> None:
         for origin in range(4)
     ]
     pd.DataFrame(rows).to_parquet(evaluation / "per_origin_metrics.parquet", index=False)
+    pd.DataFrame(rows).assign(
+        lead=1, valid=True, **{"interval_score_0.9": 0.0, "interval_width_0.9": 1.0}
+    ).to_parquet(
+        evaluation / "per_origin_lead_metrics.parquet", index=False
+    )
     cells: list[dict[str, object]] = [
         {
             "evaluation_path": str(evaluation),

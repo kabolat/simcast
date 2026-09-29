@@ -494,6 +494,14 @@ are not written to logs.
    method after the fact. Keep declared sensitivities separate from the
    principal comparison.
 
+`summary_coverage.png` and `summary_quantile_calibration.png` pool valid
+origin-lead cases and fitted seeds within each base/method. They show empirical
+hit rates against nominal interval or quantile levels, without uncertainty
+bands. They diagnose calibration, not sharpness or total score: read them
+alongside interval widths and the proper scores. See
+[Chapter 5](../scientific/05_training_sampling_scoring.md#calibration-summaries)
+for formulas and interpretation.
+
 A comparison is valid only when the base fingerprint and complete entity
 ordering coincide. [Chapter 7](../scientific/07_experiments_and_results.md)
 states what must accompany a scientific claim.

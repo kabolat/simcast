@@ -132,6 +132,15 @@ to the configured cross-entity statistic (sum, absolute sum, max, or absolute ma
 origin and is the input to temporal block resampling. The evaluation manifest
 records `cross_entity_statistic` for provenance.
 
+`summary_coverage.png` and `summary_quantile_calibration.png` are report-level
+descriptive diagnostics computed from valid rows of
+`per_origin_lead_metrics.parquet`. Within each base and method, they pool
+origin-lead cases and configured seeds, plotting empirical interval hit rates
+or quantile hit rates against their nominal probabilities. They do not use
+the origin-averaged `per_origin_metrics.parquet` table and do not include
+uncertainty bands; interpretation and formulas are in
+[Chapter 5](../scientific/05_training_sampling_scoring.md#calibration-summaries).
+
 ### `metrics_by_lead.csv`
 
 Each row is `(lead, method)`. It holds exactly the declared metrics and the
