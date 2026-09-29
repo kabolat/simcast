@@ -165,16 +165,17 @@ checkable rather than implicit; see the
 uv run composite --config configs/venues/<venue>/main.yaml
 ```
 
-A report then chooses a reference $b$. The paired origin-level loss for method
-$a$ is
+Each declared report chooses a reference $b$ and summarizes the completed
+evaluations. The paired origin-level loss for method $a$ is
 
 $$d_{a,b,g}^{(i)}=S_{a,g}^{(i)}-S_{b,g}^{(i)},$$
 
 where valid leads are averaged within origin and seeds are averaged within
-method and origin. A moving-block bootstrap samples
-chronological blocks of $d^{(i)}$ to retain short-range temporal dependence.
-The command, venue paths, and repeatable-resume procedure are given in the
-[composite section of the usage guide](../technical/usage_guide.md#6-composite-experiment).
+method and origin. A moving-block bootstrap samples chronological blocks of
+$d^{(i)}$ to retain short-range temporal dependence. `composite` generates
+each declared report after its evaluations; `report` can regenerate one or
+apply another report design. The commands, venue paths, and resume procedure
+are given in the [composite section of the usage guide](../technical/usage_guide.md#6-composite-experiment).
 
 ## 8. Resume and immutability
 

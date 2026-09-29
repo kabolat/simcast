@@ -1,8 +1,7 @@
 """Execute an explicit venue-scoped collection of scientific experiments.
 
-A composite run only fits declared methods. Evaluations, if declared, run
-immediately afterward reusing those same fits. Reports are never generated
-here; run ``simcast.cli.report_composite`` explicitly against a completed run.
+A composite runs declared fits, evaluations, and reports in dependency order.
+Reports consume the saved evaluation cells and can also be regenerated later.
 """
 
 from __future__ import annotations
@@ -19,6 +18,7 @@ from tqdm.auto import tqdm
 
 from simcast.cli.build_cache import build_cache_from_config
 from simcast.cli.evaluate import evaluate_from_config
+from simcast.cli.report_composite import report_composite
 from simcast.cli.train_dependence import train_from_config
 from simcast.config import (
     BaseExperimentConfig,
@@ -320,6 +320,14 @@ def run_composite(
         _run_evaluations(run_root, source, config, fits_by_id, evaluations_by_id)
         manifest["evaluations"] = evaluations_by_id
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+    if config.reports:
+        LOGGER.info("Report phase: running %d declared report designs", len(config.reports))
+        report_composite(
+            composite_config_path=source,
+            run_id=identifier,
+            force=True,
+        )
 
     manifest["status"] = "complete"
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")

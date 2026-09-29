@@ -26,10 +26,10 @@ Contents:
 
 ## 1. Choose the appropriate interface
 
-The workflow has three stages: **fit**, **evaluate**, and **report**. Each
-stage reads only the output of the stage before it, so an evaluation can be
-repeated without refitting and a report can be regenerated without
-re-evaluating.
+The workflow has three logical stages: **fit**, **evaluate**, and **report**.
+A composite runs each stage declared in its YAML, in dependency order. The
+standalone commands can also add evaluations or regenerate reports from an
+existing run without refitting.
 
 ```mermaid
 flowchart LR
@@ -45,7 +45,7 @@ flowchart LR
 | Download the data needed by one base | `uv run download-data` | base YAML | files under `data/liander2024/` |
 | Build frozen Chronos marginals and PITs only | `uv run cache` | base YAML | `artifacts/cache/<base-id>-<fingerprint>/` |
 | Fit and evaluate one method quickly | `uv run singular` | base and method YAML | `runs/singular/<timestamp>_<base>_<method>/` |
-| Fit a declared study (and run its declared evaluations) | `uv run composite` | composite YAML | `runs/<venue>/<composite>/<run-id>/` |
+| Run a declared study (fits, evaluations, and reports) | `uv run composite` | composite YAML | `runs/<venue>/<composite>/<run-id>/` |
 | Evaluate existing fits under an evaluation design | `uv run evaluate` | composite or evaluation YAML | `<run-root>/evaluations/<evaluation-id>/` |
 | Compare evaluated methods against a reference | `uv run report` | composite or report YAML | `<run-root>/reports/<report-id>/<evaluation-id>/` |
 | Inspect data, marginals, PITs, or one method interactively | notebooks | base and method YAML | explanatory calculations and figures |
@@ -59,8 +59,9 @@ uv run report    --config configs/reports/lab_main.yaml \
   --run-root runs/lab/quick_all_methods/<run-id>
 ```
 
-`composite` already runs the evaluations declared in its YAML, so the
-`evaluate` line only computes evaluation cells that are still missing.
+`composite` runs all evaluations and reports declared in its YAML. The
+`evaluate` line only computes missing evaluation cells; the `report` line
+regenerates the standalone report design for this run.
 
 ## 2. Configuration documents
 
@@ -255,9 +256,10 @@ give one fit per base and seed. With five bases, M0 gives five fits and an M4
 entry with ten seeds gives fifty. Identical deterministic fits are shared.
 
 After fitting, `composite` runs every declared evaluation on the fits it
-selects (all fits when `base_ids`/`method_ids` are omitted). It never writes a
-report, even when `reports` is declared: reporting is always the explicit
-`report` step (§8). Without `evaluations`, the command only fits.
+selects (all fits when `base_ids`/`method_ids` are omitted), then runs each
+declared report for its selected evaluations. Without `evaluations`, the
+command only fits; reports require evaluations. Use `report` separately to
+regenerate a report or apply a different report config (§8).
 
 Options: `--run-id` sets a stable run identifier, `--resume` continues an
 interrupted run (§9), and `--rebuild-cache` rebuilds compatible caches first.

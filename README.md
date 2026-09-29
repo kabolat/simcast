@@ -107,11 +107,12 @@ uv run report    --config configs/reports/lab_main.yaml \
   --run-root runs/lab/quick_all_methods/<run-id>
 ```
 
-`composite` fits every declared base/method/seed and runs the evaluations the
-composite declares; `evaluate` adds or completes evaluations; `report`
-computes method summaries and moving-block paired effects against the report's
-reference. Missing caches are built automatically; `uv run cache` builds one
-in advance. Every command documents its options with `--help`.
+`composite` fits every declared base/method/seed, runs declared evaluations,
+then generates declared reports. `evaluate` adds or completes evaluations;
+`report` regenerates reports or applies a standalone report design, computing
+method summaries and moving-block paired effects against its reference.
+Missing caches are built automatically; `uv run cache` builds one in advance.
+Every command documents its options with `--help`.
 
 Outputs nest under one run root:
 

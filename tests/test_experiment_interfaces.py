@@ -142,6 +142,76 @@ def test_resume_preserves_validated_completed_cells(
     assert calls == first_counts
 
 
+def test_composite_runs_declared_reports_after_evaluation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    config_dir = tmp_path / "configs" / "venues" / "lab"
+    config_dir.mkdir(parents=True)
+    base = (CONFIGS / "bases/liander2024/transformer.yaml").resolve()
+    method = (CONFIGS / "methods/m0_independent.yaml").resolve()
+    evaluation = (CONFIGS / "evaluations/standard.yaml").resolve()
+    report = (CONFIGS / "reports/lab_main.yaml").resolve()
+    composite_path = config_dir / "with_report.yaml"
+    composite_path.write_text(
+        "\n".join(
+            (
+                "kind: composite",
+                "name: with_report",
+                "venue: lab",
+                f"bases: [{'{'}id: transformer, config: {base}{'}'}]",
+                f"methods: [{'{'}id: m0, method: {method}{'}'}]",
+                f"evaluations: [{'{'}id: standard, config: {evaluation}, method_ids: [m0]{'}'}]",
+                f"reports: [{'{'}id: lab_main, config: {report}, evaluation_ids: [standard]{'}'}]",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    events: list[str] = []
+
+    def fake_train(config, *, cache_dir, output_dir):
+        del config
+        assert cache_dir == cache
+        path = Path(output_dir)
+        path.mkdir(parents=True)
+        (path / "model.npz").write_bytes(b"model")
+        (path / "run_metadata.json").write_text("{}\n", encoding="utf-8")
+        events.append("fit")
+        return path
+
+    def fake_evaluate(config, *, methods, metrics, figures, base_figures_dir, method_runs, cache_dir, output_dir):
+        del config, methods, metrics, figures, base_figures_dir, method_runs
+        assert cache_dir == cache
+        path = Path(output_dir)
+        path.mkdir(parents=True)
+        (path / "evaluation_manifest.json").write_text('{"metrics": ["mean_pinball"]}\n', encoding="utf-8")
+        events.append("evaluate")
+        return path
+
+    def fake_report(*, composite_config_path, run_id, force, report_id=None):
+        assert composite_config_path == composite_path.resolve()
+        assert report_id is None
+        assert run_id == "with_report_test"
+        assert force is True
+        manifest = json.loads(
+            (tmp_path / "runs/lab/with_report/with_report_test/composite_manifest.json").read_text(encoding="utf-8")
+        )
+        assert manifest["evaluations"]["standard"][0]["status"] == "complete"
+        events.append("report")
+
+    monkeypatch.setattr(composite_module, "locate_compatible_cache", lambda _base: cache)
+    monkeypatch.setattr(composite_module, "train_from_config", fake_train)
+    monkeypatch.setattr(composite_module, "evaluate_from_config", fake_evaluate)
+    monkeypatch.setattr(composite_module, "report_composite", fake_report)
+
+    run_composite(composite_path, run_id="with_report_test")
+
+    assert events == ["fit", "evaluate", "report"]
+
+
 @pytest.mark.parametrize("run_id", ["../escape", "UPPER", "spaces are unsafe"])
 def test_run_identifier_cannot_escape_venue_paths(run_id: str) -> None:
     with pytest.raises(ValueError, match="safe slug"):

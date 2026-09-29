@@ -138,10 +138,11 @@ This chapter reports no numerical headline table. A table becomes
 scientifically admissible only after the explicit composite is run to
 completion and its manifest verifies the full-group design.
 
-Implementation: `uv run composite` creates the immutable fits and declared
-evaluations; `uv run evaluate` adds evaluations to a completed run; and
-`uv run report` creates summaries, paired effects, and figures from recorded
 evaluations.
+Implementation: `uv run composite` creates the fits, declared evaluations,
+and declared reports; `uv run evaluate` adds evaluations to a completed run;
+and `uv run report` creates or regenerates summaries, paired effects, and
+figures from recorded evaluations.
 
 ## 8. Reading and reporting a completed composite
 

@@ -221,8 +221,9 @@ runs/<venue>/<composite>/<run-id>/
 Fit
 directories are written by `uv run composite`. Evaluation directories exist
 only for evaluations declared in the composite or added later with
-`uv run evaluate`. Report directories exist only after `uv run report`; the
-composite command never writes them. The
+`uv run evaluate`. Report directories are written by `uv run composite` when
+`reports` are declared, or by `uv run report` when regenerated or run from a
+standalone report document. The
 [usage guide](usage_guide.md#10-outputs-and-interpretation) gives the
 practical inspection order; this reference defines the meaning and location
 of the files.
