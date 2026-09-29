@@ -428,6 +428,23 @@ When reading results:
 5. **Magnitudes are group-specific.** All three are in the units of $T$, so
    compare them within a base, or use relative paired effects across bases.
 
+### Representative aggregate fan gallery
+
+The report creates `aggregate_fan_gallery_<base-id>.png` for each base. It
+selects up to three test origins nearest the 10th, 50th, and 90th percentiles
+of the observed aggregate averaged across valid leads. Selection uses outcomes
+only, never forecast scores; each method is then shown at the same selected
+origins. The y-axis names the configured cross-entity statistic.
+
+Each panel plots the observed aggregate, seed-mean forecast median, and
+seed-mean interval bounds across leads. If `crps` is included in the report
+metrics, the title also shows its mean over valid leads and seeds for that
+origin and method. Averaging quantiles across seeds is a compact illustration
+of fitted forecasts, not a pooled predictive distribution or an uncertainty
+interval over model uncertainty. A visually closer fan at one selected origin
+does not establish better overall performance; use paired per-origin scores
+and their moving-block intervals for that claim.
+
 ## Joint full-group scores
 
 Joint scores use the first `min(M,512)` members of the already generated

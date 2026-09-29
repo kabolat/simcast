@@ -459,8 +459,10 @@ The exact contents of every file are defined in the
   marginal, and static-correlation figures are written once to
   `evaluations/<evaluation-id>/<base>/figures/`.
 - **Report directory** (`reports/<report-id>/<evaluation-id>/`):
-  `per_origin_metrics.parquet`, `method_summary.csv`, `paired_effects.csv`,
-  `method_comparison_<metric>.png`, `paired_effect_<metric>.png`,
+  `per_origin_metrics.parquet`, `method_summary.csv`, `paired_effect_bs.csv`,
+  `paired_effect_dist.parquet`, `method_comparison_<metric>.png`,
+  `paired_effect_bs_<metric>.png`, `paired_effect_dist_<metric>.png`,
+  `aggregate_fan_gallery_<base-id>.png`,
   `summary_coverage.png` and `summary_quantile_calibration.png` (one panel per
   base), and
   `report_summary.md`, which describes every file present.
@@ -484,11 +486,15 @@ are not written to logs.
    experiment.
 2. For M2--M4, check each seed's fitting curve and validation pseudo-NLL
    before looking at test scores.
-3. Read `method_summary.csv` together with `paired_effects.csv`. All scores
-   are negatively oriented: a negative paired difference against the
-   reference favours the method, and `paired_effect_<metric>.png` shows it as
-   a positive relative improvement. Judge effects by their moving-block
-   intervals, not by point estimates.
+3. Read `method_summary.csv` and `paired_effect_bs.csv` for aggregate scores
+  and moving-block estimates. The score bars show numeric values, and
+  `paired_effect_bs_<metric>.png` plots relative improvement; positive values
+  favour the tested method. `paired_effect_dist_<metric>.png` shows the
+  per-origin score improvements (reference score minus method score), the
+  fraction of origins improved, and a zero line. The associated
+  `paired_effect_dist.parquet` stores those per-origin values after valid-lead
+  aggregation and seed averaging. Use the separate `paired_effect_bs` plot
+  for moving-block mean intervals.
 4. Use `summary_by_lead_<metric>.png` and `metrics_by_lead.csv` to check
    whether an overall result hides horizon heterogeneity; use coverage and
    quantile-calibration figures together with interval scores.
@@ -503,6 +509,15 @@ bands. They diagnose calibration, not sharpness or total score: read them
 alongside interval widths and the proper scores. See
 [Chapter 5](../scientific/05_training_sampling_scoring.md#calibration-summaries)
 for formulas and interpretation.
+
+`aggregate_fan_gallery_<base-id>.png` selects low-, median-, and high-observed
+origins from the valid test outcomes, then shows every method at those same
+origins. Selection does not use forecast scores. Each panel shows seed-mean
+quantiles and interval bounds; when CRPS is included in the report metrics,
+the panel title shows its mean over valid leads and seeds. The y-axis names
+the configured cross-entity statistic. These fans are illustrative seed-mean
+summaries, not pooled predictive distributions; use the paired scores for
+method comparisons.
 
 A comparison is valid only when the base fingerprint and complete entity
 ordering coincide. [Chapter 7](../scientific/07_experiments_and_results.md)

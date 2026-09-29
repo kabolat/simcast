@@ -24,6 +24,7 @@ from simcast.dependence import IndependentCopula, StaticGaussianCopula
 from simcast.evaluation.aggregate import AggregateEvaluation, evaluate_aggregate_ensemble
 from simcast.evaluation.metrics import empirical_quantiles, energy_score, variogram_score
 from simcast.evaluation.plots import (
+    cross_entity_statistic_label,
     plot_aggregate_fan,
     plot_correlation_heatmap,
     plot_dependence_dynamics,
@@ -359,6 +360,7 @@ def _case_tables(
                 "origin": np.repeat(origins, horizon),
                 "lead": np.tile(np.arange(1, horizon + 1), n_origin),
                 "K": result.correlations.shape[-1],
+                "cross_entity_statistic": config.evaluation.cross_entity_statistic,
                 "valid": valid.numpy().reshape(-1),
                 "observed_aggregate": observed_aggregate.reshape(-1),
             }
@@ -366,6 +368,13 @@ def _case_tables(
         for quantile_index, level in enumerate(config.evaluation.quantile_levels):
             values = result.aggregate.quantile_predictions[..., quantile_index].numpy().reshape(-1)
             table[f"aggregate_q{level:g}"] = values
+        for interval_index, level in enumerate(config.evaluation.interval_levels):
+            table[f"interval_lower_{level:g}"] = (
+                result.interval_predictions[..., interval_index, 0].numpy().reshape(-1)
+            )
+            table[f"interval_upper_{level:g}"] = (
+                result.interval_predictions[..., interval_index, 1].numpy().reshape(-1)
+            )
         case_metrics = dict(result.aggregate.case_metrics)
         if "energy_score" in metrics:
             case_metrics["energy_score"] = result.energy_score
@@ -391,9 +400,15 @@ def _case_tables(
             "origin",
             "lead",
             "K",
+            "cross_entity_statistic",
             "valid",
             "observed_aggregate",
             *quantile_columns,
+            *[
+                f"interval_{bound}_{level:g}"
+                for bound in ("lower", "upper")
+                for level in config.evaluation.interval_levels
+            ],
         }
     ]
     per_origin_columns = ["observed_aggregate", *quantile_columns, *metric_columns]
@@ -506,6 +521,12 @@ def _plots(
         for _name, result in results.items():
             method_figures = output / "figures" if len(results) == 1 else output / "figures" / _name
             method_figures.mkdir(parents=True, exist_ok=True)
+            origin_crps = None
+            if "crps" in metrics:
+                crps_values = result.aggregate.case_metrics["crps"][aggregate_origin]
+                origin_valid = valid[aggregate_origin] & torch.isfinite(crps_values)
+                if bool(origin_valid.any()):
+                    origin_crps = float(crps_values[origin_valid].mean())
             plot_aggregate_fan(
                 result.aggregate.quantile_predictions[aggregate_origin].numpy(),
                 config.evaluation.quantile_levels,
@@ -513,6 +534,8 @@ def _plots(
                 method_figures / "aggregate_fan.png",
                 interval_predictions=result.interval_predictions[aggregate_origin].numpy(),
                 interval_levels=config.evaluation.interval_levels,
+                crps=origin_crps,
+                statistic_label=cross_entity_statistic_label(config.evaluation.cross_entity_statistic),
                 title="Cross-entity forecast",
             )
     if valid[correlation_origin, correlation_lead]:

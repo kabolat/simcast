@@ -241,10 +241,14 @@ Each report directory contains:
 
 ```text
 per_origin_metrics.parquet          concatenated origin-level records
+per_origin_lead_metrics.parquet     concatenated valid origin-lead records
 method_summary.csv                  mean value per (base, evaluated method, seed), one row per metric
-paired_effects.csv                  paired moving-block bootstrap effects, one row per metric/comparison
-method_comparison_<metric>.png      base-panel absolute score bar charts for one metric
-paired_effect_<metric>.png          vertical base-panel relative-improvement plot for all block lengths
+paired_effect_bs.csv                paired moving-block bootstrap effects, one row per metric/comparison
+paired_effect_dist.parquet          seed-averaged paired score differences, one row per origin
+method_comparison_<metric>.png      base-panel score bars with numeric values
+paired_effect_bs_<metric>.png        relative improvement for all block lengths; primary-block means labeled
+paired_effect_dist_<metric>.png      per-origin score-improvement box plots and better-origin fractions
+aggregate_fan_gallery_<base-id>.png observed-outcome-selected fans for this base
 summary_coverage.png                one base panel per empirical-versus-nominal interval coverage curve
 summary_quantile_calibration.png    one base panel per empirical-versus-nominal aggregate quantile calibration curve
 report_summary.md                   plain-text index describing every file above
@@ -254,13 +258,30 @@ report_summary.md                   plain-text index describing every file above
 evaluated method, with `base_id`, `method_id`, `method`, and configured seed
 so that each comparison can be traced to its resolved declaration.
 `method_summary.csv` and `method_comparison_<metric>.png` include every
-evaluated method. The report's `reference` is used only for
-`paired_effects.csv` and `paired_effect_<metric>.png`; evaluation manifests
-contain no reference. Seeds are averaged within method and origin before the
-moving-block bootstrap. Each figure uses one panel per base, because absolute
-score scales are not comparable across entity types.
-`paired_effect_<metric>.png` plots relative improvement
-$-100d/\bar S_{\mathrm{reference}}$, so upward values favour the tested method.
+evaluated method. Bars display their metric values. The report's `reference`
+is used for `paired_effect_bs.csv`, `paired_effect_dist.parquet`, and their
+figures; evaluation manifests contain no reference. Seeds are averaged within
+method and origin before paired comparisons. Each score figure uses one panel
+per base, because absolute scales are not comparable across entity types.
+`paired_effect_bs_<metric>.png` plots relative improvement
+$-100d/\bar S_{\mathrm{reference}}$, so upward values favour the tested method;
+the primary block-length mean is labeled and its interval is shown by the error
+bar. `paired_effect_dist.parquet` stores the paired per-origin improvement
+$S_{\mathrm{reference},i}-S_{\mathrm{method},i}$ after averaging valid leads
+within each seed and averaging seeds at each origin. Positive values mean the
+tested method scored better. `paired_effect_dist_<metric>.png` shows only the
+distribution of these origin-level values and the fraction of origins
+improved. Moving-block bootstrap mean intervals are shown separately in
+`paired_effect_bs_<metric>.png`.
+
+`aggregate_fan_gallery_<base-id>.png` selects low-, median-, and high-observed
+aggregate origins using observations only, then compares methods at those
+same origins. Each panel plots seed-mean quantiles and interval bounds against
+the observed statistic. If `crps` is included in the report metrics, the panel
+also labels the mean CRPS across valid leads and seeds for that origin. These
+seed-mean fans are illustrative summaries, not pooled predictive distributions;
+they should be read alongside aggregate score summaries and paired effects.
+The fan y-axis names the configured cross-entity statistic.
 
 Reports are generated from recorded evaluations only, without refitting or
 re-evaluating; see the [usage guide](usage_guide.md#8-reporting) and the

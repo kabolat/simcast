@@ -195,6 +195,8 @@ def plot_aggregate_fan(
     *,
     interval_predictions: np.ndarray | None = None,
     interval_levels: Sequence[float] = (),
+    crps: float | None = None,
+    statistic_label: str = "Cross-entity statistic",
     title: str,
 ) -> Path:
     predictions = np.asarray(quantile_predictions)
@@ -205,13 +207,27 @@ def plot_aggregate_fan(
     axis.plot(lead, predictions[:, median_index], label="Predictive median")
     if interval_predictions is None:
         interval_predictions = np.empty((predictions.shape[0], 0, 2))
-    for index, level in enumerate(interval_levels):
+    for index in range(len(interval_levels)):
         lower, upper = interval_predictions[:, index, 0], interval_predictions[:, index, 1]
-        axis.fill_between(lead, lower, upper, alpha=0.15, label=f"{level:g} interval")
+        axis.fill_between(lead, lower, upper, alpha=0.15)
     axis.plot(lead, truth, color="black", linewidth=1, label="Realized aggregate")
-    axis.set(xlabel="Lead", ylabel="Cross-entity statistic", title=title)
+    plot_title = title if crps is None else f"{title} | Mean CRPS {crps:.4g}"
+    axis.set(xlabel="Lead", ylabel=statistic_label, title=plot_title)
     axis.legend()
     return _finish(figure, path)
+
+
+def cross_entity_statistic_label(statistic: str) -> str:
+    labels = {
+        "sum": "Sum across entities",
+        "absolute_sum": "Sum of absolute entity values",
+        "max": "Maximum entity value",
+        "absolute_max": "Maximum absolute entity value",
+    }
+    try:
+        return labels[statistic]
+    except KeyError as error:
+        raise ValueError(f"unknown cross-entity statistic: {statistic}") from error
 
 
 def plot_method_summary(metrics: Mapping[str, Mapping[str, float]], path: str | Path) -> Path:
