@@ -230,29 +230,6 @@ def cross_entity_statistic_label(statistic: str) -> str:
         raise ValueError(f"unknown cross-entity statistic: {statistic}") from error
 
 
-def plot_method_summary(metrics: Mapping[str, Mapping[str, float]], path: str | Path) -> Path:
-    methods = list(metrics)
-    scores = [metrics[method]["mean_pinball"] for method in methods]
-    figure, axis = plt.subplots(figsize=(7, 4))
-    axis.bar(methods, scores)
-    axis.tick_params(axis="x", rotation=25)
-    axis.set(ylabel="Mean aggregate pinball loss", title="Aggregate probabilistic accuracy")
-    return _finish(figure, path)
-
-
-def plot_interval_coverage(
-    metrics: Mapping[str, Mapping[str, float]], coverages: Sequence[float], path: str | Path
-) -> Path:
-    figure, axis = plt.subplots(figsize=(6, 5))
-    for method, values in metrics.items():
-        empirical = [values[f"coverage_{coverage:g}"] for coverage in coverages]
-        axis.plot(coverages, empirical, marker="o", label=method)
-    axis.plot([0, 1], [0, 1], color="black", linestyle="--", label="Nominal")
-    axis.set(xlabel="Nominal coverage", ylabel="Empirical coverage", title="Aggregate interval calibration")
-    axis.legend()
-    return _finish(figure, path)
-
-
 def plot_score_by_lead(
     table: Mapping[str, Sequence[float]], path: str | Path, *, metric: str = "mean_pinball"
 ) -> Path:

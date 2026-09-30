@@ -786,13 +786,15 @@ def resolve_run_config(
         "save_resolved_config": base.output.save_resolved_config,
     }
     values["dependence"] = {"method": method.family, "model": None}
-    if isinstance(method, StaticGaussianMethodConfig):
-        values["dependence"]["model"] = method.model.model_dump(mode="python")
-    elif isinstance(method, ConditionalLowRankMethodConfig):
-        values["dependence"]["model"] = method.model.model_dump(mode="python")
-    elif isinstance(method, SetAwareLowRankMethodConfig):
-        values["dependence"]["model"] = method.model.model_dump(mode="python")
-    elif isinstance(method, ConditionalKernelMethodConfig):
+    if isinstance(
+        method,
+        (
+            StaticGaussianMethodConfig,
+            ConditionalLowRankMethodConfig,
+            SetAwareLowRankMethodConfig,
+            ConditionalKernelMethodConfig,
+        ),
+    ):
         values["dependence"]["model"] = method.model.model_dump(mode="python")
     if isinstance(
         method,

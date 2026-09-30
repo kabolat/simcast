@@ -6,8 +6,8 @@ recalibrate the native Chronos quantile knots.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
-from typing import Any, Literal
+from dataclasses import dataclass
+from typing import Literal
 
 import numpy as np
 
@@ -36,12 +36,6 @@ class MarginalDiagnostics:
     interval_levels: list[float]
     overall: MarginalSummary
     by_entity: dict[str, MarginalSummary]
-
-    def as_dict(self) -> dict[str, Any]:
-        """Return a JSON-serializable report."""
-
-        return asdict(self)
-
 
 def _level_key(level: float) -> str:
     return f"{level:.8g}"
@@ -197,13 +191,8 @@ def compute_marginal_diagnostics(
     )
 
 
-# Readable short alias for notebooks and analysis code.
-marginal_diagnostics = compute_marginal_diagnostics
-
-
 __all__ = [
     "MarginalDiagnostics",
     "MarginalSummary",
     "compute_marginal_diagnostics",
-    "marginal_diagnostics",
 ]

@@ -6,7 +6,7 @@ import json
 import logging
 import sys
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from math import floor
 from pathlib import Path
 from typing import Annotated, Any, Protocol, cast
@@ -547,7 +547,7 @@ def build_cache_from_config(
     # Diagnostics created during cache construction are tune-only: test labels
     # remain sealed until the explicit evaluation access path is requested.
     tune_mask = np.asarray(split_labels) != "test"
-    marginal_report = compute_marginal_diagnostics(
+    marginal_report = asdict(compute_marginal_diagnostics(
         true_y[tune_mask],
         quantile_predictions[tune_mask],
         quantile_levels,
@@ -555,7 +555,7 @@ def build_cache_from_config(
         entity_ids=group.entity_ids,
         interval_levels=config.evaluation.interval_levels,
         pit_mode=config.pit.mode,
-    ).as_dict()
+    ))
     marginal_payload = {"scope": "train_and_validation", **marginal_report}
 
     save_pit_library(destination, dataset, metadata, overwrite=overwrite)

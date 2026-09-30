@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -86,10 +86,6 @@ class DatasetStats:
     missing_percent: float
     start: pd.Timestamp
     end: pd.Timestamp
-
-    def as_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
 
 def summarize_load_measurements(data_root: str | Path, group: EntityGroup) -> DatasetStats:
     """Calculate transparent group-level target coverage and missingness."""

@@ -16,6 +16,7 @@ from typing import Annotated
 import typer
 from tqdm.auto import tqdm
 
+from simcast.cli._composite_paths import _resolve_path
 from simcast.cli.build_cache import build_cache_from_config
 from simcast.cli.evaluate import evaluate_from_config
 from simcast.cli.report_composite import report_composite
@@ -52,10 +53,6 @@ class ExpandedFit:
     method_id: str
     method: MethodConfig
     seed: int | None
-
-
-def _resolve_path(source: Path, value: Path) -> Path:
-    return value.expanduser().resolve() if value.is_absolute() else (source.parent / value).resolve()
 
 
 def _is_optimized(method: MethodConfig) -> bool:
