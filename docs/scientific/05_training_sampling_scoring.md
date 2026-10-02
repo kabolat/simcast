@@ -10,7 +10,7 @@ saved fitted methods and evaluation records are described in the
 For group $g$, conditional training converts each valid $(i,\tau)$ into
 
 $$
-\left(X_{g,\tau}^{(i)},\mathbf z_{g,\tau}^{(i)}\right),
+(X_{g,\tau}^{(i)},\mathbf z_{g,\tau}^{(i)}),
 $$
 
 where
@@ -55,9 +55,9 @@ The minimized negative pseudo-log-likelihood is
 
 $$
 \mathcal L(\mathbf z,R)
-=\frac12\left[
+=\frac12[
 \log|R|+\mathbf z^{\mathsf T}(R^{-1}-I)\mathbf z
-\right].
+].
 $$
 
 It is a pseudo-likelihood because the marginal transformation uses
@@ -107,7 +107,7 @@ For every valid $(g,i,\tau)$ and method:
 
 $$
 \widetilde T_{g,\tau}^{(i,m)}
-=T_g\!\left(\widetilde{\mathbf Y}_{g,\tau}^{(i,m)}\right).
+=T_g(\widetilde{\mathbf Y}_{g,\tau}^{(i,m)}).
 $$
 
 `evaluation.cross_entity_statistic: sum` uses
@@ -167,7 +167,7 @@ the $M$ full-group scenario statistics. For the simple sum, they are not sums
 of equally labeled marginal quantiles:
 
 $$
-Q_\alpha\!\left(\sum_kY_k\right)
+Q_\alpha(\sum_kY_k)
 \ne\sum_kQ_\alpha(Y_k)
 $$
 
@@ -218,14 +218,14 @@ is exceeded in only 5% of cases. This makes the per-level values diagnostic:
 The continuous ranked probability score of Matheson and Winkler (1976) is
 
 $$
-\operatorname{CRPS}(F,a)=\int_{-\infty}^{\infty}\bigl(F(x)-\mathbf 1\{a\le x\}\bigr)^2\,dx .
+\mathrm{CRPS}(F,a)=\int_{-\infty}^{\infty}\bigl(F(x)-\mathbf 1\{a\le x\}\bigr)^2\,dx .
 $$
 
 For $F$ with a finite mean it has the kernel (energy) representation of
 Gneiting and Raftery (2007),
 
 $$
-\operatorname{CRPS}(F,a)=\mathbb E_F|X-a|-\tfrac12\,\mathbb E_F|X-X'|,
+\mathrm{CRPS}(F,a)=\mathbb E_F|X-a|-\tfrac12\,\mathbb E_F|X-X'|,
 \qquad X,X'\overset{\text{iid}}{\sim}F .
 $$
 
@@ -233,7 +233,7 @@ Simcast evaluates this for the empirical distribution $\widehat F_M$ of the
 ensemble $x_1,\ldots,x_M$, which replaces both expectations by averages:
 
 $$
-\operatorname{CRPS}(\widehat F_M,a)
+\mathrm{CRPS}(\widehat F_M,a)
 =\frac1M\sum_m|x_m-a|
 -\frac1{2M^2}\sum_{m,n}|x_m-x_n|.
 $$
@@ -244,12 +244,12 @@ approximation of it. Three equivalent views are useful:
 - **Order statistics.** With sorted members $x_{(1)}\le\cdots\le x_{(M)}$,
   $\sum_{m,n}|x_m-x_n|=2\sum_{i=1}^M(2i-M-1)\,x_{(i)}$. The implementation uses
   this identity, so the pair term costs $O(M\log M)$ instead of $O(M^2)$.
-- **Quantile decomposition.** $\operatorname{CRPS}(\widehat F_M,a)
+- **Quantile decomposition.** $\mathrm{CRPS}(\widehat F_M,a)
   =\frac2M\sum_{i=1}^M\rho_{\tau_i}(a-x_{(i)})$ with $\tau_i=(2i-1)/(2M)$, that
   is, twice the mean pinball loss over $M$ evenly spaced levels (Laio and
   Tamea, 2007; Bröcker, 2012). This is the bridge to WIS below.
 - **Fair version.** Replacing $1/(2M^2)$ by $1/(2M(M-1))$ gives the fair CRPS
-  of Ferro (2014), an unbiased estimator of $\operatorname{CRPS}(F,a)$ for the
+  of Ferro (2014), an unbiased estimator of $\mathrm{CRPS}(F,a)$ for the
   distribution $F$ that generated the members. The version used here exceeds
   it by about $\mathbb E|X-X'|/(2M)$, which is negligible at $M=4096$. Zamo
   and Naveau (2018) compare these estimators.
@@ -261,7 +261,7 @@ $\alpha/2$ and $1-\alpha/2$ scenario quantiles, the interval score of Winkler
 (1972) (see also Gneiting and Raftery, 2007) is
 
 $$
-\operatorname{IS}_\alpha(l,u;a)
+\mathrm{IS}_\alpha(l,u;a)
 =(u-l)+\frac{2}{\alpha}(l-a)\mathbf1(a<l)
 +\frac{2}{\alpha}(a-u)\mathbf1(a>u).
 $$
@@ -278,18 +278,18 @@ empirical aggregate median $m$, Simcast uses the weighted interval score of
 Bracher et al. (2021) with $w_0=\tfrac12$ and $w_k=\alpha_k/2$:
 
 $$
-\operatorname{WIS}
-=\frac{1}{K+\tfrac12}\left(
+\mathrm{WIS}
+=\frac{1}{K+\tfrac12}(
 \tfrac12|a-m|+
-\sum_{k=1}^K\tfrac{\alpha_k}{2}\operatorname{IS}_{\alpha_k}
-\right).
+\sum_{k=1}^K\tfrac{\alpha_k}{2}\mathrm{IS}_{\alpha_k}
+).
 $$
 
-Because $\tfrac{\alpha}{2}\operatorname{IS}_\alpha=\rho_{\alpha/2}(a-l)+\rho_{1-\alpha/2}(a-u)$
+Because $\tfrac{\alpha}{2}\mathrm{IS}_\alpha=\rho_{\alpha/2}(a-l)+\rho_{1-\alpha/2}(a-u)$
 and $\tfrac12|a-m|=\rho_{1/2}(a-m)$,
 
 $$
-\operatorname{WIS}=\frac{2}{2K+1}\sum_{j=1}^{2K+1}\rho_{\tau_j}(a-q_{\tau_j}),
+\mathrm{WIS}=\frac{2}{2K+1}\sum_{j=1}^{2K+1}\rho_{\tau_j}(a-q_{\tau_j}),
 \qquad \tau\in\{\alpha_k/2,\ \tfrac12,\ 1-\alpha_k/2\},
 $$
 
@@ -363,7 +363,7 @@ uncertainty-aware absolute error. `mean_pinball` is on half that scale:
 $2\times$`mean_pinball` is the number to set beside CRPS and WIS. With the
 default configuration the three are tied even more closely: `quantile_levels`
 equal the levels implied by the default `interval_levels`, so
-$\operatorname{WIS}=2\times$`mean_pinball` exactly, case by case.
+$\mathrm{WIS}=2\times$`mean_pinball` exactly, case by case.
 
 The substantive difference is the weighting over $\tau$. Bracher et al.
 (2021) show that WIS approaches CRPS for many, roughly evenly spaced levels;
@@ -397,7 +397,7 @@ looking at test results (see [Chapter 7](07_experiments_and_results.md)).
 | Are the intervals calibrated and how sharp are they? | `coverage_*` with `interval_width_*`, summarized by WIS |
 | How does the result compare with interval- or quantile-format benchmarks? | WIS, or `mean_pinball` on the benchmark's levels |
 
-WIS adds most when it is read through its components. Each $\operatorname{IS}_\alpha$
+WIS adds most when it is read through its components. Each $\mathrm{IS}_\alpha$
 splits into the width $u-l$ (sharpness) and the penalties for observations
 below $l$ or above $u$ (calibration), and `interval_width_*`, `coverage_*`, and
 `interval_score_*` are stored per level for this purpose. One half of this WIS,
@@ -418,7 +418,7 @@ When reading results:
 4. **In Simcast, dependence acts through dispersion.** Marginals are fixed, so
    aggregate scores can change only because the copula changes the joint
    distribution of the entities. For the sum,
-   $\operatorname{Var}(\sum_kY_k)=\sum_k\operatorname{Var}(Y_k)+2\sum_{k<l}\operatorname{Cov}(Y_k,Y_l)$:
+   $\mathrm{Var}(\sum_kY_k)=\sum_k\mathrm{Var}(Y_k)+2\sum_{k<l}\mathrm{Cov}(Y_k,Y_l)$:
    positive dependence widens the aggregate distribution. When forecast errors
    are positively correlated, M0 produces aggregate intervals that are too
    narrow. This shows up as coverage below nominal and inflated tail pinball
@@ -460,7 +460,7 @@ $x_1,\ldots,x_{M_J}\in\mathbb R^{K_g}$ and observed vector $\mathbf y$, the
 baseline uses the empirical all-pairs estimator
 
 $$
-\widehat{\operatorname{ES}}
+\widehat{\mathrm{ES}}
 =\frac1{M_J}\sum_{m=1}^{M_J}\|x_m-\mathbf y\|_2
 -\frac1{2M_J^2}\sum_{m=1}^{M_J}\sum_{n=1}^{M_J}
 \|x_m-x_n\|_2.
@@ -507,11 +507,11 @@ Simcast uses the unit-weight Variogram Score of order $p$ (Scheuerer and
 Hamill, 2015):
 
 $$
-\operatorname{VS}_p
-=\sum_{i=1}^{K_g}\sum_{j=1}^{K_g}\left(
+\mathrm{VS}_p
+=\sum_{i=1}^{K_g}\sum_{j=1}^{K_g}(
 |y_i-y_j|^p
 -\mathbb E|X_i-X_j|^p
-\right)^2,
+)^2,
 $$
 
 where the expectation is estimated by the mean over the $M_J$ selected
@@ -541,7 +541,7 @@ Interpretation requires care:
    lists $p=0.5$ and $p=1$ as standard choices (Jordan et al., 2019).
 5. **Monte Carlo estimate.** Squaring the difference between the observed term
    and an ensemble mean biases the estimate upward by
-   $\operatorname{Var}(|X_i-X_j|^p)/M_J$ per term. With $M_J=512$ this is
+   $\mathrm{Var}(|X_i-X_j|^p)/M_J$ per term. With $M_J=512$ this is
    small, and it is the same selected ensemble size for every method.
 
 ## Full-group output scope

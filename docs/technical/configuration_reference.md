@@ -214,7 +214,7 @@ base.
 | `model.jitter` | strictly positive real | `1.0e-6` | final correlation stabilization |
 
 See [Chapter 4](../scientific/04_dependence_models.md) for
-$\Sigma=\Lambda\Lambda^\top+\operatorname{diag}(\sigma^2)$ and correlation
+$\Sigma=\Lambda\Lambda^\top+\mathrm{diag}(\sigma^2)$ and correlation
 normalization.
 
 ### 3.5 M3 model

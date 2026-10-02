@@ -39,3 +39,13 @@ def test_markdown_links_resolve_to_existing_files(markdown_path: Path) -> None:
         if not (markdown_path.parent / file_part).resolve().is_file():
             missing.append(target)
     assert not missing, f"{markdown_path.relative_to(ROOT)} links to missing files: {missing}"
+
+
+def test_scientific_math_uses_github_compatible_commands() -> None:
+    scientific_docs = sorted((ROOT / "docs" / "scientific").glob("*.md"))
+    text = "\n".join(path.read_text(encoding="utf-8") for path in scientific_docs)
+    assert "\\!" not in text
+    assert "\\operatorname" not in text
+    assert "\\left" not in text
+    assert "\\right" not in text
+    assert text.count(r"\begin{cases}") == text.count(r"\end{cases}")

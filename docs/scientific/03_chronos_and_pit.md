@@ -32,7 +32,7 @@ For forecast instance $i$, entity $k$, and one-based lead $\tau$, let
 
 $$
 F_{k,\tau}^{(i)}(y)
-=P\!\left(Y_{k,\tau}^{(i)}\le y\mid\mathcal I^{(i)}\right).
+=P(Y_{k,\tau}^{(i)}\le y\mid\mathcal I^{(i)}).
 $$
 
 $Y_{k,\tau}^{(i)}$ is the future random variable and $\mathcal I^{(i)}$ is the
@@ -77,7 +77,7 @@ levels $0<q_1<\cdots<q_Q<1$ and corresponding predicted values
 
 $$
 \mathcal Q_{k,\tau}^{(i)}
-=\left\{\left(\hat y_{k,\tau,q_j}^{(i)},q_j\right)\right\}_{j=1}^{Q}.
+=\{(\hat y_{k,\tau,q_j}^{(i)},q_j)\}_{j=1}^{Q}.
 $$
 
 Here $q_j$ is a probability, whereas $\hat y_{k,\tau,q_j}^{(i)}$ is a value in
@@ -91,7 +91,7 @@ $e_{k,p}^{(i)}\in\mathbb R^{768}$. Leads 1--16 share representation $p=0$,
 leads 17--32 share $p=1$, and so forth, with
 
 $$
-p(\tau)=\left\lfloor\frac{\tau-1}{16}\right\rfloor.
+p(\tau)=\lfloor\frac{\tau-1}{16}\rfloor.
 $$
 
 ### Example
@@ -309,7 +309,7 @@ valid. Only then is the spatial score vector defined:
 
 $$
 \mathbf z_{g,\tau}^{(i)}
-=\left[z_{k,\tau}^{(i)}\right]_{k\in\mathcal E_g}
+=[z_{k,\tau}^{(i)}]_{k\in\mathcal E_g}
 \in\mathbb R^{K_g}.
 $$
 
@@ -428,8 +428,8 @@ For conditional methods, define a feature vector measurable at the origin:
 
 $$
 v_{k,\tau}^{(i)}=
-\left[e_{k,p(\tau)}^{(i)},\ r_{k,\tau,1:Q}^{(i)},\ m_{k,\tau}^{(i)},\
-\log(|s_{k,\tau}^{(i)}|+\epsilon_s),\ w_\tau,\ \ell_k\right].
+[e_{k,p(\tau)}^{(i)},\ r_{k,\tau,1:Q}^{(i)},\ m_{k,\tau}^{(i)},\
+\log(|s_{k,\tau}^{(i)}|+\epsilon_s),\ w_\tau,\ \ell_k].
 $$
 
 Here $m$ is the median, $s=\hat y_{0.9}-\hat y_{0.1}$ is the 80% spread,

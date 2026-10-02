@@ -132,7 +132,7 @@ The implemented cyclic variables are fractional hour with $P=24$ and zero-based
 weekday with $P=7$. The additional binary channel is
 
 $$
-\texttt{is\_weekend}=\mathbb 1\{\operatorname{dayofweek}\ge5\}.
+\texttt{is\_weekend}=\mathbb 1\{\mathrm{dayofweek}\ge5\}.
 $$
 
 There is no day-of-year covariate. This gives 10 past and 10 future covariate

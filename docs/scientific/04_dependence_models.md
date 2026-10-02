@@ -59,10 +59,10 @@ M1 estimates one training-only matrix for each lead:
 
 $$
 \widehat\Sigma_{g,\tau}^{\mathrm{LW}}
-=\operatorname{LedoitWolf}\!\left(
-\left\{\mathbf z_{g,\tau}^{(i)}:
-i\in\mathcal D_{\mathrm{train}},V_{g,\tau}^{(i)}=1\right\}
-\right).
+=\mathrm{LedoitWolf}(
+\{\mathbf z_{g,\tau}^{(i)}:
+i\in\mathcal D_{\mathrm{train}},V_{g,\tau}^{(i)}=1\}
+).
 $$
 
 Ledoit--Wolf shrinkage combines the empirical covariance with a
@@ -106,16 +106,16 @@ covariance is
 $$
 \Sigma_{g,\tau}^{(i)}
 =\Lambda_{g,\tau}^{(i)}\Lambda_{g,\tau}^{(i)\mathsf T}
-+\operatorname{diag}\!\left(
-\left\{\sigma_{k,\tau}^{(i)2}\right\}_{k\in\mathcal E_g}
-\right),
++\mathrm{diag}(
+\{\sigma_{k,\tau}^{(i)2}\}_{k\in\mathcal E_g}
+),
 $$
 
 which is normalized to correlation. Positivity is enforced with
 
 $$
 \sigma_{k,\tau}^{(i)}
-=\operatorname{softplus}(b_{k,\tau}^{(i)})+\sigma_{\min},
+=\mathrm{softplus}(b_{k,\tau}^{(i)})+\sigma_{\min},
 \qquad \sigma_{\min}=10^{-3}.
 $$
 
@@ -158,9 +158,9 @@ M3 first contextualizes every member of the complete group:
 
 $$
 h_{g,\tau}^{(i)}
-=\operatorname{TransformerEncoder}_\theta\!\left(
-\operatorname{Linear}(\operatorname{LayerNorm}(v_{g,\tau}^{(i)}))
-\right).
+=\mathrm{TransformerEncoder}_\theta(
+\mathrm{Linear}(\mathrm{LayerNorm}(v_{g,\tau}^{(i)}))
+).
 $$
 
 A shared head maps each contextual representation to $(\lambda_k,b_k)$.
@@ -194,12 +194,12 @@ $$
 then constructs
 
 $$
-K_{ab}=\exp\!\left(
+K_{ab}=\exp(
 -\frac{\|h_a-h_b\|_2^2}{2\ell^2}
-\right)+\delta_{ab}\nu,
+)+\delta_{ab}\nu,
 $$
 
-where $\ell=\operatorname{softplus}(\ell_{\mathrm{raw}})$ is learned from one
+where $\ell=\mathrm{softplus}(\ell_{\mathrm{raw}})$ is learned from one
 and nugget $\nu=10^{-3}$. Correlation normalization and jitter follow. The RBF
 Gram matrix is positive semidefinite and permutation equivariant, but its
 off-diagonal correlations are nonnegative, a substantive restriction.

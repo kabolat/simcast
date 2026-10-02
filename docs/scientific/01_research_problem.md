@@ -111,15 +111,15 @@ entity-wise predictive marginal is
 
 $$
 F_{k,\tau}^{(i)}(y)
-=P\!\left(Y_{k,\tau}^{(i)}\le y\mid\mathcal I^{(i)}\right).
+=P(Y_{k,\tau}^{(i)}\le y\mid\mathcal I^{(i)}).
 $$
 
 Chronos-2 approximates it with the finite native quantile grid
 
 $$
-\left\{
-\left(\hat y_{k,\tau,q_j}^{(i)},q_j\right)
-\right\}_{j=1}^{Q},
+\{
+(\hat y_{k,\tau,q_j}^{(i)},q_j)
+\}_{j=1}^{Q},
 \qquad 0<q_1<\cdots<q_Q<1.
 $$
 
@@ -147,13 +147,13 @@ random aggregate.
 For one group, forecast instance, and lead, the modeled joint distribution is
 
 $$
-P\!\left(
+P(
 Y_{k,\tau}^{(i)}\le y_k,\;k\in\mathcal E_g
 \mid\mathcal I^{(i)}
-\right)
-=C_{g,\tau}^{(i)}\!\left(
-\left\{F_{k,\tau}^{(i)}(y_k)\right\}_{k\in\mathcal E_g}
-\right).
+)
+=C_{g,\tau}^{(i)}(
+\{F_{k,\tau}^{(i)}(y_k)\}_{k\in\mathcal E_g}
+).
 $$
 
 The methods differ only in $C_{g,\tau}^{(i)}$, currently represented by a
@@ -180,12 +180,12 @@ For an observed realization, the deterministic finite-quantile pseudo-PIT is
 
 $$
 u_{k,\tau}^{(i)}
-=f^{\mathrm{PIT}}\!\left(
+=f^{\mathrm{PIT}}(
 y_{k,\tau}^{(i)},
-\left\{
-\left(\hat y_{k,\tau,q_j}^{(i)},q_j\right)
-\right\}_{j=1}^{Q}
-\right).
+\{
+(\hat y_{k,\tau,q_j}^{(i)},q_j)
+\}_{j=1}^{Q}
+).
 $$
 
 The base configuration fixes the finite-quantile map
@@ -195,14 +195,14 @@ piecewise-linear quantile function between adjacent native quantiles, with
 explicit endpoint atoms and no tail extrapolation. Gaussianized scores are
 
 $$
-z_{k,\tau}^{(i)}=\Phi^{-1}\!\left(u_{k,\tau}^{(i)}\right),
+z_{k,\tau}^{(i)}=\Phi^{-1}(u_{k,\tau}^{(i)}),
 $$
 
 and the complete group vector is
 
 $$
 \mathbf z_{g,\tau}^{(i)}
-=\left[z_{k,\tau}^{(i)}\right]_{k\in\mathcal E_g}
+=[z_{k,\tau}^{(i)}]_{k\in\mathcal E_g}
 \in\mathbb R^{K_g}.
 $$
 
@@ -217,10 +217,10 @@ held-out full-group cases is
 $$
 \frac{1}{|\mathcal D_{g,\mathrm{test}}|}
 \sum_{(i,\tau)\in\mathcal D_{g,\mathrm{test}}}
-\left[
-S\!\left(C_{g,\tau}^{(i)},a_{g,\tau}^{(i)}\right)
--S\!\left(C_{g,\tau}^{(i),\mathrm{M0}},a_{g,\tau}^{(i)}\right)
-\right],
+[
+S(C_{g,\tau}^{(i)},a_{g,\tau}^{(i)})
+-S(C_{g,\tau}^{(i),\mathrm{M0}},a_{g,\tau}^{(i)})
+],
 $$
 
 where notation suppresses the shared fixed marginals. Mean aggregate pinball
