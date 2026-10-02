@@ -249,7 +249,7 @@ For $K_g=3$, M0 uses $I_3$: a high sampled rank for one entity conveys no
 information about the others. M1 may instead estimate
 
 $$
-R=\begin{bmatrix}1&0.7&0.2\\0.7&1&0.1\\0.2&0.1&1\end{bmatrix},
+R=\begin{pmatrix}1&0.7&0.2\\0.7&1&0.1\\0.2&0.1&1\end{pmatrix},
 $$
 
 and use it at every origin for that lead. M2 and M3 may produce a different

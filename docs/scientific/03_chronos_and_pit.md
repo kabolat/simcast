@@ -212,12 +212,12 @@ is
 
 $$
 \widetilde Q(u)=
-\begin{cases}
-x_1, & 0\le u\le q_1,\\
-x_j+\dfrac{u-q_j}{q_{j+1}-q_j}(x_{j+1}-x_j),
-&q_j<u<q_{j+1},\\
-x_Q, &q_Q\le u\le1.
-\end{cases}
+\begin{aligned}
+x_1 &\quad && 0\le u\le q_1,\\
+x_j+\dfrac{u-q_j}{q_{j+1}-q_j}(x_{j+1}-x_j)
+&\quad && q_j<u<q_{j+1},\\
+x_Q &\quad && q_Q\le u\le1.
+\end{aligned}
 $$
 
 Thus the distribution is linear in probability between adjacent native
@@ -337,8 +337,8 @@ The sensitivity analysis estimates training cell frequencies
 $\hat p_{k,\tau,c}$ and maps each cell to the midpoint of its empirical mass:
 
 $$
-\widetilde u_{k,\tau,c}
-=\sum_{r<c}\hat p_{k,\tau,r}+\frac12\hat p_{k,\tau,c}.
+	ilde{u}_{k,\tau,c}
+=\sum_{r<c}\hat{p}_{k,\tau,r}+\frac{1}{2}\hat{p}_{k,\tau,c}.
 $$
 
 This map is estimated from training origins only and then frozen. It changes the

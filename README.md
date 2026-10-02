@@ -8,8 +8,8 @@ quantile grids for the random variables $Y_{k,\tau}^{(i)}$. A dependence method
 supplies only the copula $C_{g,\tau}^{(i)}$:
 
 $$
-P\!\left(Y_{k,\tau}^{(i)}\le y_k,\ k\in\mathcal E_g\mid\mathcal I^{(i)}\right)
-=C_{g,\tau}^{(i)}\!\left(\{F_{k,\tau}^{(i)}(y_k)\}_{k\in\mathcal E_g}\right).
+P(Y_{k,\tau}^{(i)}\le y_k,\ k\in\mathcal E_g\mid\mathcal I^{(i)})
+=C_{g,\tau}^{(i)}(\{F_{k,\tau}^{(i)}(y_k)\}_{k\in\mathcal E_g}).
 $$
 
 The evaluation targets a cross-entity statistic of the complete group: the

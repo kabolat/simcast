@@ -42,8 +42,12 @@ def test_markdown_links_resolve_to_existing_files(markdown_path: Path) -> None:
 
 
 def test_scientific_math_uses_github_compatible_commands() -> None:
-    scientific_docs = sorted((ROOT / "docs" / "scientific").glob("*.md"))
-    text = "\n".join(path.read_text(encoding="utf-8") for path in scientific_docs)
+    sources = [
+        ROOT / "README.md",
+        *sorted((ROOT / "docs").rglob("*.md")),
+        *sorted((ROOT / "notebooks").rglob("*.ipynb")),
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in sources)
     assert "\\!" not in text
     assert "\\operatorname" not in text
     assert "\\left" not in text
