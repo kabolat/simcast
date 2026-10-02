@@ -292,10 +292,10 @@ First define entity-level validity:
 
 $$
 V_{k,\tau}^{(i)}=
-\begin{cases}
-1,&\text{if }y_{k,\tau}^{(i)}\text{ and every marginal quantile are finite, and the row is valid after repair},\\
-0,&\text{otherwise.}
-\end{cases}
+\begin{aligned}
+1 &\quad \text{if }y_{k,\tau}^{(i)}\text{ and every marginal quantile are finite, and the row is valid after repair},\\
+0 &\quad \text{otherwise.}
+\end{aligned}
 $$
 
 The complete-group indicator is
@@ -337,15 +337,15 @@ The sensitivity analysis estimates training cell frequencies
 $\hat p_{k,\tau,c}$ and maps each cell to the midpoint of its empirical mass:
 
 $$
-	ilde{u}_{k,\tau,c}
+\widetilde{u}_{k,\tau,c}
 =\sum_{r<c}\hat{p}_{k,\tau,r}+\frac{1}{2}\hat{p}_{k,\tau,c}.
 $$
 
 This map is estimated from training origins only and then frozen. It changes the
-pseudo-scores used to estimate dependence; it does not change marginal
-quantiles or scenario projection.
-
-This transform is defined only for `pit.mode: discretized`, because it estimates
+\begin{aligned}
+1 &\quad \text{if }y_{k,\tau}^{(i)}\text{ and every marginal quantile are finite, and the row is valid after repair},\\
+0 &\quad \text{otherwise.}
+\end{aligned}
 the probabilities of the $Q+1$ named cells. It is rejected with
 `linear_interpolation`, whose non-atomic interior values do not belong to a
 finite set of cells.

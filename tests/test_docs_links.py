@@ -52,4 +52,7 @@ def test_scientific_math_uses_github_compatible_commands() -> None:
     assert "\\operatorname" not in text
     assert "\\left" not in text
     assert "\\right" not in text
-    assert text.count(r"\begin{cases}") == text.count(r"\end{cases}")
+    assert "\\begin{cases}" not in text
+    assert "\\end{cases}" not in text
+    assert "\t" not in text
+    assert not any(ord(character) < 32 and character not in "\n\r\t" for character in text)
