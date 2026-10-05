@@ -342,10 +342,10 @@ $$
 $$
 
 This map is estimated from training origins only and then frozen. It changes the
-\begin{aligned}
-1 &\quad \text{if }y_{k,\tau}^{(i)}\text{ and every marginal quantile are finite, and the row is valid after repair},\\
-0 &\quad \text{otherwise.}
-\end{aligned}
+pseudo-scores used to estimate dependence; it does not change marginal
+quantiles or scenario projection.
+
+This transform is defined only for `pit.mode: discretized`, because it estimates
 the probabilities of the $Q+1$ named cells. It is rejected with
 `linear_interpolation`, whose non-atomic interior values do not belong to a
 finite set of cells.
