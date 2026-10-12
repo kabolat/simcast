@@ -8,7 +8,16 @@ data locations.
 
 ## Dataset and homogeneous groups
 
-The experiments use the Liander2024 Energy Forecasting Benchmark snapshot
+The pipeline consumes a dataset adapter rather than assuming a single data
+source. The adapter supplies the ordered entity group, UTC target/covariate
+frames, common coverage, point-in-time input assembly, and provenance. Forecast
+frequency, origin phase and stride, lookback, horizon, and chronological split
+use the same shared window and split logic for every adapter. See the
+[dataset adapter guide](../technical/datasets.md) for the interface and setup.
+
+### Liander2024
+
+The Liander2024 bases use the Energy Forecasting Benchmark snapshot
 `dce7fe9bbae0d62288986fa97fa1ee7e9d3b7044`. Data are downloaded from
 `OpenSTEF/liander2024-energy-forecasting-benchmark` with only the paths needed
 for the selected entity type:
@@ -38,6 +47,33 @@ because some physical names occur in multiple categories.
 Every experiment uses one static group. Missing data never cause the group to
 shrink for a particular case.
 
+### GEFCom2014 Wind
+
+The GEFCom base uses the pinned `rebase-energy/gefcom2014` dataset revision and
+reads `data/wind_targets.parquet` and `data/wind_nwp.parquet`. It forms one
+ordered group of ten zones, `gefcom_wind::z1` through `gefcom_wind::z10`.
+Targets are hourly normalized wind power for 2012-01-01 01:00 through
+2013-01-01 00:00; naive source timestamps are interpreted as UTC. Each zone
+has four supplied NWP fields (`u10`, `v10`, `u100`, `v100`) and cyclic UTC hour
+features. The configured protocol is one origin per day at 00:00 UTC, 168
+lookback hours, and 24 future hours. The chronological 80/20 tune/test split
+uses the same horizon-purge implementation as every other dataset.
+
+The repack's `issue_time` and `knowledge_time` values describe monthly
+competition task releases rather than physical NWP issuance, so they are not
+used to establish forecast availability. The observed NWP runs appear stitched
+daily, consistent with coverage `(S, S + 24 h]`; the adapter assigns that run
+`available_at = S`. The source does not establish when the run was issued or
+actually became available. Timestamps are treated as UTC and the run-window
+rule is explicitly marked as inferred in cache provenance. Its start hour and
+length are fingerprinted base options. With the configured 00:00 origin, the
+next 24 valid hours (01:00 through the following 00:00) are selected under
+this assumption.
+The supplied NWP is the only future weather source; oracle weather is rejected.
+The dataset has no locations, so location-based conditional features are
+disabled in its supplied lab composite. Missing required input at any zone
+makes the full-group origin ineligible.
+
 ## Timestamp normalization
 
 All internal timestamps are timezone-aware UTC. Readers normalize either a
@@ -52,7 +88,7 @@ may still contain missing observations around transitions.
 
 ## Forecast windows
 
-Let $\Delta=15$ minutes, lookback $L=672$ steps (seven days), and horizon
+For the supplied Liander bases, let $\Delta=15$ minutes, lookback $L=672$ steps (seven days), and horizon
 $H=96$ steps (one day). For forecast instance $i$ with origin $t^{(i)}$, the exact windows are
 
 $$

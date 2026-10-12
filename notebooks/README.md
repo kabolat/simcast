@@ -34,6 +34,11 @@ workflow:
 4. `03_dependence_models.ipynb` compares the model hypotheses.
 5. `04_evaluation_reporting_and_visualisation.ipynb` derives the estimands.
 
+The workflow accepts any configured data adapter. The supplied bases cover
+Liander2024 and GEFCom2014 Wind; see the
+[dataset adapter guide](../docs/technical/datasets.md) for their different
+target, covariate, and availability conventions.
+
 The second path consists of independent mathematical monographs in
 `dependency_methods/`. Each restarts the notation and can be read without
 running notebooks 00--04.
