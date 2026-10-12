@@ -1,0 +1,23 @@
+kind: composite
+name: gefcom_wind_smoke
+venue: lab
+bases:
+  - id: gefcom_wind
+    config: ../../bases/gefcom2014/wind.yaml
+methods:
+  - id: m0
+    method: ../../methods/m0_independent.yaml
+  - id: m1
+    method: ../../methods/m1_static_gaussian.yaml
+  - id: m2
+    method: ../../methods/m2_conditional_low_rank.yaml
+    overrides:
+      features:
+        use_location: false  # GEFCom2014 supplies no coordinates
+      optimization:
+        epochs: 2
+        patience: 1
+evaluations:
+  - id: standard
+    config: ../../evaluations/standard.yaml
+    method_ids: [m0, m1, m2]

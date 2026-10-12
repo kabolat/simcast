@@ -13,7 +13,7 @@ from simcast.data.availability import (
     select_latest_weather_forecast,
     select_measured_weather,
 )
-from simcast.data.liander2024 import normalize_timestamp_frame
+from simcast.data.timestamps import normalize_timestamp_frame
 
 
 def _utc_index(timestamps: Sequence[object] | pd.DatetimeIndex) -> pd.DatetimeIndex:
@@ -58,7 +58,7 @@ def select_weather_features(frame: pd.DataFrame, weather_features: Sequence[str]
     return normalized.loc[:, list(weather_features)].astype("float32")
 
 
-def _with_calendar(
+def with_calendar(
     weather: pd.DataFrame,
     *,
     calendar: bool,
@@ -95,7 +95,7 @@ def build_past_covariates(
     origin = as_utc_timestamp(origin_timestamp) if origin_timestamp is not None else requested.max()
     measured = select_measured_weather(measurements, origin, requested)
     weather = select_weather_features(measured, weather_features)
-    return _with_calendar(
+    return with_calendar(
         weather,
         calendar=calendar,
         include_hour=include_hour,
@@ -132,7 +132,7 @@ def build_future_covariates(
     else:
         raise ValueError("future_weather_source must be 'vintage' or 'oracle'")
     weather = select_weather_features(weather_frame, weather_features)
-    return _with_calendar(
+    return with_calendar(
         weather,
         calendar=calendar,
         include_hour=include_hour,

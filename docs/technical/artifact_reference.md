@@ -54,8 +54,9 @@ group and inserts those arrays at their original integer positions.
 
 ### Cache metadata
 
-`metadata.json` contains dataset ID/revision/path, group membership/names and
-coordinates, Chronos source/model revisions and native output structure,
+`metadata.json` contains adapter ID, dataset ID/revision, adapter-reported
+source provenance (including any explicit availability assumptions), group
+membership/names and optional coordinates, Chronos source/model revisions and native output structure,
 forecast window protocol, covariate config, raw crossing diagnostics, invalid
 vector counts, historical/future missingness, eligible/skipped/retained origin
 counts, purged boundary timestamps, full resolved config, schema version, and

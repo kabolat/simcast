@@ -55,7 +55,7 @@ Human-authored YAML files declare five distinct objects:
 
 ```text
 configs/
-  bases/liander2024/   # data, group, information set, Chronos, PIT
+  bases/<dataset>/    # data adapter, group, information set, Chronos, PIT
   methods/             # exactly one of M0--M4
   venues/<venue>/      # composites: which bases, methods, and seeds to fit
   evaluations/         # sampling, metrics, cross-entity statistic, figures
@@ -67,6 +67,11 @@ parameters meaningful to one dependence hypothesis. A composite explicitly
 lists bases, method variants, and seeds; no hidden Cartesian grid is generated.
 Evaluations score fits and reports compare evaluated methods; neither changes
 a fit, so both can be repeated on a completed run.
+
+Data ingestion is selected by the explicit `data.adapter` field. The supported
+adapters are Liander2024 and GEFCom2014 Wind; their data, availability rules,
+base files, and adapter extension contract are described in
+[`docs/technical/datasets.md`](docs/technical/datasets.md).
 
 The marginal cache is identified by a SHA-256 fingerprint of the scientific
 inputs that determine it, so method, venue, evaluation, and report settings
@@ -81,6 +86,15 @@ The [usage guide](docs/technical/usage_guide.md) covers every step in detail.
 uv sync --group dev
 bash scripts/setup_chronos.sh
 uv run download-data --base configs/bases/liander2024/transformer.yaml
+```
+
+For the GEFCom2014 Wind example, download the two pinned Parquet files, build
+its Chronos cache, then run the lab composite:
+
+```bash
+uv run download-data --base configs/bases/gefcom2014/wind.yaml
+uv run cache --base configs/bases/gefcom2014/wind.yaml
+uv run composite --config configs/venues/lab/gefcom_wind_smoke.yaml
 ```
 
 Pinned revisions are recorded in the base configuration and lockfile. The

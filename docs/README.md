@@ -41,6 +41,7 @@ Use these documents to operate or inspect the repository:
 1. [Usage guide: installation, fitting, evaluation, reporting, and outputs](technical/usage_guide.md)
 2. [Configuration reference: base, method, composite, evaluation, and report fields](technical/configuration_reference.md)
 3. [Artifact reference: cache, fit, evaluation, and report schemas](technical/artifact_reference.md)
+4. [Dataset adapters: supported data, availability assumptions, and extension guide](technical/datasets.md)
 
 The tracks deliberately cross-reference one another. A scientific chapter
 states the statistical object and links to the relevant configuration or
@@ -57,7 +58,7 @@ record for either.
 ## One-page conceptual map
 
 ```text
-Liander targets + point-in-time weather + entity metadata
+Dataset adapter: ordered targets + point-in-time covariates + entity metadata
                            |
                            v
         aligned, leakage-safe origin windows [N,K,L/H]

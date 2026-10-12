@@ -42,7 +42,7 @@ flowchart LR
 
 | Objective | Command | Main input | Main output |
 |---|---|---|---|
-| Download the data needed by one base | `uv run download-data` | base YAML | files under `data/liander2024/` |
+| Download the data needed by one base | `uv run download-data` | base YAML | files under that base's `data.local_dir` |
 | Build frozen Chronos marginals and PITs only | `uv run cache` | base YAML | `artifacts/cache/<base-id>-<fingerprint>/` |
 | Fit and evaluate one method quickly | `uv run singular` | base and method YAML | `runs/singular/<timestamp>_<base>_<method>/` |
 | Run a declared study (fits, evaluations, and reports) | `uv run composite` | composite YAML | `runs/<venue>/<composite>/<run-id>/` |
@@ -70,7 +70,7 @@ fixed from what is varied and from how results are scored and compared.
 
 | Kind | Declares | Typical location |
 |---|---|---|
-| `base` | data, complete entity group $\mathcal E_g$, information set $\mathcal I^{(i)}$, forecast origins, Chronos-2, and PIT construction | `configs/bases/liander2024/` |
+| `base` | dataset adapter, complete entity group $\mathcal E_g$, information set $\mathcal I^{(i)}$, forecast origins, Chronos-2, and PIT construction | `configs/bases/<dataset>/` |
 | `method` | one dependence hypothesis M0--M4 and only its own parameters | `configs/methods/` |
 | `composite` | which bases, method variants, and seeds to fit, plus optional evaluation and report entries | `configs/venues/<venue>/` |
 | `evaluation` | sampling, metrics, cross-entity statistic, quantile and interval levels, and figures | `configs/evaluations/` |
@@ -107,8 +107,10 @@ token:
 export HF_TOKEN=...
 ```
 
-The dataset defaults to `data/liander2024`. Two environment variables change
-local behaviour without changing any scientific result:
+The Liander dataset defaults to `data/liander2024`; GEFCom2014 Wind defaults to
+`data/gefcom2014`. The base's `data.local_dir` selects the local destination.
+Two environment variables change local behaviour without changing any
+scientific result:
 
 ```bash
 export SIMCAST_DATA_DIR=/absolute/path/to/liander2024
@@ -124,6 +126,26 @@ uv run download-data --base configs/bases/liander2024/transformer.yaml
 Choosing a different base selects a different group: the transformer base has
 $K_g=15$, the solar and wind bases $K_g=5$. The solar base also declares
 isotonic quantile repair.
+
+The GEFCom2014 Wind base selects ten zones as one fixed group, hourly normalized
+power, 168 hours of history, a 24-hour horizon, and daily 00:00 UTC origins. Its
+four supplied NWP fields are treated as available according to an explicit
+inferred daily-run convention. The provenance and limitations of that
+assumption, along with a guide to both supported adapters, are in
+[Dataset adapters](datasets.md).
+
+To build and run the first GEFCom lab experiment:
+
+```bash
+uv run download-data --base configs/bases/gefcom2014/wind.yaml
+uv run cache --base configs/bases/gefcom2014/wind.yaml
+uv run composite --config configs/venues/lab/gefcom_wind_smoke.yaml
+```
+
+The composite uses M0, M1, and a deliberately small M2 budget. Cache creation
+uses the same pinned Chronos-2 path as Liander. A compatible cache can be
+reused across methods; the adapter ID and its scientific options participate in
+cache identity.
 
 ## 4. Frozen-marginal construction
 
@@ -154,7 +176,7 @@ configured finite-quantile law, which may be discretized or piecewise linear.
 Let $b$ be a resolved base. Its fingerprint is the SHA-256 digest
 
 $$
-h(b)=h(\mathcal E_g,\text{data revision},\text{forecast protocol},
+h(b)=h(\mathcal E_g,\text{adapter and options},\text{data revision},\text{forecast protocol},
 \mathcal I,\text{split},\text{Chronos revision},\text{PIT construction}).
 $$
 
@@ -167,8 +189,10 @@ compatible candidates are treated as ambiguous.
 Methods, venues, evaluations, and reports do not enter $h(b)$, so changing
 them never rebuilds Chronos. Local data location, device, and Chronos batch
 size are operational and are excluded as well. Changing the ordered entity
-IDs, weather source, split, horizon, Chronos revision, or any `pit.*` field
-selects a different cache.
+IDs, adapter or non-empty adapter options, weather source, split, horizon,
+Chronos revision, or any `pit.*` field selects a different cache. The default
+Liander adapter and its empty options are omitted from the fingerprint so
+existing Liander caches retain their identity.
 
 Implementation: `base_fingerprint` and `locate_compatible_cache`.
 

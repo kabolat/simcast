@@ -7,7 +7,7 @@ from typing import Any, cast
 
 import pandas as pd
 
-from simcast.data.liander2024 import normalize_timestamp_frame
+from simcast.data.timestamps import normalize_timestamp_frame
 
 
 def as_utc_timestamp(value: str | pd.Timestamp) -> pd.Timestamp:

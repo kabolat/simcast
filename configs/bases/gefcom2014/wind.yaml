@@ -1,0 +1,72 @@
+# GEFCom2014 wind track: 10 zones as one fixed 10-entity group; normalized hourly power; supplied NWP.
+# Timestamps are treated as UTC. The NWP run-availability rule is inferred (see docs/technical/datasets.md).
+kind: base
+id: gefcom2014_wind
+data:
+  adapter: gefcom2014_wind
+  dataset_id: rebase-energy/gefcom2014
+  revision: 713e65e837912e531e5293ca35543c465f1acb4f
+  local_dir: ${SIMCAST_DATA_DIR:-data/gefcom2014}
+  entity_type: gefcom_wind
+  target_column: wind_power
+  options:
+    nwp_run_start_hour_utc: 0
+    nwp_run_length_hours: 24
+
+protocol:
+  entity_count: 10
+  ordered_entity_ids:
+    - gefcom_wind::z1
+    - gefcom_wind::z2
+    - gefcom_wind::z3
+    - gefcom_wind::z4
+    - gefcom_wind::z5
+    - gefcom_wind::z6
+    - gefcom_wind::z7
+    - gefcom_wind::z8
+    - gefcom_wind::z9
+    - gefcom_wind::z10
+
+forecast:
+  frequency_minutes: 60
+  origin_time: "00:00"
+  lookback_steps: 168
+  horizon_steps: 24
+  origin_stride_steps: 24
+
+covariates:
+  weather: [u10, v10, u100, v100]
+  calendar:
+    enabled: true
+    include_hour: true
+    include_day_of_week: false
+    include_is_weekend: false
+  future_weather_source: vintage
+
+split:
+  tune_fraction: 0.80
+  validation_fraction_within_tune: 0.20
+  purge_overlapping_horizons: true
+
+chronos:
+  source_url: https://github.com/amazon-science/chronos-forecasting.git
+  source_revision: 8589d1988e9676817548e9626738ff06b6ca6370
+  model_id: amazon/chronos-2
+  model_revision: 29ec3766d36d6f73f0696f85560a422f50e8498c
+  device: ${SIMCAST_DEVICE:-cuda}
+  dtype: bfloat16
+  batch_size: 256
+
+pit:
+  mode: discretized
+  monotone_repair: isotonic
+  dependence_transform: training_frequency
+  eps: 1.0e-7
+
+runtime:
+  deterministic: true
+  log_level: INFO
+
+output:
+  cache_dir: artifacts/cache
+  save_resolved_config: true

@@ -50,14 +50,19 @@ prefix. Every fit and evaluation uses the complete group.
 | `id` | safe slug: lowercase letters, digits, `_`, `-` | **required** | human-readable base identity; not a cache-compatibility claim |
 | `protocol.ordered_entity_ids` | non-empty list of unique strings | **required** | ordered definition of $\mathcal E_g$ |
 | `protocol.entity_count` | positive integer | **required** | $K_g$; must equal the list length |
-| `data.dataset_id` | string | Liander dataset identifier | population source |
+| `data.adapter` | non-empty adapter identifier | `liander2024` | selects the dataset reader and validation rules; explicit in non-default dataset bases |
+| `data.dataset_id` | string | source dataset identifier | population source |
 | `data.revision` | string | pinned Git revision | immutable data version |
-| `data.local_dir` | path string | `${SIMCAST_DATA_DIR:-data/liander2024}` | local files; deliberately excluded from the scientific fingerprint |
-| `data.entity_type` | one of `transformer`, `solar_park`, `wind_park`, `mv_feeder`, `station_installation` | `transformer` | homogeneous physical group $g$; every ID must begin with this type prefix |
-| `data.target_column` | string | `load` | measured target $y_{k,t}$ |
+| `data.local_dir` | path string | adapter-specific local data directory | local files; deliberately excluded from the scientific fingerprint |
+| `data.entity_type` | non-empty string validated by the selected adapter | `transformer` for Liander; `gefcom_wind` for GEFCom Wind | homogeneous group label $g$; every ID must begin with this type prefix |
+| `data.target_column` | string | adapter-specific (Liander `load`; GEFCom `wind_power`) | measured target $y_{k,t}$ |
+| `data.options` | mapping validated by the selected adapter | `{}` for Liander | dataset-specific scientific inputs; included in the cache fingerprint when non-empty |
 
-Example: transformer has $K_g=15$ in its supplied base; solar and wind each
-have $K_g=5$. The group is invalid at $(i,\tau)$ if any member is invalid.
+The supplied Liander groups contain 15 transformer, MV feeder, and station
+installation entities, and five solar and wind entities. GEFCom2014 Wind uses
+ten zones. See the [dataset adapter guide](datasets.md) for exact base
+configurations and the GEFCom NWP availability assumption. The group is invalid
+at $(i,\tau)$ if any member is invalid.
 
 ### 2.2 Forecast instances and information set
 
@@ -344,8 +349,10 @@ settings. `locate_compatible_cache` verifies metadata, not a user-supplied
 cache label.
 
 Example: changing `evaluation.joint_score_num_samples` reuses the same marginal
-cache. Changing `pit.monotone_repair`, ordered entity IDs, weather source,
-forecast horizon, or Chronos model revision requires a different cache.
+cache. Changing `data.adapter`, non-empty `data.options`, `pit.monotone_repair`,
+ordered entity IDs, weather source, forecast horizon, or Chronos model revision
+requires a different cache. The default Liander adapter and empty options are
+omitted for backward-compatible Liander cache identity.
 
 ## 7. Evaluation and report configuration
 

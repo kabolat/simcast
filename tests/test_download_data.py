@@ -33,3 +33,17 @@ def test_download_uses_validated_config_revision_and_local_dir(tmp_path: Path) -
     assert call["repo_type"] == "dataset"
     assert call["revision"] == "dce7fe9bbae0d62288986fa97fa1ee7e9d3b7044"
     assert call["allow_patterns"] == allow_patterns("transformer")
+
+
+def test_download_data_uses_gefcom_adapter_patterns(tmp_path: Path) -> None:
+    config = Path(__file__).parents[1] / "configs/bases/gefcom2014/wind.yaml"
+    call: dict[str, Any] = {}
+
+    def fake_snapshot_download(**kwargs: Any) -> str:
+        call.update(kwargs)
+        return str(kwargs["local_dir"])
+
+    download_data(config, snapshot_download_fn=fake_snapshot_download)
+    assert call["repo_id"] == "rebase-energy/gefcom2014"
+    assert call["revision"] == "713e65e837912e531e5293ca35543c465f1acb4f"
+    assert call["allow_patterns"] == ["data/wind_targets.parquet", "data/wind_nwp.parquet"]

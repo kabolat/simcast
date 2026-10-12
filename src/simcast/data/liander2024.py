@@ -5,42 +5,19 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import pandas as pd
 
-from simcast.data.grouping import load_target_metadata
+from simcast.config import DataConfig, ResolvedExperimentConfig
+from simcast.data.adapter import DatasetAdapter, EntityFrames, FrameDatasetAdapter
+from simcast.data.grouping import ALLOWED_ENTITY_TYPES, build_entity_group, load_target_metadata
+from simcast.data.timestamps import normalize_timestamp_frame
 from simcast.types import EntityGroup, EntityMetadata
 
 LOGGER = logging.getLogger(__name__)
 DATASET_ID = "OpenSTEF/liander2024-energy-forecasting-benchmark"
 DATASET_REVISION = "dce7fe9bbae0d62288986fa97fa1ee7e9d3b7044"
 COMPONENTS = frozenset({"load_measurements", "weather_measurements", "weather_forecasts_versioned"})
-
-
-def _as_utc(values: Any, name: str) -> pd.DatetimeIndex:
-    try:
-        converted = pd.to_datetime(values, utc=True, errors="raise")
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"invalid {name} timestamps") from exc
-    return pd.DatetimeIndex(converted, name=name)
-
-
-def normalize_timestamp_frame(frame: pd.DataFrame) -> pd.DataFrame:
-    """Normalize Liander's column/index variants to a UTC timestamp index."""
-
-    normalized = frame.copy()
-    normalized = normalized.drop(columns=["__index_level_0__"], errors="ignore")
-    if "timestamp" in normalized.columns:
-        timestamps = _as_utc(normalized.pop("timestamp"), "timestamp")
-    elif isinstance(normalized.index, pd.DatetimeIndex):
-        timestamps = _as_utc(normalized.index, "timestamp")
-    else:
-        raise ValueError("frame must have a timestamp column or DatetimeIndex")
-    normalized.index = timestamps
-    if "available_at" in normalized.columns:
-        normalized["available_at"] = pd.to_datetime(normalized["available_at"], utc=True, errors="raise")
-    return normalized.sort_index(kind="stable")
 
 
 def read_liander_parquet(path: str | Path) -> pd.DataFrame:
@@ -73,6 +50,56 @@ def load_entity_frame(
     """Load one component for one metadata-defined entity."""
 
     return read_liander_parquet(entity_file(data_root, component, entity.group_name, entity.name))
+
+
+ADAPTER_NAME = "liander2024"
+TARGETS_FILE = "liander2024_targets.yaml"
+
+
+def allow_patterns(data: DataConfig) -> list[str]:
+    """Minimum snapshot paths needed by the configured entity type."""
+
+    entity_type = data.entity_type
+    return [
+        TARGETS_FILE,
+        f"load_measurements/{entity_type}/*.parquet",
+        f"weather_measurements/{entity_type}/*.parquet",
+        f"weather_forecasts_versioned/{entity_type}/*.parquet",
+    ]
+
+
+def validate_data_config(data: DataConfig) -> None:
+    if data.entity_type not in ALLOWED_ENTITY_TYPES:
+        allowed = ", ".join(sorted(ALLOWED_ENTITY_TYPES))
+        raise ValueError(f"unsupported entity_type {data.entity_type!r}; expected one of: {allowed}")
+    if data.options:
+        raise ValueError("the liander2024 adapter accepts no data.options")
+
+
+def default_cache_name(data: DataConfig) -> str:
+    return f"liander2024_{data.entity_type}"
+
+
+def load_adapter(config: ResolvedExperimentConfig) -> DatasetAdapter:
+    """Load the configured Liander entity group with load, measured weather, and weather vintages."""
+
+    root = Path(config.data.local_dir).expanduser().resolve()
+    group = build_entity_group(root / TARGETS_FILE, config.data.entity_type)
+    frames = [
+        EntityFrames(
+            entity=entity,
+            target=load_entity_frame(root, "load_measurements", entity),
+            past_weather=load_entity_frame(root, "weather_measurements", entity),
+            future_weather=load_entity_frame(root, "weather_forecasts_versioned", entity),
+        )
+        for entity in group.entities
+    ]
+    provenance = {
+        "adapter": ADAPTER_NAME,
+        "source": {"repository": config.data.dataset_id, "revision": config.data.revision},
+        "local_dir": str(root),
+    }
+    return FrameDatasetAdapter(config, group, frames, provenance, past_weather_source="measured")
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,6 +157,11 @@ def summarize_load_measurements(data_root: str | Path, group: EntityGroup) -> Da
 
 
 __all__ = [
+    "ADAPTER_NAME",
+    "allow_patterns",
+    "default_cache_name",
+    "load_adapter",
+    "validate_data_config",
     "COMPONENTS",
     "DATASET_ID",
     "DATASET_REVISION",

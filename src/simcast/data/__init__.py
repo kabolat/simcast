@@ -1,1 +1,1 @@
-"""Liander2024 ingestion and leakage-safe forecast windows."""
+"""Dataset adapters, timestamp normalization, and leakage-safe forecast windows."""

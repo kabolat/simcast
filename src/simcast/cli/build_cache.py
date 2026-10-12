@@ -6,7 +6,7 @@ import json
 import logging
 import sys
 from collections.abc import Mapping, Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 from math import floor
 from pathlib import Path
 from typing import Annotated, Any, Protocol, cast
@@ -23,15 +23,12 @@ from simcast.config import (
     load_base_config,
     resolve_run_config,
 )
-from simcast.data.availability import select_available_past_targets
-from simcast.data.covariates import build_future_covariates, build_past_covariates
-from simcast.data.grouping import build_entity_group
-from simcast.data.liander2024 import load_entity_frame
-from simcast.data.windows import ChronologicalSplit, ForecastWindow, build_aligned_group_windows, chronological_split
+from simcast.data.adapter import IneligibleWindow
+from simcast.data.registry import adapter_spec
+from simcast.data.windows import ChronologicalSplit, build_aligned_group_windows, chronological_split
 from simcast.fm.cache import build_cache_dataset, save_pit_library
 from simcast.fm.diagnostics import compute_marginal_diagnostics
 from simcast.fm.pit import build_group_pit, repair_quantiles_isotonic
-from simcast.types import EntityGroup, EntityMetadata
 
 LOGGER = logging.getLogger(__name__)
 
@@ -60,136 +57,10 @@ class FrozenForecaster(Protocol):
     ) -> ForecastResult: ...
 
 
-@dataclass(frozen=True, slots=True)
-class _EntityFrames:
-    entity: EntityMetadata
-    target: pd.DataFrame
-    measured_weather: pd.DataFrame
-    forecast_weather: pd.DataFrame
-
-
-@dataclass(frozen=True, slots=True)
-class _PreparedWindow:
-    inputs: list[dict[str, object]]
-    true_y: np.ndarray
-    history_missing: np.ndarray
-
-
-class _IneligibleWindow(ValueError):
-    pass
-
-
 def _as_numpy(value: torch.Tensor | np.ndarray) -> np.ndarray:
     if isinstance(value, torch.Tensor):
         return value.detach().cpu().numpy()
     return np.asarray(value)
-
-
-def _window_slice(frame: pd.DataFrame, timestamps: pd.DatetimeIndex) -> pd.DataFrame:
-    """Limit work before applying the availability selectors."""
-
-    return frame.loc[timestamps[0] : timestamps[-1]]
-
-
-def _finite_covariates(frame: pd.DataFrame) -> bool:
-    return bool(np.isfinite(frame.to_numpy(dtype=np.float64, copy=False)).all())
-
-
-def _covariate_kwargs(config: ResolvedExperimentConfig) -> dict[str, bool]:
-    calendar = config.covariates.calendar
-    return {
-        "calendar": calendar.enabled,
-        "include_hour": calendar.include_hour,
-        "include_day_of_week": calendar.include_day_of_week,
-        "include_is_weekend": calendar.include_is_weekend,
-    }
-
-
-def _prepare_entity(
-    frames: _EntityFrames,
-    window: ForecastWindow,
-    config: ResolvedExperimentConfig,
-) -> tuple[dict[str, object], np.ndarray, int]:
-    target_window = frames.target.reindex(window.past_timestamps.union(window.future_timestamps))
-    history = select_available_past_targets(
-        target_window.loc[window.past_timestamps],
-        window.origin_timestamp,
-        target_column=config.data.target_column,
-    ).reindex(window.past_timestamps)
-    truth = target_window.loc[window.future_timestamps, config.data.target_column]
-
-    kwargs = _covariate_kwargs(config)
-    measured = _window_slice(frames.measured_weather, window.past_timestamps)
-    forecasts = _window_slice(frames.forecast_weather, window.future_timestamps)
-    past_covariates = build_past_covariates(
-        measured,
-        window.past_timestamps,
-        config.covariates.weather,
-        origin_timestamp=window.origin_timestamp,
-        **kwargs,
-    )
-    future_covariates = build_future_covariates(
-        forecasts,
-        window.origin_timestamp,
-        window.future_timestamps,
-        config.covariates.weather,
-        measurements=frames.measured_weather,
-        future_weather_source=config.covariates.future_weather_source,
-        **kwargs,
-    )
-    if not _finite_covariates(past_covariates) or not _finite_covariates(future_covariates):
-        raise _IneligibleWindow(f"covariates unavailable for {frames.entity.entity_id}")
-    if list(past_covariates.columns) != list(future_covariates.columns):
-        raise _IneligibleWindow(f"past/future covariate columns differ for {frames.entity.entity_id}")
-
-    prepared = {
-        "target": history.to_numpy(dtype=np.float32, copy=True),
-        "past_covariates": {
-            str(column): past_covariates[column].to_numpy(dtype=np.float32, copy=True)
-            for column in past_covariates.columns
-        },
-        "future_covariates": {
-            str(column): future_covariates[column].to_numpy(dtype=np.float32, copy=True)
-            for column in future_covariates.columns
-        },
-    }
-    return (
-        prepared,
-        truth.to_numpy(dtype=np.float32, copy=True),
-        int(history.isna().sum()),
-    )
-
-
-def _prepare_window(
-    frames: Sequence[_EntityFrames],
-    window: ForecastWindow,
-    config: ResolvedExperimentConfig,
-) -> _PreparedWindow:
-    inputs: list[dict[str, object]] = []
-    truth: list[np.ndarray] = []
-    history_missing: list[int] = []
-    for entity_frames in frames:
-        entity_input, entity_truth, missing_count = _prepare_entity(entity_frames, window, config)
-        inputs.append(entity_input)
-        truth.append(entity_truth)
-        history_missing.append(missing_count)
-    return _PreparedWindow(
-        inputs=inputs,
-        true_y=np.stack(truth),
-        history_missing=np.asarray(history_missing, dtype=np.int64),
-    )
-
-
-def _load_frames(root: Path, group: EntityGroup) -> list[_EntityFrames]:
-    return [
-        _EntityFrames(
-            entity=entity,
-            target=load_entity_frame(root, "load_measurements", entity),
-            measured_weather=load_entity_frame(root, "weather_measurements", entity),
-            forecast_weather=load_entity_frame(root, "weather_forecasts_versioned", entity),
-        )
-        for entity in group.entities
-    ]
 
 
 def _unpurged_split(origins: Sequence[pd.Timestamp], config: ResolvedExperimentConfig) -> ChronologicalSplit:
@@ -246,25 +117,8 @@ def _default_forecaster(config: ResolvedExperimentConfig) -> FrozenForecaster:
 def _cache_destination(config: ResolvedExperimentConfig, output_dir: str | Path | None) -> Path:
     if output_dir is not None:
         return Path(output_dir).expanduser().resolve()
-    name = config.output.cache_name or f"liander2024_{config.data.entity_type}"
+    name = config.output.cache_name or adapter_spec(config.data.adapter).default_cache_name(config.data)
     return (Path(config.output.cache_dir).expanduser() / name).resolve()
-
-
-def _coverage_and_missingness(
-    frames: Sequence[_EntityFrames], target_column: str
-) -> tuple[pd.Timestamp, pd.Timestamp]:
-    coverage_start = max(frame.target.index.min() for frame in frames)
-    coverage_end = min(frame.target.index.max() for frame in frames)
-    total_rows = sum(len(frame.target) for frame in frames)
-    missing = sum(int(frame.target[target_column].isna().sum()) for frame in frames)
-    LOGGER.info(
-        "Aligned target coverage %s to %s; %d rows and %.4f%% missing observations",
-        coverage_start,
-        coverage_end,
-        total_rows,
-        100.0 * missing / total_rows,
-    )
-    return pd.Timestamp(coverage_start), pd.Timestamp(coverage_end)
 
 
 def _validate_forecast(
@@ -310,10 +164,14 @@ def build_cache_from_config(
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(config.seed)
 
-    root = Path(config.data.local_dir).expanduser().resolve()
-    group = build_entity_group(root / "liander2024_targets.yaml", config.data.entity_type)
-    frames = _load_frames(root, group)
-    coverage_start, coverage_end = _coverage_and_missingness(frames, config.data.target_column)
+    adapter = adapter_spec(config.data.adapter).load(config)
+    group = adapter.group
+    if config.protocol.ordered_entity_ids and config.protocol.ordered_entity_ids != group.entity_ids:
+        raise ValueError(
+            "protocol.ordered_entity_ids does not match the adapter's entity group: "
+            f"{config.protocol.ordered_entity_ids} != {group.entity_ids}"
+        )
+    coverage_start, coverage_end = adapter.coverage()
     candidates = build_aligned_group_windows(
         coverage_start,
         coverage_end,
@@ -352,8 +210,8 @@ def build_cache_from_config(
         disable=not sys.stderr.isatty(),
     ):
         try:
-            prepared = _prepare_window(frames, window, config)
-        except _IneligibleWindow as error:
+            prepared = adapter.prepare_window(window)
+        except IneligibleWindow as error:
             skipped.append({"origin_timestamp": window.origin_timestamp.isoformat(), "reason": str(error)})
             LOGGER.warning("Skipping ineligible origin %s: %s", window.origin_timestamp, error)
             continue
@@ -455,6 +313,9 @@ def build_cache_from_config(
         dict(zip(group.entity_ids, history_missing.sum(axis=0).tolist(), strict=True)),
     )
 
+    has_locations = all(entity.latitude is not None and entity.longitude is not None for entity in group.entities)
+    latitudes = [float(cast(float, entity.latitude)) for entity in group.entities] if has_locations else None
+    longitudes = [float(cast(float, entity.longitude)) for entity in group.entities] if has_locations else None
     dataset = build_cache_dataset(
         origin_timestamps=np.asarray([origin.to_datetime64() for origin in kept_origins]),
         entity_ids=group.entity_ids,
@@ -467,8 +328,8 @@ def build_cache_from_config(
         forecast_embeddings=forecast_embeddings,
         quantile_levels=quantile_levels,
         split=split_labels,
-        latitude=[entity.latitude for entity in group.entities],
-        longitude=[entity.longitude for entity in group.entities],
+        latitude=latitudes,
+        longitude=longitudes,
     )
     dataset["pit_valid"] = (("origin", "lead"), valid_origin_lead)
     dataset.attrs.update(
@@ -482,17 +343,18 @@ def build_cache_from_config(
     truth_missing_by_entity = np.isnan(true_y).sum(axis=(0, 2)).astype(int)
     metadata: dict[str, Any] = {
         "dataset": {
+            "adapter": config.data.adapter,
             "id": config.data.dataset_id,
             "revision": config.data.revision,
-            "local_dir": str(root),
+            "provenance": dict(adapter.provenance),
         },
         "entity_group": {
             "group_id": group.group_id,
             "entity_type": config.data.entity_type,
             "entity_ids": group.entity_ids,
             "entity_names": [entity.name for entity in group.entities],
-            "latitude": [entity.latitude for entity in group.entities],
-            "longitude": [entity.longitude for entity in group.entities],
+            "latitude": latitudes,
+            "longitude": longitudes,
         },
         "chronos": {
             "repository_commit": config.chronos.source_revision,

@@ -1,23 +1,26 @@
-"""Download the revision-pinned Liander2024 files used by an experiment."""
+"""Download the revision-pinned dataset files selected by a base configuration."""
 
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 import typer
 
+if TYPE_CHECKING:
+    from simcast.config import DataConfig
 
-def allow_patterns(entity_type: str) -> list[str]:
-    """Return the minimum snapshot paths needed by the configured entity type."""
 
-    return [
-        "liander2024_targets.yaml",
-        f"load_measurements/{entity_type}/*.parquet",
-        f"weather_measurements/{entity_type}/*.parquet",
-        f"weather_forecasts_versioned/{entity_type}/*.parquet",
-    ]
+def allow_patterns(data: str | DataConfig) -> list[str]:
+    """Snapshot paths the configured adapter needs; a bare string is a Liander entity type."""
+
+    from simcast.config import DataConfig
+    from simcast.data.registry import adapter_spec
+
+    if isinstance(data, str):
+        data = DataConfig(entity_type=data)
+    return adapter_spec(data.adapter).allow_patterns(data)
 
 
 def download_data(
@@ -45,7 +48,7 @@ def download_data(
         repo_type="dataset",
         revision=data.revision,
         local_dir=local_dir,
-        allow_patterns=allow_patterns(data.entity_type),
+        allow_patterns=allow_patterns(data),
     )
     return Path(downloaded)
 
