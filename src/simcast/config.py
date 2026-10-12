@@ -25,7 +25,6 @@ from pydantic import (
 
 from simcast.reproducibility import canonical_json_hash
 
-EntityType: TypeAlias = Literal["transformer", "solar_park", "wind_park", "mv_feeder", "station_installation"]
 Fraction = Annotated[float, Field(gt=0.0, lt=1.0)]
 Probability = Annotated[float, Field(ge=0.0, le=1.0)]
 Dropout = Annotated[float, Field(ge=0.0, lt=1.0)]
@@ -41,12 +40,26 @@ class ConfigModel(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_default=True)
 
 
+DEFAULT_ADAPTER = "liander2024"
+
+
 class DataConfig(ConfigModel):
+    """Dataset selection. ``adapter`` names the code that reads the dataset; ``options`` are its scientific inputs."""
+
+    adapter: str = DEFAULT_ADAPTER
     dataset_id: str = "OpenSTEF/liander2024-energy-forecasting-benchmark"
     revision: str = LIANDER2024_REVISION
     local_dir: Path = Path("data/liander2024")
-    entity_type: EntityType = "transformer"
+    entity_type: str = "transformer"
     target_column: str = "load"
+    options: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_for_adapter(self) -> Self:
+        from simcast.data.registry import adapter_spec
+
+        adapter_spec(self.adapter).validate_data_config(self)
+        return self
 
 
 class ForecastConfig(ConfigModel):
@@ -743,7 +756,13 @@ def marginal_fingerprint(values: Mapping[str, Any]) -> str:
             "ordered_entity_ids": protocol["ordered_entity_ids"],
             "entity_count": protocol["entity_count"],
         },
-        "data": {key: value for key, value in data.items() if key != "local_dir"},
+        "data": {
+            key: value
+            for key, value in data.items()
+            # Defaulted adapter fields are omitted so pre-adapter (Liander) caches keep their identity.
+            if key != "local_dir" and not (key == "adapter" and value == DEFAULT_ADAPTER)
+            and not (key == "options" and not value)
+        },
         "forecast": values["forecast"],
         "covariates": values["covariates"],
         "split": values["split"],

@@ -10,6 +10,7 @@ import torch
 
 import simcast.cli.build_cache as cache_cli
 from simcast.config import ResolvedExperimentConfig
+from simcast.data.adapter import EntityFrames, FrameDatasetAdapter
 from simcast.fm.cache import load_pit_library
 from simcast.sampling.gaussian_copula import generate_scenarios
 from simcast.types import EntityGroup, EntityMetadata
@@ -75,7 +76,7 @@ def _config(tmp_path: Path, *, monotone_repair: str = "isotonic") -> ResolvedExp
     )
 
 
-def _fixtures() -> tuple[EntityGroup, list[cache_cli._EntityFrames]]:
+def _fixtures(config: ResolvedExperimentConfig) -> FrameDatasetAdapter:
     timestamps = pd.date_range("2024-01-01", periods=12, freq="15min", tz="UTC", name="timestamp")
     entities = [
         EntityMetadata(name=name, group_name="transformer", latitude=52.0 + idx, longitude=5.0 + idx)
@@ -101,18 +102,23 @@ def _fixtures() -> tuple[EntityGroup, list[cache_cli._EntityFrames]]:
             },
             index=timestamps,
         )
-        frames.append(cache_cli._EntityFrames(entity, target, measured, versioned))
-    return group, frames
+        frames.append(EntityFrames(entity, target, measured, versioned))
+    return FrameDatasetAdapter(config, group, frames, {"adapter": "test"})
+
+
+def _inject_adapter(monkeypatch, adapter: FrameDatasetAdapter) -> None:
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(cache_cli, "adapter_spec", lambda _name: SimpleNamespace(load=lambda _config: adapter))
 
 
 def test_mocked_cache_pipeline_seals_test_truth(monkeypatch, tmp_path: Path) -> None:
-    group, frames = _fixtures()
-    monkeypatch.setattr(cache_cli, "build_entity_group", lambda *_args, **_kwargs: group)
-    monkeypatch.setattr(cache_cli, "_load_frames", lambda *_args, **_kwargs: frames)
+    config = _config(tmp_path)
+    _inject_adapter(monkeypatch, _fixtures(config))
     forecaster = _MockForecaster()
 
     destination = cache_cli.build_cache_from_config(
-        _config(tmp_path),
+        config,
         forecaster=forecaster,
         output_dir=tmp_path / "library",
     )
@@ -137,11 +143,10 @@ def test_mocked_cache_pipeline_seals_test_truth(monkeypatch, tmp_path: Path) -> 
 
 
 def test_isotonic_cache_persists_repaired_quantiles(monkeypatch, tmp_path: Path) -> None:
-    group, frames = _fixtures()
-    monkeypatch.setattr(cache_cli, "build_entity_group", lambda *_args, **_kwargs: group)
-    monkeypatch.setattr(cache_cli, "_load_frames", lambda *_args, **_kwargs: frames)
+    config = _config(tmp_path, monotone_repair="isotonic")
+    _inject_adapter(monkeypatch, _fixtures(config))
     destination = cache_cli.build_cache_from_config(
-        _config(tmp_path, monotone_repair="isotonic"),
+        config,
         forecaster=_MockForecaster(crossed=True),
         output_dir=tmp_path / "repaired-library",
     )
@@ -174,7 +179,7 @@ def test_existing_cache_fails_before_loading_data_or_forecasting(monkeypatch, tm
     destination.mkdir()
     monkeypatch.setattr(
         cache_cli,
-        "build_entity_group",
+        "adapter_spec",
         lambda *_args, **_kwargs: pytest.fail("existing cache should stop before data loading"),
     )
 

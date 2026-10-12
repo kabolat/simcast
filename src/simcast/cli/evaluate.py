@@ -471,9 +471,13 @@ def _plots(
     base_figures_dir.mkdir(parents=True, exist_ok=True)
     ids = _entity_ids(library)
     dataset = library.dataset
-    latitude = dataset["latitude"].values if "latitude" in dataset else np.arange(len(ids))
-    longitude = dataset["longitude"].values if "longitude" in dataset else np.zeros(len(ids))
-    plot_entity_locations(latitude, longitude, ids, base_figures_dir / "dataset_locations.png")
+    if "latitude" in dataset and "longitude" in dataset:
+        plot_entity_locations(
+            dataset["latitude"].values,
+            dataset["longitude"].values,
+            ids,
+            base_figures_dir / "dataset_locations.png",
+        )
     plot_entity_load_traces(dataset["true_y"].values, ids, base_figures_dir / "dataset_load_traces.png")
     plot_missingness(dataset["true_y"].values, ids, base_figures_dir / "dataset_missingness.png")
     tune = dataset.where(dataset["split"] != "test", drop=True)

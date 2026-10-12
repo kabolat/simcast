@@ -18,12 +18,12 @@ def canonical_entity_id(group_name: str, name: str) -> str:
 
 @dataclass(frozen=True, slots=True)
 class EntityMetadata:
-    """Metadata for one physical Liander target."""
+    """Metadata for one physical target; coordinates are optional."""
 
     name: str
     group_name: str
-    latitude: float
-    longitude: float
+    latitude: float | None = None
+    longitude: float | None = None
     description: str = ""
     benchmark_start: pd.Timestamp | None = None
     benchmark_end: pd.Timestamp | None = None
