@@ -46,9 +46,13 @@ The base uses the same Chronos-2 source/model revision path as Liander, discreti
 
 ### FeederBW v1.1
 
-The base is [`configs/bases/feederbw/substation_52.yaml`](../../configs/bases/feederbw/substation_52.yaml),
+The experiment base is [`configs/bases/feederbw/substation_52.yaml`](../../configs/bases/feederbw/substation_52.yaml),
 with a small M0/M1/M2 lab composite at
 [`configs/venues/lab/feederbw_smoke.yaml`](../../configs/venues/lab/feederbw_smoke.yaml).
+For a full local download, use the dedicated
+[`feederbw_all.yaml`](../../configs/downloads/feederbw_all.yaml) download
+profile. It declares `scope: all` and `entity_count: 200`; unlike an experiment
+base, it has no substation or protocol selection.
 It pins v1.1 of [Zenodo record 19550073](https://zenodo.org/records/19550073)
 (DOI `10.5281/zenodo.19550073`, CC BY 4.0). The selected substation is 52, with
 five ordered feeders: 060, 106, 109, 165, and 170. The metadata schema uses
@@ -78,10 +82,10 @@ By default, the download command obtains the shared metadata/weather assets
 and only the ZIP batches needed by the base's feeder IDs. For substation 52,
 the three required batches are 041--080, 081--120, and 161--200; only selected
 feeder files are extracted. To populate the local data directory with every
-feeder so other substation groups can be selected later, pass
-`--all-feeders`; it downloads all five ZIPs (about 8.44 GB) and extracts all
-200 measurement files. This does not change the configured experiment group:
-cache construction still loads only the substation declared by the base.
+feeder so other substation groups can be selected later, use the download
+profile; it fetches all five ZIPs (about 8.44 GB) and extracts all 200
+measurement files. This does not change the experiment protocol: cache
+construction still loads only the substation declared by the experiment base.
 To select another group, use `feeder_metadata.csv` to find all feeder IDs for
 the desired `substation`, then update `data.options.substation_id`,
 `protocol.entity_count`, and the ascending `protocol.ordered_entity_ids`
@@ -92,7 +96,7 @@ Asset sizes and Zenodo MD5 values are checked, downloads resume through
 
 ```bash
 uv run download-data --base configs/bases/feederbw/substation_52.yaml
-uv run download-data --base configs/bases/feederbw/substation_52.yaml --all-feeders
+uv run download-data --config configs/downloads/feederbw_all.yaml
 uv run feederbw-info --base configs/bases/feederbw/substation_52.yaml
 uv run cache --base configs/bases/feederbw/substation_52.yaml
 uv run composite --config configs/venues/lab/feederbw_smoke.yaml

@@ -114,11 +114,13 @@ model predictors.
 By default, the downloader fetches shared metadata/weather plus only the
 measurement ZIP batches containing configured feeders. For substation 52 that
 is batches 041--080, 081--120, and 161--200; it extracts only the five selected
-feeder Parquets. Use `download-data --all-feeders` to fetch all five batches
-(about 8.44 GB) and extract all 200 feeder files for later substation
-selection. This changes local data availability, not the configured experiment
-group. Each asset is verified against its pinned Zenodo size and MD5, and ZIP
-paths and symlink members are rejected before extraction.
+feeder Parquets. Use the dataset-wide download profile
+`configs/downloads/feederbw_all.yaml` to fetch all five batches (about 8.44 GB)
+and extract all 200 feeder files for later substation selection. It declares
+`entity_count: 200` and has no experiment-group selection. This changes local
+data availability, not the configured experiment group. Each asset is
+verified against its pinned Zenodo size and MD5, and ZIP paths and symlink
+members are rejected before extraction.
 
 ## Timestamp normalization
 
