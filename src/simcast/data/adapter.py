@@ -129,7 +129,9 @@ class FrameDatasetAdapter:
         }
 
     def _past_covariates(self, frames: EntityFrames, window: ForecastWindow) -> pd.DataFrame:
-        weather = self.config.covariates.weather
+        weather = self.config.covariates.past_weather
+        if weather is None:
+            weather = self.config.covariates.weather
         kwargs = self._covariate_kwargs()
         past = _window_slice(frames.past_weather, window.past_timestamps)
         if self.past_weather_source == "measured":
@@ -152,20 +154,22 @@ class FrameDatasetAdapter:
         truth = target_window.loc[window.future_timestamps, config.data.target_column]
 
         past_covariates = self._past_covariates(frames, window)
-        future_covariates = build_future_covariates(
-            _window_slice(frames.future_weather, window.future_timestamps),
-            window.origin_timestamp,
-            window.future_timestamps,
-            config.covariates.weather,
-            measurements=frames.past_weather,
-            future_weather_source=config.covariates.future_weather_source,
-            **self._covariate_kwargs(),
-        )
+        if config.covariates.future_weather_source == "none":
+            future_covariates = with_calendar(
+                pd.DataFrame(index=window.future_timestamps), **self._covariate_kwargs()
+            )
+        else:
+            future_covariates = build_future_covariates(
+                _window_slice(frames.future_weather, window.future_timestamps),
+                window.origin_timestamp,
+                window.future_timestamps,
+                config.covariates.weather,
+                measurements=frames.past_weather,
+                future_weather_source=config.covariates.future_weather_source,
+                **self._covariate_kwargs(),
+            )
         if not _finite(past_covariates) or not _finite(future_covariates):
             raise IneligibleWindow(f"covariates unavailable for {frames.entity.entity_id}")
-        if list(past_covariates.columns) != list(future_covariates.columns):
-            raise IneligibleWindow(f"past/future covariate columns differ for {frames.entity.entity_id}")
-
         prepared = {
             "target": history.to_numpy(dtype=np.float32, copy=True),
             "past_covariates": {

@@ -96,7 +96,8 @@ class CovariatesConfig(ConfigModel):
             "shortwave_radiation",
         ]
     )
-    future_weather_source: Literal["vintage", "oracle"] = "vintage"
+    past_weather: list[str] | None = None
+    future_weather_source: Literal["vintage", "oracle", "none"] = "vintage"
     calendar: CalendarConfig = Field(default_factory=CalendarConfig)
 
     @field_validator("weather")
@@ -106,6 +107,13 @@ class CovariatesConfig(ConfigModel):
             raise ValueError("covariates.weather cannot contain empty names")
         if len(value) != len(set(value)):
             raise ValueError("covariates.weather cannot contain duplicate names")
+        return value
+
+    @field_validator("past_weather")
+    @classmethod
+    def unique_past_weather_features(cls, value: list[str] | None) -> list[str] | None:
+        if value is not None and (any(not item.strip() for item in value) or len(value) != len(set(value))):
+            raise ValueError("covariates.past_weather must contain unique non-empty names")
         return value
 
 
@@ -751,6 +759,9 @@ def marginal_fingerprint(values: Mapping[str, Any]) -> str:
     protocol = values["protocol"]
     data = values["data"]
     chronos = values["chronos"]
+    covariates = dict(values["covariates"])
+    if covariates.get("past_weather") is None:
+        covariates.pop("past_weather", None)
     payload = {
         "protocol": {
             "ordered_entity_ids": protocol["ordered_entity_ids"],
@@ -764,7 +775,7 @@ def marginal_fingerprint(values: Mapping[str, Any]) -> str:
             and not (key == "options" and not value)
         },
         "forecast": values["forecast"],
-        "covariates": values["covariates"],
+        "covariates": covariates,
         "split": values["split"],
         "chronos": {
             key: value
