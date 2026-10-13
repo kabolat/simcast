@@ -28,6 +28,7 @@ from simcast.fm.cache import load_pit_library
 
 ROOT = Path(__file__).parents[1]
 BASE_CONFIG = ROOT / "configs/bases/feederbw/substation_52.yaml"
+FULL_DOWNLOAD_CONFIG = ROOT / "configs/downloads/feederbw_all.yaml"
 FEEDERS = [60, 106, 109, 165, 170]
 
 
@@ -223,9 +224,8 @@ def test_full_download_extracts_every_feeder_in_all_batches(tmp_path: Path, monk
     monkeypatch.setattr(feederbw, "_download_asset", fake_download_asset)
     monkeypatch.setattr(feederbw, "safe_extract_selected", fake_extract_selected)
     download_config(
-        BASE_CONFIG,
+        FULL_DOWNLOAD_CONFIG,
         overrides=[f"data.local_dir={tmp_path / 'full-download'}"],
-        all_feeders=True,
         snapshot_download_fn=lambda **_: pytest.fail("FeederBW must not use Hugging Face downloads"),
     )
 

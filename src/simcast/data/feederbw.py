@@ -22,6 +22,8 @@ import typer
 from simcast.config import (
     BaseExperimentConfig,
     DataConfig,
+    DatasetDownloadConfig,
+    DownloadDataConfig,
     IndependentMethodConfig,
     ResolvedExperimentConfig,
     resolve_run_config,
@@ -94,10 +96,9 @@ ASSET_INFO = _asset_info()
 
 
 def validate_data_config(data: DataConfig) -> None:
+    _validate_download_source(data)
     if data.entity_type != ADAPTER_NAME:
         raise ValueError(f"feederbw requires data.entity_type={ADAPTER_NAME!r}")
-    if data.dataset_id != DATASET_ID or data.revision != DATASET_REVISION:
-        raise ValueError(f"feederbw requires Zenodo record {ZENODO_RECORD_ID} ({DATASET_REVISION})")
     if set(data.options) != OPTION_KEYS:
         raise ValueError(f"feederbw requires exactly these data.options: {sorted(OPTION_KEYS)}")
     options = data.options
@@ -113,6 +114,13 @@ def validate_data_config(data: DataConfig) -> None:
     substation_id = options["substation_id"]
     if not isinstance(substation_id, int) or isinstance(substation_id, bool) or substation_id < 1:
         raise ValueError("feederbw substation_id must be a positive integer")
+
+
+def _validate_download_source(data: DataConfig | DownloadDataConfig) -> None:
+    if data.adapter != ADAPTER_NAME:
+        raise ValueError(f"FeederBW download requires adapter={ADAPTER_NAME!r}")
+    if data.dataset_id != DATASET_ID or data.revision != DATASET_REVISION:
+        raise ValueError(f"feederbw requires Zenodo record {ZENODO_RECORD_ID} ({DATASET_REVISION})")
 
 
 def _feeder_number(entity_id: str) -> int:
@@ -132,17 +140,20 @@ def _batch_name(feeder: int) -> str:
 
 
 def allow_patterns(
-    data: DataConfig,
+    data: DataConfig | DownloadDataConfig,
     *,
     entity_ids: Sequence[str] = (),
     all_feeders: bool = False,
 ) -> list[str]:
     """Return shared files and either selected or all measurement archives."""
 
-    validate_data_config(data)
     if all_feeders:
+        _validate_download_source(data)
         batches = sorted(name for name in ASSET_INFO if name.endswith(".zip"))
     else:
+        if not isinstance(data, DataConfig):
+            raise ValueError("dataset-wide download profiles require all_feeders=True")
+        validate_data_config(data)
         feeders = sorted({_feeder_number(entity_id) for entity_id in entity_ids})
         if not feeders:
             raise ValueError("FeederBW downloads require protocol.ordered_entity_ids")
@@ -248,30 +259,36 @@ def safe_extract_selected(zip_path: str | Path, feeder_ids: Sequence[int], desti
 
 
 def download_data(
-    config: BaseExperimentConfig,
+    config: BaseExperimentConfig | DatasetDownloadConfig,
     *,
     snapshot_download_fn: Callable[..., str] | None = None,
     all_feeders: bool = False,
 ) -> Path:
-    """Download shared files and selected batches, or all five batches on request."""
+    """Download the configured group or a dataset-wide FeederBW profile."""
 
     del snapshot_download_fn
     data = config.data
     root = Path(data.local_dir).expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
-    feeders = [_feeder_number(entity_id) for entity_id in config.protocol.ordered_entity_ids]
-    if not feeders:
-        raise ValueError("FeederBW base must declare ordered entity IDs before downloading")
+    if isinstance(config, DatasetDownloadConfig):
+        if config.scope != "all" or config.entity_count != 200:
+            raise ValueError("FeederBW full-download profile must declare scope: all and entity_count: 200")
+        entity_ids: Sequence[str] = ()
+        all_feeders = True
+    else:
+        entity_ids = config.protocol.ordered_entity_ids
+        if not entity_ids:
+            raise ValueError("FeederBW base must declare ordered entity IDs before downloading")
+    feeders = list(range(1, 201)) if all_feeders else [_feeder_number(entity_id) for entity_id in entity_ids]
     patterns = allow_patterns(
         data,
-        entity_ids=config.protocol.ordered_entity_ids,
+        entity_ids=entity_ids,
         all_feeders=all_feeders,
     )
-    selected_feeders = list(range(1, 201)) if all_feeders else feeders
     for name in patterns:
         if name.endswith(".zip"):
             target = _download_asset(name, root / ARCHIVES_DIR / name)
-            batch_feeders = [feeder for feeder in selected_feeders if _batch_name(feeder) == name]
+            batch_feeders = [feeder for feeder in feeders if _batch_name(feeder) == name]
             safe_extract_selected(target, batch_feeders, root / MEASUREMENTS_DIR)
         else:
             _download_asset(name, root / name)
