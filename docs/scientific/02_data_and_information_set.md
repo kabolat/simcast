@@ -74,6 +74,52 @@ The dataset has no locations, so location-based conditional features are
 disabled in its supplied lab composite. Missing required input at any zone
 makes the full-group origin ineligible.
 
+### FeederBW v1.1
+
+FeederBW v1.1 is Zenodo record [19550073](https://zenodo.org/records/19550073),
+DOI `10.5281/zenodo.19550073`, licensed CC BY 4.0. The base pins version
+`v1.1`; it does not use the v1.0 record 17831177. The source metadata has 1,608
+dated rows for 200 feeders at 121 substations. Its actual identifier columns
+are `feeder` and `substation`.
+
+The supplied base selects substation 52 and the complete ascending group
+`feederbw::feeder_060`, `feederbw::feeder_106`, `feederbw::feeder_109`,
+`feederbw::feeder_165`, and `feederbw::feeder_170`. It is one of two largest
+groups (`K=5`), and has substantially more dated metadata than the other
+five-feeder candidate. The group is fixed by the base; incomplete targets do
+not shrink it. The loader verifies that metadata's group membership exactly
+matches the configured ordered IDs.
+
+Measurements are one-minute `active_power_kW` values in UTC. The adapter
+computes a mean for each left-labelled 15-minute interval and accepts it only
+when the configured threshold of 12--15 source samples is met; the supplied
+base uses the strict 15-of-15 threshold. Missing intervals remain missing and
+negative values are preserved. At that threshold the selected two-year target
+grid contains 70,176 intervals, of which 67,796 (96.61%) are complete for all
+five feeders, equivalent to about 706 complete days. Individual feeder
+coverage ranges from 98.16% to 99.90%; no source active-power values are null.
+The adapter reports exact coverage, per-feeder missingness, and target ranges
+in `feederbw-info` output and cache provenance.
+
+Only these eight archived hourly weather fields are configured as historical
+inputs: direct and diffuse radiation, air temperature, precipitation,
+humidity, maximum wind gust, and meridional and zonal wind. The last hourly
+observation no later than each 15-minute history timestamp is used. The archive
+contains no forecast vintages, so future inputs are calendar-only
+(`future_weather_source: none`); measured future weather is never passed to
+Chronos. Metadata is used only to establish the substation group and produce
+diagnostics. Latest dated capacities are asynchronous summaries, not static
+model predictors.
+
+By default, the downloader fetches shared metadata/weather plus only the
+measurement ZIP batches containing configured feeders. For substation 52 that
+is batches 041--080, 081--120, and 161--200; it extracts only the five selected
+feeder Parquets. Use `download-data --all-feeders` to fetch all five batches
+(about 8.44 GB) and extract all 200 feeder files for later substation
+selection. This changes local data availability, not the configured experiment
+group. Each asset is verified against its pinned Zenodo size and MD5, and ZIP
+paths and symlink members are rejected before extraction.
+
 ## Timestamp normalization
 
 All internal timestamps are timezone-aware UTC. Readers normalize either a
@@ -174,7 +220,9 @@ $$
 There is no day-of-year covariate. This gives 10 past and 10 future covariate
 channels by default.
 
-The past and future column lists must match exactly.
+Past and future weather lists are configured independently. For example,
+FeederBW has historical weather but no archived future forecast, so its future
+weather list is empty and calendar features remain available.
 
 ## Chronological partitioning and purging
 

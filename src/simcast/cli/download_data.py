@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from simcast.config import DataConfig
 
 
-def allow_patterns(data: str | DataConfig) -> list[str]:
+def allow_patterns(data: str | DataConfig, *, entity_ids: Sequence[str] = ()) -> list[str]:
     """Snapshot paths the configured adapter needs; a bare string is a Liander entity type."""
 
     from simcast.config import DataConfig
@@ -20,7 +20,7 @@ def allow_patterns(data: str | DataConfig) -> list[str]:
 
     if isinstance(data, str):
         data = DataConfig(entity_type=data)
-    return adapter_spec(data.adapter).allow_patterns(data)
+    return adapter_spec(data.adapter).allow_patterns(data, entity_ids=entity_ids)
 
 
 def download_data(
@@ -28,12 +28,25 @@ def download_data(
     *,
     overrides: Sequence[str] = (),
     snapshot_download_fn: Callable[..., str] | None = None,
+    all_feeders: bool = False,
 ) -> Path:
     """Load configuration only when invoked, then fetch its pinned dataset files."""
 
     from simcast.config import load_base_config
+    from simcast.data.registry import adapter_spec
 
     config = load_base_config(Path(config_path), overrides=overrides)
+    adapter = adapter_spec(config.data.adapter)
+    if adapter.download is not None:
+        return Path(
+            adapter.download(
+                config,
+                snapshot_download_fn=snapshot_download_fn,
+                all_feeders=all_feeders,
+            )
+        )
+    if all_feeders:
+        raise ValueError("--all-feeders is supported only by the FeederBW adapter")
     if snapshot_download_fn is None:
         from huggingface_hub import snapshot_download
 
@@ -48,7 +61,7 @@ def download_data(
         repo_type="dataset",
         revision=data.revision,
         local_dir=local_dir,
-        allow_patterns=allow_patterns(data),
+        allow_patterns=allow_patterns(data, entity_ids=config.protocol.ordered_entity_ids),
     )
     return Path(downloaded)
 
@@ -68,10 +81,17 @@ def main(
         list[str] | None,
         typer.Option("--set", help="Configuration override as dotted.path=value"),
     ] = None,
+    all_feeders: Annotated[
+        bool,
+        typer.Option(
+            "--all-feeders",
+            help="For FeederBW, download all five measurement batches instead of only the configured group.",
+        ),
+    ] = False,
 ) -> None:
     """Download data selected by a Simcast YAML configuration."""
 
-    path = download_data(base, overrides=override or ())
+    path = download_data(base, overrides=override or (), all_feeders=all_feeders)
     typer.echo(path)
 
 

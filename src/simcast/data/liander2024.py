@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -56,9 +57,10 @@ ADAPTER_NAME = "liander2024"
 TARGETS_FILE = "liander2024_targets.yaml"
 
 
-def allow_patterns(data: DataConfig) -> list[str]:
+def allow_patterns(data: DataConfig, *, entity_ids: Sequence[str] = ()) -> list[str]:
     """Minimum snapshot paths needed by the configured entity type."""
 
+    del entity_ids
     entity_type = data.entity_type
     return [
         TARGETS_FILE,

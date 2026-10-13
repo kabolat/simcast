@@ -18,6 +18,7 @@ Lookback, horizon, origin time/stride, frequency, and chronological split remain
 |---|---|---|---|---|
 | `liander2024` (default) | OpenSTEF Liander2024 Energy Forecasting Benchmark | One configured physical group: transformer, solar park, wind park, MV feeder, or station installation | Base-specific; supplied configs use 15-minute data, daily origins, 7-day lookback, 1-day horizon | Load targets, measured historical weather, versioned future weather, optional locations |
 | `gefcom2014_wind` | `rebase-energy/gefcom2014`, pinned in the base YAML | Ten wind zones, ordered `gefcom_wind::z1` through `gefcom_wind::z10` | Hourly; 00:00 UTC daily origins; 168-hour lookback; 24-hour horizon | Normalized power, four supplied NWP wind components, UTC hour features; no coordinates |
+| `feederbw` | FeederBW v1.1, Zenodo record 19550073 | Complete configured substation group; supplied base has five feeders | 15-minute mean target; 23:45 UTC daily origins; 7-day lookback; 1-day horizon | Active power, selected historical weather, future-known calendar; no future weather |
 
 ### Liander2024
 
@@ -42,6 +43,65 @@ uv run composite --config configs/venues/lab/gefcom_wind_smoke.yaml
 ```
 
 The base uses the same Chronos-2 source/model revision path as Liander, discretized PITs, isotonic quantile repair, and the `training_frequency` dependence transform. The composite's M2 budget is only a smoke-test budget, not a scientific training recommendation. It runs actual Chronos inference unless a compatible cache has already been built.
+
+### FeederBW v1.1
+
+The base is [`configs/bases/feederbw/substation_52.yaml`](../../configs/bases/feederbw/substation_52.yaml),
+with a small M0/M1/M2 lab composite at
+[`configs/venues/lab/feederbw_smoke.yaml`](../../configs/venues/lab/feederbw_smoke.yaml).
+It pins v1.1 of [Zenodo record 19550073](https://zenodo.org/records/19550073)
+(DOI `10.5281/zenodo.19550073`, CC BY 4.0). The selected substation is 52, with
+five ordered feeders: 060, 106, 109, 165, and 170. The metadata schema uses
+`feeder` and `substation`; group membership is validated at load time.
+
+The adapter reads `active_power_kW` and forms a left-labelled 15-minute mean
+from one-minute observations. `minimum_samples_per_interval` is fingerprinted
+in the base and may be 12 through 15; the supplied experiment requires all 15
+samples. Negative readings are retained. Missing values remain missing, and
+group eligibility always considers all five feeders together. The selected
+target grid has 70,176 intervals with 67,796 complete for all feeders (96.61%)
+at the supplied threshold. This corresponds to roughly 706 complete days
+before window requirements.
+
+The archive provides hourly historical weather, not forecast vintages. The
+base therefore lists eight allowed fields under `covariates.past_weather`,
+leaves `covariates.weather` empty, and sets
+`future_weather_source: none`. The shared adapter independently assembles
+past weather and future-known calendar inputs; no realized future weather is
+passed to Chronos. Metadata contributes only the stable grouping and
+diagnostics, never model covariates. The diagnostic command
+`uv run feederbw-info --base configs/bases/feederbw/substation_52.yaml`
+reports data coverage, per-feeder completeness, target range, weather window,
+and latest-per-feeder metadata summaries.
+
+By default, the download command obtains the shared metadata/weather assets
+and only the ZIP batches needed by the base's feeder IDs. For substation 52,
+the three required batches are 041--080, 081--120, and 161--200; only selected
+feeder files are extracted. To populate the local data directory with every
+feeder so other substation groups can be selected later, pass
+`--all-feeders`; it downloads all five ZIPs (about 8.44 GB) and extracts all
+200 measurement files. This does not change the configured experiment group:
+cache construction still loads only the substation declared by the base.
+To select another group, use `feeder_metadata.csv` to find all feeder IDs for
+the desired `substation`, then update `data.options.substation_id`,
+`protocol.entity_count`, and the ascending `protocol.ordered_entity_ids`
+(`feederbw::feeder_NNN`). The adapter checks that the configured list exactly
+matches the complete metadata group.
+Asset sizes and Zenodo MD5 values are checked, downloads resume through
+`curl`, and ZIP traversal/symlink entries are rejected. For example:
+
+```bash
+uv run download-data --base configs/bases/feederbw/substation_52.yaml
+uv run download-data --base configs/bases/feederbw/substation_52.yaml --all-feeders
+uv run feederbw-info --base configs/bases/feederbw/substation_52.yaml
+uv run cache --base configs/bases/feederbw/substation_52.yaml
+uv run composite --config configs/venues/lab/feederbw_smoke.yaml
+```
+
+The default selective download uses three measurement batches (about 5.05 GB)
+and extracts only the five configured feeders. Full mode retrieves all five
+batches (about 8.44 GB) once for later substation selection; Zenodo serves
+each batch as a whole ZIP.
 
 ## Adding an adapter
 

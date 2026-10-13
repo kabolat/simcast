@@ -19,6 +19,7 @@ NWP availability convention (inferred, not documented by the source):
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -39,7 +40,8 @@ NWP_FILE = "data/wind_nwp.parquet"
 OPTION_KEYS = frozenset({"nwp_run_start_hour_utc", "nwp_run_length_hours"})
 
 
-def allow_patterns(data: DataConfig) -> list[str]:
+def allow_patterns(data: DataConfig, *, entity_ids: Sequence[str] = ()) -> list[str]:
+    del entity_ids
     del data
     return [TARGETS_FILE, NWP_FILE]
 
