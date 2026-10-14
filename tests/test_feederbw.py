@@ -18,11 +18,14 @@ from simcast.config import (
     IndependentMethodConfig,
     base_fingerprint,
     load_base_config,
+    load_download_config,
     resolve_run_config,
 )
+from simcast.data.adapter import IneligibleWindow
 from simcast.data.feederbw import (
     METADATA_DIAGNOSTIC_FIELDS,
     WEATHER_FEATURES,
+    _align_hourly_weather,
     allow_patterns,
     feeders_for_substation,
     read_metadata,
@@ -110,7 +113,7 @@ def _write_probe_data(root: Path) -> None:
             {
                 "feeder": feeder,
                 "timestamp_UTC": target_times,
-                "active_power_kW": np.full(len(target_times), feeder / 10, dtype=np.float32),
+                "active_power_kW": np.arange(len(target_times), dtype=np.float32) % 60 + feeder / 10,
             }
         ).to_parquet(root / "measurements" / f"feeder_{feeder:03d}.parquet", index=False)
         weather_rows.append(
@@ -150,6 +153,25 @@ def test_v11_metadata_schema_and_deterministic_substation_group(tmp_path: Path) 
         read_metadata(wrong_path)
 
 
+def test_metadata_dates_use_german_local_midnight_before_utc_conversion(tmp_path: Path) -> None:
+    path = tmp_path / "metadata-dates.csv"
+    pd.DataFrame(
+        {
+            "feeder": [60, 60],
+            "substation": [52, 52],
+            "date": ["2024-01-01", "2024-07-01"],
+            **{field: [1.0, 2.0] for field in METADATA_DIAGNOSTIC_FIELDS},
+        }
+    ).to_csv(path, index=False)
+
+    metadata = read_metadata(path)
+
+    assert metadata["date"].tolist() == [
+        pd.Timestamp("2023-12-31T23:00:00Z"),
+        pd.Timestamp("2024-06-30T22:00:00Z"),
+    ]
+
+
 def test_download_patterns_include_only_selected_measurement_batches() -> None:
     base = load_base_config(BASE_CONFIG)
     assert allow_patterns(base.data, entity_ids=base.protocol.ordered_entity_ids) == [
@@ -161,9 +183,9 @@ def test_download_patterns_include_only_selected_measurement_batches() -> None:
     ]
 
 
-def test_download_patterns_can_include_all_measurement_batches() -> None:
-    base = load_base_config(BASE_CONFIG)
-    patterns = allow_patterns(base.data, entity_ids=base.protocol.ordered_entity_ids, all_feeders=True)
+def test_dataset_wide_download_profile_selects_all_measurement_batches() -> None:
+    config = load_download_config(FULL_DOWNLOAD_CONFIG)
+    patterns = allow_patterns(config.data)
     assert patterns == [
         "feeder_metadata.csv",
         "weather_data.parquet",
@@ -276,11 +298,81 @@ def test_resampling_uses_utc_means_and_minimum_sample_threshold(tmp_path: Path) 
     strict, stats = resample_active_power(path, feeder_id=60, minimum_samples_per_interval=15)
     permissive, _ = resample_active_power(path, feeder_id=60, minimum_samples_per_interval=12)
     assert strict.index.tz is not None
+    assert strict.index.tolist() == [pd.Timestamp("2024-01-01T00:15:00Z"), pd.Timestamp("2024-01-01T00:30:00Z")]
     assert pd.isna(strict.iloc[0, 0])
     assert strict.iloc[1, 0] == pytest.approx(19)
     assert permissive.iloc[0, 0] == pytest.approx(5.5)
     assert stats["missing_source_timestamps"] == 3
     assert stats["valid_intervals"] == 1
+
+
+def test_resampling_labels_completed_intervals_at_the_right_boundary(tmp_path: Path) -> None:
+    times = pd.date_range("2024-01-01T23:30:00Z", periods=45, freq="min")
+    path = tmp_path / "feeder_060.parquet"
+    pd.DataFrame(
+        {"feeder": 60, "timestamp_UTC": times, "active_power_kW": np.arange(45, dtype=np.float32)}
+    ).to_parquet(path, index=False)
+
+    target, _ = resample_active_power(path, feeder_id=60)
+
+    assert target.index.tolist() == [
+        pd.Timestamp("2024-01-01T23:45:00Z"),
+        pd.Timestamp("2024-01-02T00:00:00Z"),
+        pd.Timestamp("2024-01-02T00:15:00Z"),
+    ]
+    assert target.loc[pd.Timestamp("2024-01-01T23:45:00Z"), "active_power_kW"] == pytest.approx(7)
+    assert target.loc[pd.Timestamp("2024-01-02T00:00:00Z"), "active_power_kW"] == pytest.approx(22)
+    assert target.loc[pd.Timestamp("2024-01-02T00:15:00Z"), "active_power_kW"] == pytest.approx(37)
+
+
+def test_hourly_weather_forward_fill_is_bounded_by_one_source_interval() -> None:
+    source_index = pd.DatetimeIndex(
+        ["2024-01-01T00:00:00Z", "2024-01-01T01:00:00Z", "2024-01-01T03:00:00Z"],
+        name="timestamp",
+    )
+    weather = pd.DataFrame({"temperature": [10.0, 11.0, 13.0]}, index=source_index)
+    target_index = pd.date_range(source_index[0], source_index[-1], freq="15min", name="timestamp")
+
+    aligned = _align_hourly_weather(weather, target_index)
+
+    assert aligned.loc[pd.Timestamp("2024-01-01T00:15:00Z"), "temperature"] == pytest.approx(10)
+    assert aligned.loc[pd.Timestamp("2024-01-01T00:45:00Z"), "temperature"] == pytest.approx(10)
+    assert aligned.loc[pd.Timestamp("2024-01-01T01:00:00Z"), "temperature"] == pytest.approx(11)
+    assert aligned.loc[pd.Timestamp("2024-01-01T02:00:00Z"), "temperature"] == pytest.approx(11)
+    assert pd.isna(aligned.loc[pd.Timestamp("2024-01-01T02:15:00Z"), "temperature"])
+    assert pd.isna(aligned.loc[pd.Timestamp("2024-01-01T02:45:00Z"), "temperature"])
+    assert aligned.loc[pd.Timestamp("2024-01-01T03:00:00Z"), "temperature"] == pytest.approx(13)
+
+
+@pytest.mark.parametrize(
+    "origin",
+    ["2024-01-09T23:45:00Z", "2024-01-10T23:45:00Z"],
+    ids=["oracle-future-gap", "history-gap"],
+)
+def test_missing_hourly_weather_makes_affected_history_or_oracle_window_ineligible(
+    tmp_path: Path, origin: str
+) -> None:
+    _write_probe_data(tmp_path)
+    weather_path = tmp_path / "weather_data.parquet"
+    weather = pd.read_parquet(weather_path)
+    missing_row = (weather["feeder"] == FEEDERS[0]) & (
+        pd.to_datetime(weather["timestamp_UTC"], utc=True) == pd.Timestamp("2024-01-10T00:00:00Z")
+    )
+    weather.loc[~missing_row].to_parquet(weather_path, index=False)
+
+    base = _base_config(tmp_path)
+    run = resolve_run_config(base, IndependentMethodConfig(kind="method", id="m0", family="independent"))
+    adapter = adapter_spec("feederbw").load(run)
+    window = make_forecast_window(
+        origin,
+        lookback_steps=base.forecast.lookback_steps,
+        horizon_steps=base.forecast.horizon_steps,
+        frequency_minutes=base.forecast.frequency_minutes,
+        entity_ids=base.protocol.ordered_entity_ids,
+    )
+
+    with pytest.raises(IneligibleWindow, match="covariates unavailable"):
+        adapter.prepare_window(window)
 
 
 def test_adapter_oracle_uses_realized_future_weather(tmp_path: Path) -> None:
@@ -292,10 +384,19 @@ def test_adapter_oracle_uses_realized_future_weather(tmp_path: Path) -> None:
     diagnostics = adapter.diagnostics()
     assert diagnostics["entity_ids"] == base.protocol.ordered_entity_ids
     assert diagnostics["common_complete_interval_fraction"] == pytest.approx(1.0)
-    assert diagnostics["metadata"]["latest_record_per_feeder"][0]["date"].startswith("2024-02-01")
+    assert diagnostics["metadata"]["latest_record_per_feeder"][0]["date"].startswith("2024-01-31T23:00:00")
     assert diagnostics["weather"]["future_weather_supplied"] is True
-    assert diagnostics["weather"]["future_weather_usage"] == (
-        "realized measurements; future information leakage"
+    assert diagnostics["weather"]["future_weather_source"] == "oracle"
+    assert diagnostics["weather"]["maximum_age_minutes"] == 60
+    assert "oracle experiment" in diagnostics["weather"]["future_weather_usage"]
+    assert "not operational" in diagnostics["weather"]["future_weather_usage"]
+    assert adapter.provenance["weather"] == diagnostics["weather"]
+    assert diagnostics["target"]["timestamp_semantics"] == (
+        "right boundary; target at t represents [t - 15 minutes, t)"
+    )
+    assert adapter.provenance["measurement"]["interval_label"] == "right boundary"
+    assert adapter.provenance["measurement"]["interval_convention"] == (
+        "target at t represents measurements in [t - 15 minutes, t)"
     )
     window = make_forecast_window(
         "2024-01-12T23:45:00Z",
@@ -304,10 +405,19 @@ def test_adapter_oracle_uses_realized_future_weather(tmp_path: Path) -> None:
         frequency_minutes=base.forecast.frequency_minutes,
         entity_ids=base.protocol.ordered_entity_ids,
     )
+    assert window.past_timestamps[-1] == pd.Timestamp("2024-01-12T23:45:00Z")
+    assert window.future_timestamps[0] == pd.Timestamp("2024-01-13T00:00:00Z")
+    assert window.future_timestamps[-1] == pd.Timestamp("2024-01-13T23:45:00Z")
+    assert len(window.future_timestamps) == 96
+    assert window.future_timestamps[-1] - window.future_timestamps[0] + pd.Timedelta(minutes=15) == pd.Timedelta(
+        hours=24
+    )
     prepared = adapter.prepare_window(window)
     assert prepared.true_y.shape == (5, 96)
-    for feeder_id, model_input in zip(FEEDERS, prepared.inputs, strict=True):
+    for entity_index, (feeder_id, model_input) in enumerate(zip(FEEDERS, prepared.inputs, strict=True)):
         assert set(base.covariates.weather).issubset(model_input["past_covariates"])
+        assert model_input["target"][-1] == pytest.approx(37 + feeder_id / 10)
+        assert prepared.true_y[entity_index, 0] == pytest.approx(52 + feeder_id / 10)
         np.testing.assert_array_equal(
             model_input["future_covariates"]["air_temperature_C"],
             np.full(96, feeder_id + 2, dtype=np.float32),
@@ -342,6 +452,12 @@ def test_synthetic_feederbw_cache_builds_without_chronos(tmp_path: Path) -> None
     assert library.dataset.sizes["origin"] > 0
     assert library.metadata["dataset"]["provenance"]["source"]["version"] == "v1.1"
     assert library.metadata["covariates"]["future_weather_source"] == "oracle"
+    provenance = library.metadata["dataset"]["provenance"]
+    assert provenance["measurement"]["interval_label"] == "right boundary"
+    assert provenance["measurement"]["interval_convention"] == (
+        "target at t represents measurements in [t - 15 minutes, t)"
+    )
+    assert "oracle experiment" in provenance["weather"]["future_weather_usage"]
     assert (destination / "marginal_diagnostics.json").is_file()
 
 

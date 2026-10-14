@@ -50,6 +50,7 @@ SOURCE_TIMESTAMP_COLUMN = "timestamp_UTC"
 SOURCE_RESOLUTION_MINUTES = 1
 TARGET_RESOLUTION_MINUTES = 15
 DEFAULT_MIN_SAMPLES_PER_INTERVAL = 15
+WEATHER_MAX_AGE = pd.Timedelta(hours=1)
 BATCHES = ((1, 40), (41, 80), (81, 120), (121, 160), (161, 200))
 WEATHER_FEATURES = (
     "direct_radiation_W/m2",
@@ -143,16 +144,13 @@ def allow_patterns(
     data: DataConfig | DownloadDataConfig,
     *,
     entity_ids: Sequence[str] = (),
-    all_feeders: bool = False,
 ) -> list[str]:
-    """Return shared files and either selected or all measurement archives."""
+    """Return shared files and the measurement archives implied by the config type."""
 
-    if all_feeders:
+    if isinstance(data, DownloadDataConfig):
         _validate_download_source(data)
         batches = sorted(name for name in ASSET_INFO if name.endswith(".zip"))
     else:
-        if not isinstance(data, DataConfig):
-            raise ValueError("dataset-wide download profiles require all_feeders=True")
         validate_data_config(data)
         feeders = sorted({_feeder_number(entity_id) for entity_id in entity_ids})
         if not feeders:
@@ -262,9 +260,8 @@ def download_data(
     config: BaseExperimentConfig | DatasetDownloadConfig,
     *,
     snapshot_download_fn: Callable[..., str] | None = None,
-    all_feeders: bool = False,
 ) -> Path:
-    """Download the configured group or a dataset-wide FeederBW profile."""
+    """Download the configured group or the dataset-wide FeederBW profile."""
 
     del snapshot_download_fn
     data = config.data
@@ -274,17 +271,14 @@ def download_data(
         if config.scope != "all" or config.entity_count != 200:
             raise ValueError("FeederBW full-download profile must declare scope: all and entity_count: 200")
         entity_ids: Sequence[str] = ()
-        all_feeders = True
     else:
         entity_ids = config.protocol.ordered_entity_ids
         if not entity_ids:
             raise ValueError("FeederBW base must declare ordered entity IDs before downloading")
-    feeders = list(range(1, 201)) if all_feeders else [_feeder_number(entity_id) for entity_id in entity_ids]
-    patterns = allow_patterns(
-        data,
-        entity_ids=entity_ids,
-        all_feeders=all_feeders,
-    )
+    feeders = list(range(1, 201)) if isinstance(config, DatasetDownloadConfig) else [
+        _feeder_number(entity_id) for entity_id in entity_ids
+    ]
+    patterns = allow_patterns(data, entity_ids=entity_ids)
     for name in patterns:
         if name.endswith(".zip"):
             target = _download_asset(name, root / ARCHIVES_DIR / name)
@@ -310,7 +304,10 @@ def read_metadata(path: str | Path) -> pd.DataFrame:
         if bool((numeric % 1 != 0).any()):
             raise ValueError(f"FeederBW metadata {column} values must be integers")
         frame[column] = numeric.astype("int64")
-    frame["date"] = pd.to_datetime(frame["date"], utc=True, errors="raise")
+    local_dates = pd.DatetimeIndex(pd.to_datetime(frame["date"], errors="raise"))
+    frame["date"] = local_dates.tz_localize(
+        "Europe/Berlin", ambiguous="raise", nonexistent="raise"
+    ).tz_convert("UTC")
     if bool((~frame["feeder"].between(1, 200)).any()):
         raise ValueError("FeederBW metadata feeder IDs must be in [1, 200]")
     if frame.duplicated(["feeder", "date"]).any():
@@ -335,7 +332,7 @@ def resample_active_power(
     feeder_id: int,
     minimum_samples_per_interval: int = DEFAULT_MIN_SAMPLES_PER_INTERVAL,
 ) -> tuple[pd.DataFrame, dict[str, int | float | str]]:
-    """Mean 1-minute active power into left-labelled 15-minute UTC bins."""
+    """Mean 1-minute active power into completed, right-labelled 15-minute UTC bins."""
 
     frame = pd.read_parquet(Path(path), columns=["feeder", SOURCE_TIMESTAMP_COLUMN, TARGET_COLUMN])
     if frame.empty:
@@ -353,12 +350,14 @@ def resample_active_power(
     missing_source_timestamps = len(minute_grid.difference(timestamps))
     source = pd.DataFrame({TARGET_COLUMN: values}, index=timestamps.rename("timestamp")).sort_index(kind="stable")
     source_index = pd.DatetimeIndex(source.index)
-    source["interval"] = source_index.floor(f"{TARGET_RESOLUTION_MINUTES}min")
+    target_frequency = f"{TARGET_RESOLUTION_MINUTES}min"
+    interval_offset = pd.Timedelta(minutes=TARGET_RESOLUTION_MINUTES)
+    source["interval"] = source_index.floor(target_frequency) + interval_offset
     grouped = source.groupby("interval", sort=True)[TARGET_COLUMN].agg(["mean", "count"])
     target_index = pd.date_range(
-        source_index.min().floor(f"{TARGET_RESOLUTION_MINUTES}min"),
-        source_index.max().floor(f"{TARGET_RESOLUTION_MINUTES}min"),
-        freq=f"{TARGET_RESOLUTION_MINUTES}min",
+        source_index.min().floor(target_frequency) + interval_offset,
+        source_index.max().floor(target_frequency) + interval_offset,
+        freq=target_frequency,
         name="timestamp",
     )
     grouped = grouped.reindex(target_index)
@@ -398,6 +397,12 @@ def _read_selected_weather(path: Path, feeder_ids: Sequence[int], columns: Seque
     if missing:
         raise ValueError(f"FeederBW weather is missing configured historical fields: {missing}")
     return frame.sort_values(["feeder", SOURCE_TIMESTAMP_COLUMN], kind="stable")
+
+
+def _align_hourly_weather(weather: pd.DataFrame, target_index: pd.DatetimeIndex) -> pd.DataFrame:
+    """Apply a zero-order hold only while the latest hourly value is at most one hour old."""
+
+    return weather.reindex(target_index, method="ffill", tolerance=WEATHER_MAX_AGE).astype("float32")
 
 
 def _latest_metadata(
@@ -486,7 +491,10 @@ def load_adapter(config: ResolvedExperimentConfig) -> DatasetAdapter:
         weather = selected_weather.loc[selected_weather["feeder"] == feeder_id]
         weather_frame = weather.set_index(SOURCE_TIMESTAMP_COLUMN).loc[:, list(weather_fields)]
         weather_frame.index = pd.DatetimeIndex(weather_frame.index, name="timestamp")
-        weather_frame = weather_frame.reindex(target.index, method="ffill").astype("float32")
+        weather_frame = _align_hourly_weather(
+            weather_frame,
+            pd.DatetimeIndex(target.index, name="timestamp"),
+        )
         entity = EntityMetadata(
             name=f"feeder_{feeder_id:03d}",
             group_name=ADAPTER_NAME,
@@ -517,8 +525,12 @@ def load_adapter(config: ResolvedExperimentConfig) -> DatasetAdapter:
         "fields": list(weather_fields),
         "past_usage": "historical measured weather",
         "future_weather_source": config.covariates.future_weather_source,
-        "future_weather_usage": "realized measurements; future information leakage",
-        "availability": "last hourly timestamp no later than each 15-minute history timestamp",
+        "future_weather_usage": (
+            "oracle experiment: realized future measurements; intentionally leaks future information and is not "
+            "operational"
+        ),
+        "availability": "latest hourly observation at or before the target, only when no more than one hour old",
+        "maximum_age_minutes": int(WEATHER_MAX_AGE.total_seconds() // 60),
         "future_weather_supplied": True,
         "source_rows": int(len(selected_weather)),
         "source_start_utc": pd.Timestamp(selected_weather[SOURCE_TIMESTAMP_COLUMN].min()).isoformat(),
@@ -539,6 +551,7 @@ def load_adapter(config: ResolvedExperimentConfig) -> DatasetAdapter:
         "target": {
             "column": TARGET_COLUMN,
             "aggregation": "mean of available one-minute observations; interval accepted only at configured threshold",
+            "timestamp_semantics": "right boundary; target at t represents [t - 15 minutes, t)",
             "minimum_samples_per_interval": int(config.data.options["minimum_samples_per_interval"]),
             "group_min_kW": float(min(float(frame.target[TARGET_COLUMN].min()) for frame in frames)),
             "group_max_kW": float(max(float(frame.target[TARGET_COLUMN].max()) for frame in frames)),
@@ -581,7 +594,8 @@ def load_adapter(config: ResolvedExperimentConfig) -> DatasetAdapter:
             "minimum_samples_per_interval": int(config.data.options["minimum_samples_per_interval"]),
             "timestamp_column": SOURCE_TIMESTAMP_COLUMN,
             "timezone": "UTC",
-            "interval_label": "left edge",
+            "interval_label": "right boundary",
+            "interval_convention": "target at t represents measurements in [t - 15 minutes, t)",
             "sign_convention": "preserved; no rectification or clipping",
         },
         "weather": weather_summary,

@@ -23,25 +23,30 @@ it for an origin.
 
 ## Measurements, weather, and information set
 
-The target is one-minute `active_power_kW` in UTC. Let $t_j$ be the left edge
-of a 15-minute interval and let $M_{f,j}$ be the finite minute readings for
-feeder $f$ whose timestamps lie in $[t_j,t_j+15\text{ min})$. The adapter
-computes
+The target is one-minute `active_power_kW` in UTC. Let $t$ be the right
+boundary of a 15-minute interval and let $M_{f,t}$ be the finite minute
+readings for feeder $f$ whose timestamps $s$ lie in $[t-15\text{ min},t)$.
+The adapter computes
 
 $$
-\bar P_{f,j}=\frac{1}{n_{f,j}}\sum_{m\in M_{f,j}}p_{f,m},
-\qquad n_{f,j}=|M_{f,j}|.
+\bar P_{f,t}=\frac{1}{n_{f,t}}\sum_{s\in M_{f,t}}p_{f,s},
+\qquad n_{f,t}=|M_{f,t}|.
 $$
 
-The interval is retained only when $n_{f,j}$ is at least the configured
+The interval is retained only when $n_{f,t}$ is at least the configured
 `minimum_samples_per_interval`; otherwise the target is missing. With all 15
-samples, $\bar P_{f,j}$ estimates average active power over the quarter-hour.
+samples, $\bar P_{f,t}$ estimates average active power over the quarter-hour.
 The corresponding interval energy is approximately
-$0.25\text{ h}\times\bar P_{f,j}$ in kWh. For a threshold of 12--14, the
+$0.25\text{ h}\times\bar P_{f,t}$ in kWh. For a threshold of 12--14, the
 adapter still averages only the available samples: it does not interpolate,
 time-weight, or scale them to compensate for missing minutes. Interpreting
 that mean as the interval average therefore assumes the observed minutes are
 representative of the missing ones.
+
+Timestamps label completed intervals: the target at `23:45` is the mean of
+measurements from `23:30` through `23:44`, and the target at `00:00` is the
+mean from `23:45` through `23:59`. A measurement timestamped exactly at $t$
+belongs to the next interval, never the target at $t$.
 
 At the supplied strict 15-of-15 threshold, the two-year target grid has
 70,176 intervals, of which 67,796 (96.61%) are complete for all five feeders.
@@ -88,14 +93,20 @@ forecast vintages. The accepted fields and their physical readings are:
 | `zonal_wind_m/s` | m/s | East-west horizontal wind component |
 
 For a 15-minute target timestamp $t$, the adapter uses the most recent
-hourly weather timestamp $h$ satisfying $h\le t$:
+hourly weather timestamp $h$ satisfying $h\le t$, but only while the value
+is no more than one hour old:
 
 $$
-h^*(t)=\max\{h:h\le t\},\qquad W_{f,t}=W_{f,h^*(t)}.
+h^*(t)=\max\{h:h\le t,\ t-h\le 1\text{ h}\},\qquad
+W_{f,t}=W_{f,h^*(t)}.
 $$
 
-This is a zero-order hold, not interpolation: adjacent quarter-hours reuse
-the same hourly atmospheric state, and a value can be nearly an hour old.
+This is a bounded zero-order hold, not interpolation: adjacent quarter-hours
+reuse the same hourly atmospheric state, up to an age of 60 minutes inclusive.
+If an hourly source row is missing, later quarter-hours remain unavailable once
+the preceding row is older than that limit. The same alignment is used for
+historical measured weather and future oracle weather; the adapter's normal
+window-validity check rejects windows containing unavailable required weather.
 Temperature and irradiance are plausible drivers of heating/cooling demand
 and photovoltaic feed-in, while wind and precipitation describe other shared
 weather conditions. Their association with net feeder power is predictive,
@@ -116,10 +127,19 @@ to validate substation membership and report latest-record diagnostics only;
 it does not give the latest values to the forecaster, where they could be
 stale or unavailable at a historical origin.
 
+Metadata `date` values are local German calendar dates. The adapter interprets
+each as midnight in `Europe/Berlin`, applies the timezone's DST rules, then
+converts to UTC for internal storage. Thus `2024-01-01` becomes
+`2023-12-31T23:00:00Z`, while `2024-07-01` becomes `2024-06-30T22:00:00Z`.
+UTC diagnostic timestamps can therefore fall on the preceding calendar day.
+
 The supplied forecast protocol uses 15-minute frequency, 23:45 UTC daily
 origins, a 672-step lookback, a 96-step horizon, and a 96-step origin stride.
-The base's calendar covariates include UTC hour, weekday, and weekend
-features.
+At a `23:45` origin, the last historical target is timestamped `23:45` and
+represents `[23:30, 23:45)`; the first future target is timestamped `00:00` and
+represents `[23:45, 00:00)`. The 96 future targets run from `00:00` through
+`23:45` the next day, covering exactly the 24 hours after the origin. The
+base's calendar covariates include UTC hour, weekday, and weekend features.
 
 ## `data.options` reference
 

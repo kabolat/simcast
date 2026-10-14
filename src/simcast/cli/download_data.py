@@ -28,7 +28,6 @@ def download_data(
     *,
     overrides: Sequence[str] = (),
     snapshot_download_fn: Callable[..., str] | None = None,
-    all_feeders: bool = False,
 ) -> Path:
     """Load configuration only when invoked, then fetch its pinned dataset files."""
 
@@ -42,15 +41,7 @@ def download_data(
             raise ValueError(f"adapter {config.data.adapter!r} does not support dataset-wide download profiles")
         return Path(adapter.download(config, snapshot_download_fn=snapshot_download_fn))
     if adapter.download is not None:
-        return Path(
-            adapter.download(
-                config,
-                snapshot_download_fn=snapshot_download_fn,
-                all_feeders=all_feeders,
-            )
-        )
-    if all_feeders:
-        raise ValueError("--all-feeders is supported only by the FeederBW adapter")
+        return Path(adapter.download(config, snapshot_download_fn=snapshot_download_fn))
     if snapshot_download_fn is None:
         from huggingface_hub import snapshot_download
 
@@ -86,17 +77,10 @@ def main(
         list[str] | None,
         typer.Option("--set", help="Configuration override as dotted.path=value"),
     ] = None,
-    all_feeders: Annotated[
-        bool,
-        typer.Option(
-            "--all-feeders",
-            help="For FeederBW, download all five measurement batches instead of only the configured group.",
-        ),
-    ] = False,
 ) -> None:
     """Download data selected by a Simcast YAML configuration."""
 
-    path = download_data(config_path, overrides=override or (), all_feeders=all_feeders)
+    path = download_data(config_path, overrides=override or ())
     typer.echo(path)
 
 

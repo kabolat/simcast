@@ -41,7 +41,7 @@ covariates:
     - max_wind_gust_m/s
     - meridional_wind_m/s
     - zonal_wind_m/s
-  future_weather_source: oracle  # Realized future weather; intentionally leaky.
+  future_weather_source: oracle  # Oracle experiment: realized future weather; intentionally leaky, not operational.
   calendar:
     enabled: true
     include_hour: true
