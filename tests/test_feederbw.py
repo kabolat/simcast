@@ -38,6 +38,7 @@ from simcast.fm.cache import load_pit_library
 
 ROOT = Path(__file__).parents[1]
 BASE_CONFIG = ROOT / "configs/bases/feederbw/substation_52.yaml"
+ALL_FEEDERS_BASE = ROOT / "configs/bases/feederbw/all_feeders.yaml"
 FULL_DOWNLOAD_CONFIG = ROOT / "configs/downloads/feederbw_all.yaml"
 FEEDERS = [60, 106, 109, 165, 170]
 
@@ -131,6 +132,43 @@ def _write_probe_data(root: Path) -> None:
     pd.concat(weather_rows, ignore_index=True).to_parquet(root / "weather_data.parquet", index=False)
 
 
+def _write_all_feeders_probe_data(root: Path) -> None:
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "measurements").mkdir()
+    target_times = pd.date_range("2024-01-01", periods=15, freq="min", tz="UTC")
+    weather_time = pd.Timestamp("2024-01-01T00:00:00Z")
+    metadata_rows: list[dict[str, Any]] = []
+    weather_rows: list[pd.DataFrame] = []
+    for feeder in range(1, 201):
+        substation = (feeder - 1) % 121 + 1
+        metadata_rows.append(
+            {
+                "feeder": feeder,
+                "substation": substation,
+                "date": "2024-01-01",
+                **{field: float(feeder) for field in METADATA_DIAGNOSTIC_FIELDS},
+            }
+        )
+        pd.DataFrame(
+            {
+                "feeder": feeder,
+                "timestamp_UTC": target_times,
+                "active_power_kW": np.full(len(target_times), feeder / 10, dtype=np.float32),
+            }
+        ).to_parquet(root / "measurements" / f"feeder_{feeder:03d}.parquet", index=False)
+        weather_rows.append(
+            pd.DataFrame(
+                {
+                    "feeder": [feeder],
+                    "timestamp_UTC": [weather_time],
+                    **{feature: [float(feeder)] for feature in WEATHER_FEATURES},
+                }
+            )
+        )
+    pd.DataFrame(metadata_rows).to_csv(root / "feeder_metadata.csv", index=False)
+    pd.concat(weather_rows, ignore_index=True).to_parquet(root / "weather_data.parquet", index=False)
+
+
 def test_v11_metadata_schema_and_deterministic_substation_group(tmp_path: Path) -> None:
     path = tmp_path / "metadata.csv"
     pd.DataFrame(
@@ -151,6 +189,28 @@ def test_v11_metadata_schema_and_deterministic_substation_group(tmp_path: Path) 
     wrong_schema.to_csv(wrong_path, index=False)
     with pytest.raises(ValueError, match="substation"):
         read_metadata(wrong_path)
+
+
+def test_all_feeders_base_loads_complete_group_across_substations(tmp_path: Path) -> None:
+    _write_all_feeders_probe_data(tmp_path)
+    base = load_base_config(ALL_FEEDERS_BASE)
+    base = base.model_copy(update={"data": base.data.model_copy(update={"local_dir": str(tmp_path)})})
+    run = resolve_run_config(base, IndependentMethodConfig(kind="method", id="m0", family="independent"))
+    adapter = adapter_spec("feederbw").load(run)
+
+    assert base.protocol.entity_count == 200
+    assert adapter.group.group_id == "feederbw_all_feeders"
+    assert adapter.group.entity_ids == [f"feederbw::feeder_{feeder:03d}" for feeder in range(1, 201)]
+    assert adapter.group.metadata["selection_scope"] == "all_feeders"
+    assert adapter.group.metadata["substation_id"] is None
+    assert adapter.group.metadata["substation_ids"] == list(range(1, 122))
+    assert adapter.group.entities[0].extra["substation"] == 1
+    assert adapter.group.entities[121].extra["substation"] == 1
+    assert adapter.diagnostics()["entity_count"] == 200
+    assert adapter.diagnostics()["selected_substation_id"] is None
+    assert adapter.provenance["selection_scope"] == "all_feeders"
+    assert adapter.provenance["selected_substation_ids"] == list(range(1, 122))
+    assert adapter_spec("feederbw").default_cache_name(base.data) == "feederbw_all_feeders"
 
 
 def test_metadata_dates_use_german_local_midnight_before_utc_conversion(tmp_path: Path) -> None:

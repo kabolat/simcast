@@ -113,8 +113,10 @@ def validate_data_config(data: DataConfig) -> None:
     if options["metadata_usage"] != "grouping_and_diagnostics_only":
         raise ValueError("feederbw metadata_usage must be 'grouping_and_diagnostics_only'")
     substation_id = options["substation_id"]
-    if not isinstance(substation_id, int) or isinstance(substation_id, bool) or substation_id < 1:
-        raise ValueError("feederbw substation_id must be a positive integer")
+    if substation_id != "all" and (
+        not isinstance(substation_id, int) or isinstance(substation_id, bool) or substation_id < 1
+    ):
+        raise ValueError("feederbw substation_id must be a positive integer or 'all'")
 
 
 def _validate_download_source(data: DataConfig | DownloadDataConfig) -> None:
@@ -163,7 +165,8 @@ def allow_patterns(
 
 def default_cache_name(data: DataConfig) -> str:
     validate_data_config(data)
-    return f"feederbw_substation_{data.options['substation_id']}"
+    substation_id = data.options["substation_id"]
+    return "feederbw_all_feeders" if substation_id == "all" else f"feederbw_substation_{substation_id}"
 
 
 def _asset_url(name: str) -> str:
@@ -466,19 +469,30 @@ def load_adapter(config: ResolvedExperimentConfig) -> DatasetAdapter:
 
     root = Path(config.data.local_dir).expanduser().resolve()
     metadata = read_metadata(root / METADATA_FILE)
-    substation_id = int(config.data.options["substation_id"])
-    feeder_ids = feeders_for_substation(metadata, substation_id)
+    selection = config.data.options["substation_id"]
+    all_feeders = selection == "all"
+    if all_feeders:
+        substation_id = None
+        feeder_ids = sorted(metadata["feeder"].unique().astype(int).tolist())
+        if feeder_ids != list(range(1, 201)):
+            raise ValueError("FeederBW all-feeders selection requires metadata for feeder IDs 1 through 200")
+    else:
+        substation_id = int(selection)
+        feeder_ids = feeders_for_substation(metadata, substation_id)
     ordered_ids = [f"feederbw::feeder_{feeder:03d}" for feeder in feeder_ids]
     if list(config.protocol.ordered_entity_ids) != ordered_ids:
         raise ValueError(
-            "protocol.ordered_entity_ids must list every feeder in ascending order for "
-            f"substation {substation_id}: expected {ordered_ids}"
+            "protocol.ordered_entity_ids must list every selected feeder in ascending order: "
+            f"expected {ordered_ids}"
         )
     if config.protocol.entity_count != len(ordered_ids):
-        raise ValueError("protocol.entity_count must equal the selected substation feeder count")
+        raise ValueError("protocol.entity_count must equal the selected feeder count")
 
     weather_path = root / WEATHER_FILE
     selected_weather = _read_selected_weather(weather_path, feeder_ids, weather_fields)
+    selected_metadata = metadata.loc[metadata["feeder"].isin(feeder_ids)]
+    selected_substation_ids = sorted(selected_metadata["substation"].unique().astype(int).tolist())
+    substation_by_feeder = metadata.drop_duplicates("feeder").set_index("feeder")["substation"]
     frames: list[EntityFrames] = []
     target_stats: list[dict[str, int | float | str]] = []
     for feeder_id in feeder_ids:
@@ -495,11 +509,12 @@ def load_adapter(config: ResolvedExperimentConfig) -> DatasetAdapter:
             weather_frame,
             pd.DatetimeIndex(target.index, name="timestamp"),
         )
+        feeder_substation = int(substation_by_feeder.loc[feeder_id])
         entity = EntityMetadata(
             name=f"feeder_{feeder_id:03d}",
             group_name=ADAPTER_NAME,
-            description=f"Low-voltage feeder in FeederBW substation {substation_id}",
-            extra={"substation": substation_id, "feeder_number": feeder_id},
+            description=f"Low-voltage feeder in FeederBW substation {feeder_substation}",
+            extra={"substation": feeder_substation, "feeder_number": feeder_id},
         )
         frames.append(
             EntityFrames(
@@ -510,10 +525,18 @@ def load_adapter(config: ResolvedExperimentConfig) -> DatasetAdapter:
             )
         )
 
+    selection_scope = "all_feeders" if all_feeders else "substation"
+    group_id = "feederbw_all_feeders" if all_feeders else f"feederbw_substation_{substation_id}"
     group = EntityGroup(
-        group_id=f"feederbw_substation_{substation_id}",
+        group_id=group_id,
         entity_ids=ordered_ids,
-        metadata={"entity_type": ADAPTER_NAME, "substation_id": substation_id, "entity_count": len(ordered_ids)},
+        metadata={
+            "entity_type": ADAPTER_NAME,
+            "selection_scope": selection_scope,
+            "substation_id": substation_id,
+            "substation_ids": selected_substation_ids,
+            "entity_count": len(ordered_ids),
+        },
         entities=[frame.entity for frame in frames],
     )
     target_valid = pd.concat(
@@ -540,6 +563,8 @@ def load_adapter(config: ResolvedExperimentConfig) -> DatasetAdapter:
         "dataset_record": ZENODO_RECORD_ID,
         "dataset_version": DATASET_REVISION,
         "selected_substation_id": substation_id,
+        "selected_substation_ids": selected_substation_ids,
+        "selection_scope": selection_scope,
         "ordered_feeder_ids": feeder_ids,
         "entity_ids": ordered_ids,
         "entity_count": len(ordered_ids),
@@ -560,13 +585,9 @@ def load_adapter(config: ResolvedExperimentConfig) -> DatasetAdapter:
         "weather": weather_summary,
         "metadata": {
             "schema_columns": list(metadata.columns),
-            "row_count_for_group": int(metadata["feeder"].isin(feeder_ids).sum()),
-            "date_start_utc": pd.Timestamp(
-                metadata.loc[metadata["feeder"].isin(feeder_ids), "date"].min()
-            ).isoformat(),
-            "date_end_utc": pd.Timestamp(
-                metadata.loc[metadata["feeder"].isin(feeder_ids), "date"].max()
-            ).isoformat(),
+            "row_count_for_group": int(len(selected_metadata)),
+            "date_start_utc": pd.Timestamp(selected_metadata["date"].min()).isoformat(),
+            "date_end_utc": pd.Timestamp(selected_metadata["date"].max()).isoformat(),
             "usage": "substation grouping and diagnostics only; not supplied to Chronos",
             "latest_record_per_feeder": latest_metadata,
             "sum_of_latest_per_feeder": capacity_totals,
@@ -584,7 +605,9 @@ def load_adapter(config: ResolvedExperimentConfig) -> DatasetAdapter:
             "local_dir": str(root),
             "metadata_column_names": {"feeder_id": "feeder", "substation_id": "substation"},
         },
+        "selection_scope": selection_scope,
         "selected_substation_id": substation_id,
+        "selected_substation_ids": selected_substation_ids,
         "ordered_feeder_ids": feeder_ids,
         "measurement": {
             "column": TARGET_COLUMN,
@@ -607,8 +630,8 @@ def load_adapter(config: ResolvedExperimentConfig) -> DatasetAdapter:
         "diagnostics": diagnostics,
     }
     LOGGER.info(
-        "Loaded FeederBW substation %d: %d feeders, %d common complete 15-minute intervals",
-        substation_id,
+        "Loaded FeederBW group %s: %d feeders, %d common complete 15-minute intervals",
+        group_id,
         len(ordered_ids),
         int(common_valid.sum()),
     )

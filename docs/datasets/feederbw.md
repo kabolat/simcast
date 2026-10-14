@@ -14,12 +14,20 @@ describes high photovoltaic feed-in and minute-resolution feeder data as
 important features of the collection
 ([Scientific Data](https://www.nature.com/articles/s41597-026-08152-9)).
 
-The supplied experiment selects substation 52 and its complete ascending
-group: `feederbw::feeder_060`, `feederbw::feeder_106`,
+The supplied substation-52 experiment selects its complete ascending group:
+`feederbw::feeder_060`, `feederbw::feeder_106`,
 `feederbw::feeder_109`, `feederbw::feeder_165`, and
 `feederbw::feeder_170`. Group membership is checked against metadata when the
 data are loaded. The group remains fixed; missing observations do not shrink
 it for an origin.
+
+The separate `configs/bases/feederbw/all_feeders.yaml` base selects all 200
+feeders in ascending ID order as one fixed group. These feeders span all 121
+metadata substations; this is a cross-substation dataset group, not a single
+electrical substation. The default statistic sums all 200 values, so interpret
+it as an experiment-level cross-substation aggregate, not one station's power.
+A physical total additionally requires consistent sign conventions and
+non-overlapping feeder boundaries.
 
 ## Measurements, weather, and information set
 
@@ -149,7 +157,7 @@ use are included in the cache fingerprint.
 
 | Key | Type and allowed values | Supplied value | Meaning |
 |---|---|---:|---|
-| `substation_id` | Positive integer; booleans are rejected | `52` | Selects a complete metadata-defined substation group; `protocol.entity_count` and ordered IDs must match it exactly |
+| `substation_id` | Positive integer or literal `all`; booleans are rejected | `52` or `all` | Selects one metadata-defined substation, or every feeder ID 1--200 across all substations; protocol count and ascending IDs must match |
 | `source_resolution_minutes` | Must equal integer `1` | `1` | Declares the one-minute source cadence |
 | `aggregation` | Must equal `mean` | `mean` | Aggregates source readings into 15-minute target intervals |
 | `minimum_samples_per_interval` | Integer from 12 through 15; booleans are rejected | `15` | Minimum number of one-minute readings required for an interval; 15 is strict complete-case aggregation |
@@ -161,11 +169,12 @@ retain more intervals, but does not reconstruct missing power. If missing
 minutes are associated with rapid ramps or high-load conditions, the mean of
 the remaining samples can be biased for the full interval.
 
-Only the selected group and sample threshold are meaningfully adjustable under
-the current adapter. Source resolution, aggregation, and metadata usage are
-fixed validation guards. To change `substation_id`, also update
-`protocol.entity_count` and `protocol.ordered_entity_ids` to list every feeder
-in that substation in the required order.
+The selected group and sample threshold are meaningfully adjustable under the
+current adapter. Source resolution, aggregation, and metadata usage are fixed
+validation guards. For a substation selection, update `protocol.entity_count`
+and `protocol.ordered_entity_ids` to list that entire substation in ascending
+order. For `substation_id: all`, use all 200 IDs in ascending order and set
+`protocol.entity_count: 200` as in the all-feeder base.
 
 Other adapter-specific base values are:
 
@@ -184,12 +193,13 @@ Shared fields are documented in the
 
 ## Download and diagnostics
 
-The experiment base is `configs/bases/feederbw/substation_52.yaml`; the
-dataset-wide download profile is `configs/downloads/feederbw_all.yaml`. By
-default, selective download fetches shared metadata/weather and only the
-measurement ZIP batches containing the configured feeders. Substation 52
-needs batches 041--080, 081--120, and 161--200 (about 5.05 GB); only the five
-selected feeder files are extracted.
+The substation experiment base is `configs/bases/feederbw/substation_52.yaml`;
+the K=200 base is `configs/bases/feederbw/all_feeders.yaml`. Selective download
+fetches shared metadata/weather and only the measurement ZIP batches containing
+the configured feeders. Substation 52 needs batches 041--080, 081--120, and
+161--200 (about 5.05 GB); only the five selected feeder files are extracted.
+The all-feeder base selects all five batches and extracts all 200 measurement
+files.
 
 To download every measurement file for later group selection, use the
 separate profile. It declares `scope: all` and `entity_count: 200`, fetches all
@@ -200,9 +210,12 @@ entries are rejected.
 
 ```bash
 uv run download-data --base configs/bases/feederbw/substation_52.yaml
+uv run download-data --base configs/bases/feederbw/all_feeders.yaml
 uv run download-data --config configs/downloads/feederbw_all.yaml
 uv run feederbw-info --base configs/bases/feederbw/substation_52.yaml
+uv run feederbw-info --base configs/bases/feederbw/all_feeders.yaml
 uv run cache --base configs/bases/feederbw/substation_52.yaml
+uv run cache --base configs/bases/feederbw/all_feeders.yaml
 uv run composite --config configs/venues/lab/feederbw_smoke.yaml
 ```
 
