@@ -11,7 +11,7 @@ Simcast studies whether spatial aggregate forecasts improve when residual
 cross-entity forecast dependence is modeled explicitly while the
 foundation-model-derived marginal quantile grids are held fixed.
 
-Chronos-2 remains frozen. All supplied Liander bases use deterministic
+Chronos-2 remains frozen. All supplied base configurations use deterministic
 isotonic monotonicity repair inherited from their shared configuration; the
 resulting repaired grid is fixed across every dependence method. No dependence
 model can change any marginal quantile value.
@@ -75,9 +75,9 @@ $$
 \qquad K_g=|\mathcal E_g|.
 $$
 
-Each current Liander homogeneous entity type is one separate group. The entity
-set never varies with forecast instance. If any member is invalid at a case,
-the case is discarded for the complete group; $\mathcal E_g$ is not reduced.
+Each configured homogeneous entity type is one separate group. The entity set
+never varies with forecast instance. If any member is invalid at a case, the
+case is discarded for the complete group; $\mathcal E_g$ is not reduced.
 
 The one-based forecast lead is $\tau\in[H]$. Its physical target time is
 
@@ -276,7 +276,7 @@ Not modeled:
 - entity dropout or subset augmentation;
 - covariance between different forecast leads;
 - trajectory-level temporal copulas;
-- mixed-type Liander groups;
+- mixed-type entity groups;
 - Chronos fine-tuning or new foundation models;
 - parametric tail extrapolation beyond the lowest and highest native quantiles;
 - causal effects or operational decisions.

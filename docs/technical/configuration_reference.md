@@ -31,12 +31,12 @@ Implementation: `load_base_config`, `load_method_config`,
 
 ```yaml
 kind: base
-id: transformer
+id: example_base
 protocol:
-  ordered_entity_ids: [transformer::A, transformer::B]
+  ordered_entity_ids: [example_type::A, example_type::B]
   entity_count: 2
 data:
-  entity_type: transformer
+  entity_type: example_type
 ```
 
 `ordered_entity_ids` defines
@@ -50,19 +50,19 @@ prefix. Every fit and evaluation uses the complete group.
 | `id` | safe slug: lowercase letters, digits, `_`, `-` | **required** | human-readable base identity; not a cache-compatibility claim |
 | `protocol.ordered_entity_ids` | non-empty list of unique strings | **required** | ordered definition of $\mathcal E_g$ |
 | `protocol.entity_count` | positive integer | **required** | $K_g$; must equal the list length |
-| `data.adapter` | non-empty adapter identifier | `liander2024` | selects the dataset reader and validation rules; explicit in non-default dataset bases |
-| `data.dataset_id` | string | source dataset identifier | population source |
-| `data.revision` | string | pinned Git revision | immutable data version |
+| `data.adapter` | registered adapter identifier | adapter-specific default | selects the data reader and validation rules |
+| `data.dataset_id` | string | adapter-specific source identifier | identifies the source population |
+| `data.revision` | string | adapter-specific pinned revision | identifies the immutable data version |
 | `data.local_dir` | path string | adapter-specific local data directory | local files; deliberately excluded from the scientific fingerprint |
-| `data.entity_type` | non-empty string validated by the selected adapter | `transformer` for Liander; `gefcom_wind` for GEFCom Wind | homogeneous group label $g$; every ID must begin with this type prefix |
-| `data.target_column` | string | adapter-specific (Liander `load`; GEFCom `wind_power`) | measured target $y_{k,t}$ |
-| `data.options` | mapping validated by the selected adapter | `{}` for Liander | dataset-specific scientific inputs; included in the cache fingerprint when non-empty |
+| `data.entity_type` | non-empty string validated by the selected adapter | adapter-specific | homogeneous group label $g$; every ID must begin with this type prefix |
+| `data.target_column` | string validated by the selected adapter | adapter-specific | measured target $y_{k,t}$ |
+| `data.options` | mapping validated by the selected adapter | adapter-specific; often empty | adapter-specific scientific inputs; included in the cache fingerprint when non-empty |
 
-The supplied Liander groups contain 15 transformer, MV feeder, and station
-installation entities, and five solar and wind entities. GEFCom2014 Wind uses
-ten zones. See the [dataset adapter guide](datasets.md) for exact base
-configurations and the GEFCom NWP availability assumption. The group is invalid
-at $(i,\tau)$ if any member is invalid.
+The selected adapter validates group membership, cardinality, and entity-ID
+format. The [dataset references](../datasets/README.md) document each adapter's
+source values, valid groups and target columns, allowed covariates, and every
+accepted `data.options` key and value. A case is invalid at $(i,\tau)$ if any
+member of its configured group is invalid.
 
 ### 2.2 Forecast instances and information set
 
@@ -73,7 +73,7 @@ at $(i,\tau)$ if any member is invalid.
 | `forecast.lookback_steps` | positive integer | `672` | observed history length $L$ |
 | `forecast.horizon_steps` | positive integer | `96` | number of leads $H$ |
 | `forecast.origin_stride_steps` | positive integer | `96` | separation of candidate origins, in steps |
-| `covariates.weather` | list of unique non-empty strings | five supplied weather fields | ordered weather variables supplied to Chronos |
+| `covariates.weather` | list of unique non-empty strings | adapter-specific list | ordered weather variables supplied to Chronos; allowed names are in the dataset reference |
 | `covariates.future_weather_source` | `vintage` or `oracle` | `vintage` | `vintage`: latest forecast available at $t^{(i)}$; `oracle`: realized future weather, hence non-operational |
 | `covariates.calendar.enabled` | Boolean | `true` | include calendar covariates as a block |
 | `covariates.calendar.include_hour` | Boolean | `true` | hour-of-day coordinates |
@@ -351,8 +351,9 @@ cache label.
 Example: changing `evaluation.joint_score_num_samples` reuses the same marginal
 cache. Changing `data.adapter`, non-empty `data.options`, `pit.monotone_repair`,
 ordered entity IDs, weather source, forecast horizon, or Chronos model revision
-requires a different cache. The default Liander adapter and empty options are
-omitted for backward-compatible Liander cache identity.
+requires a different cache. For backward compatibility, the implicit default
+adapter identifier and an empty options mapping are normalized out of cache
+identity.
 
 ## 7. Evaluation and report configuration
 
