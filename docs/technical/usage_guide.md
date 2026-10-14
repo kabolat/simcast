@@ -100,12 +100,21 @@ The patch only exposes the output-patch representation used as a conditioning
 feature; it does not change forecast quantiles.
 
 Chronos weights are retrieved through the Hugging Face cache. Public
-retrieval works without authentication but is rate-limited; optionally set a
-token:
+retrieval works without authentication but is rate-limited. For reusable
+authentication, log in once from the project environment:
 
 ```bash
-export HF_TOKEN=...
+uv run hf auth login
+uv run hf auth whoami
 ```
+
+The login command prompts for a Hugging Face token and saves it for future
+commands run by the same user. `whoami` checks that the saved credentials
+authenticate without printing the token. An `HF_TOKEN` environment variable is
+an alternative for a single shell or automated job; it must be present in the
+environment that launches `uv run` and is not shared with other terminals.
+For automation, provide it through the job's secret manager rather than
+writing the token into a command or shell history.
 
 The selected base's `data.local_dir` selects the local destination. The
 [dataset references](../datasets/README.md) describe each adapter's source
@@ -623,7 +632,7 @@ composite entries (§6), so they are recorded in the resolved composite.
 | `ModuleNotFoundError: simcast` in Jupyter | select or install the `Python (simcast)` kernel and start Jupyter with `uv run jupyter lab` |
 | Dataset file missing | set `SIMCAST_DATA_DIR` or run `uv run download-data` for the base |
 | Cache file or `.zmetadata` missing | the cache is absent or incomplete; rebuild it, using `--overwrite` only for a deliberate replacement |
-| Hugging Face unauthenticated warning | public retrieval is rate-limited; optionally set `HF_TOKEN` |
+| Hugging Face unauthenticated warning | run `uv run hf auth whoami`; if it fails, authenticate with `uv run hf auth login` in the same user account |
 | No crossing figure in notebook 02 | the selected cache has no representative crossing; this is a valid result |
 | `evaluate`/`report` reports several runs | pass `--run-id`, or use `--config` with `--run-root` |
 | Report rejects a metric | add it to the evaluation's `metrics` and run `evaluate --force`, or drop it from the report |
