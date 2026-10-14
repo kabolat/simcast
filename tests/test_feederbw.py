@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import stat
 import zipfile
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -10,9 +10,16 @@ import numpy as np
 import pandas as pd
 import pytest
 import torch
+from pydantic import ValidationError
 
 import simcast.cli.build_cache as cache_cli
-from simcast.config import IndependentMethodConfig, base_fingerprint, load_base_config, resolve_run_config
+from simcast.config import (
+    CovariatesConfig,
+    IndependentMethodConfig,
+    base_fingerprint,
+    load_base_config,
+    resolve_run_config,
+)
 from simcast.data.feederbw import (
     METADATA_DIAGNOSTIC_FIELDS,
     WEATHER_FEATURES,
@@ -276,7 +283,7 @@ def test_resampling_uses_utc_means_and_minimum_sample_threshold(tmp_path: Path) 
     assert stats["valid_intervals"] == 1
 
 
-def test_adapter_builds_group_and_never_passes_future_weather(tmp_path: Path) -> None:
+def test_adapter_oracle_uses_realized_future_weather(tmp_path: Path) -> None:
     _write_probe_data(tmp_path)
     base = _base_config(tmp_path)
     run = resolve_run_config(base, IndependentMethodConfig(kind="method", id="m0", family="independent"))
@@ -286,18 +293,10 @@ def test_adapter_builds_group_and_never_passes_future_weather(tmp_path: Path) ->
     assert diagnostics["entity_ids"] == base.protocol.ordered_entity_ids
     assert diagnostics["common_complete_interval_fraction"] == pytest.approx(1.0)
     assert diagnostics["metadata"]["latest_record_per_feeder"][0]["date"].startswith("2024-02-01")
-    assert diagnostics["weather"]["future_weather_supplied"] is False
-
-    adapter.frames = [
-        replace(
-            frame,
-            future_weather=pd.DataFrame(
-                {"air_temperature_C": np.full(len(frame.target), 9999, dtype=np.float32)},
-                index=frame.target.index,
-            ),
-        )
-        for frame in adapter.frames
-    ]
+    assert diagnostics["weather"]["future_weather_supplied"] is True
+    assert diagnostics["weather"]["future_weather_usage"] == (
+        "realized measurements; future information leakage"
+    )
     window = make_forecast_window(
         "2024-01-12T23:45:00Z",
         lookback_steps=base.forecast.lookback_steps,
@@ -307,10 +306,25 @@ def test_adapter_builds_group_and_never_passes_future_weather(tmp_path: Path) ->
     )
     prepared = adapter.prepare_window(window)
     assert prepared.true_y.shape == (5, 96)
-    for model_input in prepared.inputs:
-        assert set(base.covariates.past_weather).issubset(model_input["past_covariates"])
-        assert "air_temperature_C" not in model_input["future_covariates"]
+    for feeder_id, model_input in zip(FEEDERS, prepared.inputs, strict=True):
+        assert set(base.covariates.weather).issubset(model_input["past_covariates"])
+        np.testing.assert_array_equal(
+            model_input["future_covariates"]["air_temperature_C"],
+            np.full(96, feeder_id + 2, dtype=np.float32),
+        )
         assert all(np.isfinite(values).all() for values in model_input["future_covariates"].values())
+
+
+def test_adapter_rejects_vintage_without_archived_forecasts(tmp_path: Path) -> None:
+    _write_probe_data(tmp_path)
+    base = _base_config(tmp_path)
+    covariates = base.covariates.model_copy(update={"future_weather_source": "vintage"})
+    run = resolve_run_config(
+        base.model_copy(update={"covariates": covariates}),
+        IndependentMethodConfig(kind="method", id="m0", family="independent"),
+    )
+    with pytest.raises(ValueError, match="no archived future forecasts"):
+        adapter_spec("feederbw").load(run)
 
 
 def test_synthetic_feederbw_cache_builds_without_chronos(tmp_path: Path) -> None:
@@ -327,12 +341,17 @@ def test_synthetic_feederbw_cache_builds_without_chronos(tmp_path: Path) -> None
     assert library.dataset.sizes["entity"] == 5
     assert library.dataset.sizes["origin"] > 0
     assert library.metadata["dataset"]["provenance"]["source"]["version"] == "v1.1"
-    assert library.metadata["covariates"]["future_weather_source"] == "none"
+    assert library.metadata["covariates"]["future_weather_source"] == "oracle"
     assert (destination / "marginal_diagnostics.json").is_file()
 
 
-def test_past_weather_changes_the_marginal_fingerprint(tmp_path: Path) -> None:
+def test_weather_changes_the_marginal_fingerprint(tmp_path: Path) -> None:
     base = _base_config(tmp_path)
-    changed_covariates = base.covariates.model_copy(update={"past_weather": ["air_temperature_C"]})
+    changed_covariates = base.covariates.model_copy(update={"weather": ["air_temperature_C"]})
     changed = base.model_copy(update={"covariates": changed_covariates})
     assert base_fingerprint(base) != base_fingerprint(changed)
+
+
+def test_past_weather_is_not_a_config_field() -> None:
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        CovariatesConfig.model_validate({"past_weather": ["air_temperature_C"]})

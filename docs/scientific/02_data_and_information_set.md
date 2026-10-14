@@ -101,15 +101,17 @@ coverage ranges from 98.16% to 99.90%; no source active-power values are null.
 The adapter reports exact coverage, per-feeder missingness, and target ranges
 in `feederbw-info` output and cache provenance.
 
-Only these eight archived hourly weather fields are configured as historical
-inputs: direct and diffuse radiation, air temperature, precipitation,
+The same eight hourly weather fields are configured for past and future
+covariates: direct and diffuse radiation, air temperature, precipitation,
 humidity, maximum wind gust, and meridional and zonal wind. The last hourly
-observation no later than each 15-minute history timestamp is used. The archive
-contains no forecast vintages, so future inputs are calendar-only
-(`future_weather_source: none`); measured future weather is never passed to
-Chronos. Metadata is used only to establish the substation group and produce
-diagnostics. Latest dated capacities are asynchronous summaries, not static
-model predictors.
+observation no later than each 15-minute history timestamp is used for the
+past. The archive contains no forecast vintages, so the supplied base selects
+`future_weather_source: oracle`: realized future weather is passed to Chronos,
+which deliberately leaks future information. Treat this as an oracle result,
+not a leakage-safe forecast. Selecting `vintage` instead raises an error
+because FeederBW has no archived future forecasts. Metadata is used only to
+establish the substation group and produce diagnostics. Latest dated capacities
+are asynchronous summaries, not static model predictors.
 
 By default, the downloader fetches shared metadata/weather plus only the
 measurement ZIP batches containing configured feeders. For substation 52 that
@@ -222,9 +224,11 @@ $$
 There is no day-of-year covariate. This gives 10 past and 10 future covariate
 channels by default.
 
-Past and future weather lists are configured independently. For example,
-FeederBW has historical weather but no archived future forecast, so its future
-weather list is empty and calendar features remain available.
+One `covariates.weather` list selects the feature columns used for both past
+and future weather. `future_weather_source` selects whether future values come
+from available forecast vintages or realized measurements (`oracle`). The
+oracle mode is intentionally leaky and is valid only for adapters with
+realized weather measurements.
 
 ## Chronological partitioning and purging
 

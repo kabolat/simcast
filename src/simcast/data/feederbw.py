@@ -448,15 +448,16 @@ def load_adapter(config: ResolvedExperimentConfig) -> DatasetAdapter:
         raise ValueError(f"FeederBW target_column must be {TARGET_COLUMN!r}")
     if config.forecast.frequency_minutes != TARGET_RESOLUTION_MINUTES:
         raise ValueError("FeederBW initial adapter requires 15-minute forecast resolution")
-    if config.covariates.future_weather_source != "none" or config.covariates.weather:
+    if config.covariates.future_weather_source != "oracle":
         raise ValueError(
-            "FeederBW has no archived forecasts; use future_weather_source: none and covariates.weather: []"
+            "FeederBW has no archived future forecasts; use future_weather_source: oracle "
+            "to use realized weather (which leaks future information)"
         )
     if not config.covariates.calendar.enabled:
         raise ValueError("FeederBW requires future-known calendar covariates")
-    weather_fields = config.covariates.past_weather
+    weather_fields = config.covariates.weather
     if not weather_fields or any(field not in WEATHER_FEATURES for field in weather_fields):
-        raise ValueError(f"FeederBW past_weather must select from {list(WEATHER_FEATURES)}")
+        raise ValueError(f"FeederBW covariates.weather must select from {list(WEATHER_FEATURES)}")
 
     root = Path(config.data.local_dir).expanduser().resolve()
     metadata = read_metadata(root / METADATA_FILE)
@@ -514,9 +515,11 @@ def load_adapter(config: ResolvedExperimentConfig) -> DatasetAdapter:
     latest_metadata, capacity_totals = _latest_metadata(metadata, feeder_ids)
     weather_summary = {
         "fields": list(weather_fields),
-        "usage": "historical_only",
+        "past_usage": "historical measured weather",
+        "future_weather_source": config.covariates.future_weather_source,
+        "future_weather_usage": "realized measurements; future information leakage",
         "availability": "last hourly timestamp no later than each 15-minute history timestamp",
-        "future_weather_supplied": False,
+        "future_weather_supplied": True,
         "source_rows": int(len(selected_weather)),
         "source_start_utc": pd.Timestamp(selected_weather[SOURCE_TIMESTAMP_COLUMN].min()).isoformat(),
         "source_end_utc": pd.Timestamp(selected_weather[SOURCE_TIMESTAMP_COLUMN].max()).isoformat(),

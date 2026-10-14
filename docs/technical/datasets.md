@@ -18,7 +18,7 @@ Lookback, horizon, origin time/stride, frequency, and chronological split remain
 |---|---|---|---|---|
 | `liander2024` (default) | OpenSTEF Liander2024 Energy Forecasting Benchmark | One configured physical group: transformer, solar park, wind park, MV feeder, or station installation | Base-specific; supplied configs use 15-minute data, daily origins, 7-day lookback, 1-day horizon | Load targets, measured historical weather, versioned future weather, optional locations |
 | `gefcom2014_wind` | `rebase-energy/gefcom2014`, pinned in the base YAML | Ten wind zones, ordered `gefcom_wind::z1` through `gefcom_wind::z10` | Hourly; 00:00 UTC daily origins; 168-hour lookback; 24-hour horizon | Normalized power, four supplied NWP wind components, UTC hour features; no coordinates |
-| `feederbw` | FeederBW v1.1, Zenodo record 19550073 | Complete configured substation group; supplied base has five feeders | 15-minute mean target; 23:45 UTC daily origins; 7-day lookback; 1-day horizon | Active power, selected historical weather, future-known calendar; no future weather |
+| `feederbw` | FeederBW v1.1, Zenodo record 19550073 | Complete configured substation group; supplied base has five feeders | 15-minute mean target; 23:45 UTC daily origins; 7-day lookback; 1-day horizon | Active power, historical and realized future weather (`oracle`), calendar |
 
 ### Liander2024
 
@@ -67,13 +67,13 @@ target grid has 70,176 intervals with 67,796 complete for all feeders (96.61%)
 at the supplied threshold. This corresponds to roughly 706 complete days
 before window requirements.
 
-The archive provides hourly historical weather, not forecast vintages. The
-base therefore lists eight allowed fields under `covariates.past_weather`,
-leaves `covariates.weather` empty, and sets
-`future_weather_source: none`. The shared adapter independently assembles
-past weather and future-known calendar inputs; no realized future weather is
-passed to Chronos. Metadata contributes only the stable grouping and
-diagnostics, never model covariates. The diagnostic command
+The archive provides hourly measured weather, not forecast vintages. The base
+lists the eight allowed fields once under `covariates.weather` and sets
+`future_weather_source: oracle`. Past covariates use measured weather available
+by the origin; future covariates use realized future measurements and therefore
+deliberately leak future information. Selecting `vintage` raises an error
+because no archived forecasts are available. Metadata contributes only the
+stable grouping and diagnostics, never model covariates. The diagnostic command
 `uv run feederbw-info --base configs/bases/feederbw/substation_52.yaml`
 reports data coverage, per-feeder completeness, target range, weather window,
 and latest-per-feeder metadata summaries.
