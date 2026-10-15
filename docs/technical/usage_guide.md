@@ -100,52 +100,44 @@ The patch only exposes the output-patch representation used as a conditioning
 feature; it does not change forecast quantiles.
 
 Chronos weights are retrieved through the Hugging Face cache. Public
-retrieval works without authentication but is rate-limited; optionally set a
-token:
+retrieval works without authentication but is rate-limited. For reusable
+authentication, log in once from the project environment:
 
 ```bash
-export HF_TOKEN=...
+uv run hf auth login
+uv run hf auth whoami
 ```
 
-The Liander dataset defaults to `data/liander2024`; GEFCom2014 Wind defaults to
-`data/gefcom2014`. The base's `data.local_dir` selects the local destination.
-Two environment variables change local behaviour without changing any
-scientific result:
+The login command prompts for a Hugging Face token and saves it for future
+commands run by the same user. `whoami` checks that the saved credentials
+authenticate without printing the token. An `HF_TOKEN` environment variable is
+an alternative for a single shell or automated job; it must be present in the
+environment that launches `uv run` and is not shared with other terminals.
+For automation, provide it through the job's secret manager rather than
+writing the token into a command or shell history.
+
+The selected base's `data.local_dir` selects the local destination. The
+[dataset references](../datasets/README.md) describe each adapter's source
+files and local-data defaults. These environment variables change local
+behaviour without changing any scientific result:
 
 ```bash
-export SIMCAST_DATA_DIR=/absolute/path/to/liander2024
+export SIMCAST_DATA_DIR=/absolute/path/to/local-data
 export SIMCAST_DEVICE=cuda
 ```
 
-Download only the files required by one base:
+Download only the files required by one base. Replace the example path with a
+base from the relevant dataset reference:
 
 ```bash
-uv run download-data --base configs/bases/liander2024/transformer.yaml
+BASE_CONFIG=path/to/base.yaml
+uv run download-data --base "$BASE_CONFIG"
 ```
 
-Choosing a different base selects a different group: the transformer base has
-$K_g=15$, the solar and wind bases $K_g=5$. The solar base also declares
-isotonic quantile repair.
-
-The GEFCom2014 Wind base selects ten zones as one fixed group, hourly normalized
-power, 168 hours of history, a 24-hour horizon, and daily 00:00 UTC origins. Its
-four supplied NWP fields are treated as available according to an explicit
-inferred daily-run convention. The provenance and limitations of that
-assumption, along with a guide to both supported adapters, are in
-[Dataset adapters](datasets.md).
-
-To build and run the first GEFCom lab experiment:
-
-```bash
-uv run download-data --base configs/bases/gefcom2014/wind.yaml
-uv run cache --base configs/bases/gefcom2014/wind.yaml
-uv run composite --config configs/venues/lab/gefcom_wind_smoke.yaml
-```
-
-The composite uses M0, M1, and a deliberately small M2 budget. Cache creation
-uses the same pinned Chronos-2 path as Liander. A compatible cache can be
-reused across methods; the adapter ID and its scientific options participate in
-cache identity.
+Each base defines its group, protocol, and adapter-specific source options.
+See the selected dataset reference for those values and its usage commands. A
+compatible cache can be reused across methods; the adapter ID and its
+non-empty scientific options participate in cache identity.
 
 ## 4. Frozen-marginal construction
 
@@ -154,7 +146,7 @@ finite-quantile PIT observations for one base without fitting any dependence
 method:
 
 ```bash
-uv run cache --base configs/bases/liander2024/transformer.yaml
+uv run cache --base path/to/base.yaml
 ```
 
 The cache location is derived from the base's marginal fingerprint (see
@@ -190,9 +182,9 @@ Methods, venues, evaluations, and reports do not enter $h(b)$, so changing
 them never rebuilds Chronos. Local data location, device, and Chronos batch
 size are operational and are excluded as well. Changing the ordered entity
 IDs, adapter or non-empty adapter options, weather source, split, horizon,
-Chronos revision, or any `pit.*` field selects a different cache. The default
-Liander adapter and its empty options are omitted from the fingerprint so
-existing Liander caches retain their identity.
+Chronos revision, or any `pit.*` field selects a different cache. The implicit
+default adapter and an empty options mapping are normalized for backward
+compatibility with existing cache identities.
 
 Implementation: `base_fingerprint` and `locate_compatible_cache`.
 
@@ -203,7 +195,7 @@ quickest way to study a single hypothesis:
 
 ```bash
 uv run singular \
-  --base configs/bases/liander2024/transformer.yaml \
+  --base path/to/base.yaml \
   --method configs/methods/m4_conditional_kernel.yaml
 ```
 
@@ -218,7 +210,7 @@ numbers):
 
 ```bash
 uv run singular \
-  --base configs/bases/liander2024/transformer.yaml \
+  --base path/to/base.yaml \
   --method configs/methods/m4_conditional_kernel.yaml \
   --reference-method configs/methods/m0_independent.yaml
 ```
@@ -248,8 +240,8 @@ name: main              # optional; defaults to the file name
 venue: example          # must match configs/venues/<venue>/
 
 bases:
-  - id: transformer
-    config: ../../bases/liander2024/transformer.yaml
+  - id: example_group
+    config: ../../bases/example.yaml
 
 methods:
   - id: m0
@@ -578,9 +570,9 @@ parents and replaces only the fields it states:
 ```yaml
 extends: common.yaml
 kind: base
-id: liander2024_transformer
+id: example_base
 data:
-  entity_type: transformer
+  entity_type: example_type
 ```
 
 Relative parent paths are resolved from the child file, several parents are
@@ -591,11 +583,11 @@ too, as `configs/venues/powertech2027/main.yaml` does.
 ### Reading a local value from the environment
 
 ```yaml
-local_dir: ${SIMCAST_DATA_DIR:-data/liander2024}
+local_dir: ${SIMCAST_DATA_DIR:-data/local-data}
 ```
 
-This uses `SIMCAST_DATA_DIR` when set and `data/liander2024` otherwise, so the
-data location changes without editing the base.
+This uses `SIMCAST_DATA_DIR` when set and the configured default otherwise, so
+the data location changes without editing the base.
 
 ### Temporary command-line overrides
 
@@ -604,7 +596,7 @@ base value for that command only. The key follows the YAML nesting with dots
 and the value is parsed as YAML:
 
 ```bash
-uv run cache --base configs/bases/liander2024/transformer.yaml \
+uv run cache --base path/to/base.yaml \
   --set pit.dependence_transform=training_frequency
 ```
 
@@ -640,7 +632,7 @@ composite entries (§6), so they are recorded in the resolved composite.
 | `ModuleNotFoundError: simcast` in Jupyter | select or install the `Python (simcast)` kernel and start Jupyter with `uv run jupyter lab` |
 | Dataset file missing | set `SIMCAST_DATA_DIR` or run `uv run download-data` for the base |
 | Cache file or `.zmetadata` missing | the cache is absent or incomplete; rebuild it, using `--overwrite` only for a deliberate replacement |
-| Hugging Face unauthenticated warning | public retrieval is rate-limited; optionally set `HF_TOKEN` |
+| Hugging Face unauthenticated warning | run `uv run hf auth whoami`; if it fails, authenticate with `uv run hf auth login` in the same user account |
 | No crossing figure in notebook 02 | the selected cache has no representative crossing; this is a valid result |
 | `evaluate`/`report` reports several runs | pass `--run-id`, or use `--config` with `--run-root` |
 | Report rejects a metric | add it to the evaluation's `metrics` and run `evaluate --force`, or drop it from the report |

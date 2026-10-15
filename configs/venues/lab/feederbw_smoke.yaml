@@ -1,0 +1,23 @@
+kind: composite
+name: feederbw_smoke
+venue: lab
+bases:
+  - id: feederbw_substation_52
+    config: ../../bases/feederbw/substation_52.yaml
+methods:
+  - id: m0
+    method: ../../methods/m0_independent.yaml
+  - id: m1
+    method: ../../methods/m1_static_gaussian.yaml
+  - id: m2
+    method: ../../methods/m2_conditional_low_rank.yaml
+    overrides:
+      features:
+        use_location: false
+      optimization:
+        epochs: 2
+        patience: 1
+evaluations:
+  - id: standard
+    config: ../../evaluations/standard.yaml
+    method_ids: [m0, m1, m2]

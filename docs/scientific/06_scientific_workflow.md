@@ -134,8 +134,9 @@ reference is fitted and evaluated with common random numbers. The saved base
 and method remain separate, preserving the logic of controlled comparison.
 
 ```bash
+BASE_CONFIG=path/to/base.yaml
 uv run singular \
-  --base configs/bases/liander2024/transformer.yaml \
+  --base "$BASE_CONFIG" \
   --method configs/methods/m3_set_aware_low_rank.yaml \
   --reference-method configs/methods/m0_independent.yaml
 ```

@@ -12,11 +12,12 @@ Simcast asks one narrow question:
 > sampling with a learned same-lead cross-entity copula?
 
 The distinction between *marginal forecasting* and *dependence modelling* is
-fundamental. Chronos-2 supplies the native quantile grid; all supplied Liander
-bases inherit deterministic isotonic monotonicity repair from the shared base
-configuration. The resulting FM-derived grid is then fixed across M0--M4. Dependence models change only which marginal outcomes
-occur together. They do not fine-tune Chronos, alter the fixed grid, or model
-dependence between different forecast leads.
+fundamental. Chronos-2 supplies the native quantile grid; all supplied base
+configurations inherit deterministic isotonic monotonicity repair from the
+shared base configuration. The resulting FM-derived grid is then fixed across
+M0--M4. Dependence models change only which marginal outcomes occur together.
+They do not fine-tune Chronos, alter the fixed grid, or model dependence
+between different forecast leads.
 
 ## Scientific documentation
 
@@ -41,7 +42,10 @@ Use these documents to operate or inspect the repository:
 1. [Usage guide: installation, fitting, evaluation, reporting, and outputs](technical/usage_guide.md)
 2. [Configuration reference: base, method, composite, evaluation, and report fields](technical/configuration_reference.md)
 3. [Artifact reference: cache, fit, evaluation, and report schemas](technical/artifact_reference.md)
-4. [Dataset adapters: supported data, availability assumptions, and extension guide](technical/datasets.md)
+4. [Data adapter interface and extension guide](technical/data_adapter_interface.md)
+
+Dataset-specific scientific assumptions and configuration are documented
+separately in the [dataset references](datasets/README.md).
 
 The tracks deliberately cross-reference one another. A scientific chapter
 states the statistical object and links to the relevant configuration or

@@ -400,8 +400,9 @@ looking at test results (see [Chapter 7](07_experiments_and_results.md)).
 WIS adds most when it is read through its components. Each $\mathrm{IS}_\alpha$
 splits into the width $u-l$ (sharpness) and the penalties for observations
 below $l$ or above $u$ (calibration), and `interval_width_*`, `coverage_*`, and
-`interval_score_*` are stored per level for this purpose. One half of this WIS,
-as an average pinball loss, was the GEFCom2014 score (Hong et al., 2016).
+`interval_score_*` are stored per level for this purpose. One half of this WIS
+is the average pinball loss commonly reported by quantile-forecasting
+benchmarks.
 
 When reading results:
 

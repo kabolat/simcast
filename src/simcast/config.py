@@ -62,6 +62,15 @@ class DataConfig(ConfigModel):
         return self
 
 
+class DownloadDataConfig(ConfigModel):
+    """Dataset source fields needed to retrieve files, without experiment-group settings."""
+
+    adapter: str
+    dataset_id: str
+    revision: str
+    local_dir: Path
+
+
 class ForecastConfig(ConfigModel):
     frequency_minutes: PositiveInt = 15
     origin_time: time = time(23, 45)
@@ -107,7 +116,6 @@ class CovariatesConfig(ConfigModel):
         if len(value) != len(set(value)):
             raise ValueError("covariates.weather cannot contain duplicate names")
         return value
-
 
 class SplitConfig(ConfigModel):
     tune_fraction: Fraction = 0.80
@@ -381,6 +389,16 @@ class BaseExperimentConfig(ConfigModel):
         if any(not entity_id.startswith(prefix) for entity_id in self.protocol.ordered_entity_ids):
             raise ValueError("ordered entity IDs must belong to data.entity_type")
         return self
+
+
+class DatasetDownloadConfig(ConfigModel):
+    """Dataset-wide file download request, separate from a forecast experiment base."""
+
+    kind: Literal["download"]
+    id: Slug
+    data: DownloadDataConfig
+    scope: Literal["all"]
+    entity_count: PositiveInt
 
 
 class OptimizationConfig(TrainingConfig):
@@ -702,6 +720,18 @@ def load_base_config(path: str | Path, overrides: Sequence[str] = ()) -> BaseExp
     """Load one complete frozen-marginal experiment base."""
 
     return BaseExperimentConfig.model_validate(_load_role_values(path, overrides))
+
+
+def load_download_config(
+    path: str | Path,
+    overrides: Sequence[str] = (),
+) -> BaseExperimentConfig | DatasetDownloadConfig:
+    """Load either an experiment base or a dataset-wide download profile."""
+
+    values = _load_role_values(path, overrides)
+    if values.get("kind") == "download":
+        return DatasetDownloadConfig.model_validate(values)
+    return BaseExperimentConfig.model_validate(values)
 
 
 def load_method_config(path: str | Path, overrides: Sequence[str] = ()) -> MethodConfig:

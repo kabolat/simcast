@@ -1,5 +1,5 @@
 # GEFCom2014 wind track: 10 zones as one fixed 10-entity group; normalized hourly power; supplied NWP.
-# Timestamps are treated as UTC. The NWP run-availability rule is inferred (see docs/technical/datasets.md).
+# Timestamps are treated as UTC. The NWP run-availability rule is inferred (see docs/datasets/gefcom2014_wind.md).
 kind: base
 id: gefcom2014_wind
 data:

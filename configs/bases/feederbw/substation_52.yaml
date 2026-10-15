@@ -1,0 +1,77 @@
+# FeederBW v1.1, selected substation 52: largest observed group, best metadata coverage among K=5 ties.
+kind: base
+id: feederbw_substation_52
+data:
+  adapter: feederbw
+  dataset_id: https://zenodo.org/records/19550073
+  revision: v1.1
+  local_dir: ${SIMCAST_DATA_DIR:-data/feederbw}
+  entity_type: feederbw
+  target_column: active_power_kW
+  options:
+    substation_id: 52
+    source_resolution_minutes: 1
+    aggregation: mean
+    minimum_samples_per_interval: 15
+    metadata_usage: grouping_and_diagnostics_only
+
+protocol:
+  entity_count: 5
+  ordered_entity_ids:
+    - feederbw::feeder_060
+    - feederbw::feeder_106
+    - feederbw::feeder_109
+    - feederbw::feeder_165
+    - feederbw::feeder_170
+
+forecast:
+  frequency_minutes: 15
+  origin_time: "23:45"
+  lookback_steps: 672
+  horizon_steps: 96
+  origin_stride_steps: 96
+
+covariates:
+  weather:
+    - direct_radiation_W/m2
+    - diffuse_radiation_W/m2
+    - air_temperature_C
+    - precipitation_kg/m2
+    - humidity_kg/kg
+    - max_wind_gust_m/s
+    - meridional_wind_m/s
+    - zonal_wind_m/s
+  future_weather_source: oracle  # Oracle experiment: realized future weather; intentionally leaky, not operational.
+  calendar:
+    enabled: true
+    include_hour: true
+    include_day_of_week: true
+    include_is_weekend: true
+
+split:
+  tune_fraction: 0.80
+  validation_fraction_within_tune: 0.20
+  purge_overlapping_horizons: true
+
+chronos:
+  source_url: https://github.com/amazon-science/chronos-forecasting.git
+  source_revision: 8589d1988e9676817548e9626738ff06b6ca6370
+  model_id: amazon/chronos-2
+  model_revision: 29ec3766d36d6f73f0696f85560a422f50e8498c
+  device: ${SIMCAST_DEVICE:-cuda}
+  dtype: bfloat16
+  batch_size: 256
+
+pit:
+  mode: discretized
+  monotone_repair: isotonic
+  dependence_transform: training_frequency
+  eps: 1.0e-7
+
+runtime:
+  deterministic: true
+  log_level: INFO
+
+output:
+  cache_dir: artifacts/cache
+  save_resolved_config: true

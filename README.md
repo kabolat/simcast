@@ -68,10 +68,11 @@ lists bases, method variants, and seeds; no hidden Cartesian grid is generated.
 Evaluations score fits and reports compare evaluated methods; neither changes
 a fit, so both can be repeated on a completed run.
 
-Data ingestion is selected by the explicit `data.adapter` field. The supported
-adapters are Liander2024 and GEFCom2014 Wind; their data, availability rules,
-base files, and adapter extension contract are described in
-[`docs/technical/datasets.md`](docs/technical/datasets.md).
+Data ingestion is selected by the explicit `data.adapter` field. The
+[dataset references](docs/datasets/README.md) document each adapter's data,
+availability rules, base files, and adapter-specific options. The generic
+[adapter interface](docs/technical/data_adapter_interface.md) describes how
+the data layer is extended.
 
 The marginal cache is identified by a SHA-256 fingerprint of the scientific
 inputs that determine it, so method, venue, evaluation, and report settings

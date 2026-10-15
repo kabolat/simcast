@@ -1,0 +1,9 @@
+kind: download
+id: feederbw_all
+scope: all
+entity_count: 200
+data:
+  adapter: feederbw
+  dataset_id: https://zenodo.org/records/19550073
+  revision: v1.1
+  local_dir: ${SIMCAST_DATA_DIR:-data/feederbw}

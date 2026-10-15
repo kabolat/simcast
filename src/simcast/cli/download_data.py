@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from simcast.config import DataConfig
 
 
-def allow_patterns(data: str | DataConfig) -> list[str]:
+def allow_patterns(data: str | DataConfig, *, entity_ids: Sequence[str] = ()) -> list[str]:
     """Snapshot paths the configured adapter needs; a bare string is a Liander entity type."""
 
     from simcast.config import DataConfig
@@ -20,7 +20,7 @@ def allow_patterns(data: str | DataConfig) -> list[str]:
 
     if isinstance(data, str):
         data = DataConfig(entity_type=data)
-    return adapter_spec(data.adapter).allow_patterns(data)
+    return adapter_spec(data.adapter).allow_patterns(data, entity_ids=entity_ids)
 
 
 def download_data(
@@ -31,9 +31,17 @@ def download_data(
 ) -> Path:
     """Load configuration only when invoked, then fetch its pinned dataset files."""
 
-    from simcast.config import load_base_config
+    from simcast.config import DatasetDownloadConfig, load_download_config
+    from simcast.data.registry import adapter_spec
 
-    config = load_base_config(Path(config_path), overrides=overrides)
+    config = load_download_config(Path(config_path), overrides=overrides)
+    adapter = adapter_spec(config.data.adapter)
+    if isinstance(config, DatasetDownloadConfig):
+        if adapter.download is None:
+            raise ValueError(f"adapter {config.data.adapter!r} does not support dataset-wide download profiles")
+        return Path(adapter.download(config, snapshot_download_fn=snapshot_download_fn))
+    if adapter.download is not None:
+        return Path(adapter.download(config, snapshot_download_fn=snapshot_download_fn))
     if snapshot_download_fn is None:
         from huggingface_hub import snapshot_download
 
@@ -48,20 +56,21 @@ def download_data(
         repo_type="dataset",
         revision=data.revision,
         local_dir=local_dir,
-        allow_patterns=allow_patterns(data),
+        allow_patterns=allow_patterns(data, entity_ids=config.protocol.ordered_entity_ids),
     )
     return Path(downloaded)
 
 
 def main(
-    base: Annotated[
+    config_path: Annotated[
         Path,
         typer.Option(
+            "--config",
             "--base",
             exists=True,
             dir_okay=False,
             readable=True,
-            help="Base YAML identifying the data and physical group to download.",
+            help="Experiment base or dataset-wide download profile.",
         ),
     ],
     override: Annotated[
@@ -71,7 +80,7 @@ def main(
 ) -> None:
     """Download data selected by a Simcast YAML configuration."""
 
-    path = download_data(base, overrides=override or ())
+    path = download_data(config_path, overrides=override or ())
     typer.echo(path)
 
 

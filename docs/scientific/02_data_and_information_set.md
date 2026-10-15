@@ -4,75 +4,23 @@
 split arguments are listed in the
 [configuration reference](../technical/configuration_reference.md). The
 [usage guide](../technical/usage_guide.md) explains data download and local
-data locations.
+data locations. Source revisions, population definitions, source-specific
+availability assumptions, and adapter options are documented in the separate
+[dataset references](../datasets/README.md).
 
-## Dataset and homogeneous groups
+## Adapters and homogeneous groups
 
-The pipeline consumes a dataset adapter rather than assuming a single data
-source. The adapter supplies the ordered entity group, UTC target/covariate
-frames, common coverage, point-in-time input assembly, and provenance. Forecast
-frequency, origin phase and stride, lookback, horizon, and chronological split
-use the same shared window and split logic for every adapter. See the
-[dataset adapter guide](../technical/datasets.md) for the interface and setup.
+The pipeline consumes a configured adapter rather than assuming one source
+schema. An adapter supplies an ordered, static entity group, UTC target and
+covariate frames, common coverage, point-in-time input assembly, and
+provenance. Forecast frequency, origin phase and stride, lookback, horizon,
+and chronological split use shared window and split logic. See the generic
+[adapter interface](../technical/data_adapter_interface.md) for the contract.
 
-### Liander2024
-
-The Liander2024 bases use the Energy Forecasting Benchmark snapshot
-`dce7fe9bbae0d62288986fa97fa1ee7e9d3b7044`. Data are downloaded from
-`OpenSTEF/liander2024-energy-forecasting-benchmark` with only the paths needed
-for the selected entity type:
-
-```text
-liander2024_targets.yaml
-load_measurements/<entity_type>/*.parquet
-weather_measurements/<entity_type>/*.parquet
-weather_forecasts_versioned/<entity_type>/*.parquet
-```
-
-The code supports five homogeneous groups:
-
-| Entity type / static group $g$ | Full-group cardinality $K_g$ | Target availability rule |
-|---|---:|---|
-| `transformer` | 15 | available at measurement timestamp |
-| `solar_park` | 5 | available at measurement timestamp |
-| `wind_park` | 5 | available at measurement timestamp |
-| `mv_feeder` | 15 | available at measurement timestamp |
-| `station_installation` | 15 | available at measurement timestamp |
-
-Full-group cardinality is not hardcoded in model code. The group builder selects every
-metadata row whose `group_name` equals the requested type, preserving YAML
-order. The canonical ID is `group_name::name`; names alone are insufficient
-because some physical names occur in multiple categories.
-
-Every experiment uses one static group. Missing data never cause the group to
-shrink for a particular case.
-
-### GEFCom2014 Wind
-
-The GEFCom base uses the pinned `rebase-energy/gefcom2014` dataset revision and
-reads `data/wind_targets.parquet` and `data/wind_nwp.parquet`. It forms one
-ordered group of ten zones, `gefcom_wind::z1` through `gefcom_wind::z10`.
-Targets are hourly normalized wind power for 2012-01-01 01:00 through
-2013-01-01 00:00; naive source timestamps are interpreted as UTC. Each zone
-has four supplied NWP fields (`u10`, `v10`, `u100`, `v100`) and cyclic UTC hour
-features. The configured protocol is one origin per day at 00:00 UTC, 168
-lookback hours, and 24 future hours. The chronological 80/20 tune/test split
-uses the same horizon-purge implementation as every other dataset.
-
-The repack's `issue_time` and `knowledge_time` values describe monthly
-competition task releases rather than physical NWP issuance, so they are not
-used to establish forecast availability. The observed NWP runs appear stitched
-daily, consistent with coverage `(S, S + 24 h]`; the adapter assigns that run
-`available_at = S`. The source does not establish when the run was issued or
-actually became available. Timestamps are treated as UTC and the run-window
-rule is explicitly marked as inferred in cache provenance. Its start hour and
-length are fingerprinted base options. With the configured 00:00 origin, the
-next 24 valid hours (01:00 through the following 00:00) are selected under
-this assumption.
-The supplied NWP is the only future weather source; oracle weather is rejected.
-The dataset has no locations, so location-based conditional features are
-disabled in its supplied lab composite. Missing required input at any zone
-makes the full-group origin ineligible.
+Each experiment retains its complete group. If a member or required input is
+invalid, eligibility is evaluated for the full group rather than silently
+reducing its cardinality. Adapter-specific group definitions and exceptions
+are documented in the corresponding dataset reference.
 
 ## Timestamp normalization
 
@@ -82,14 +30,15 @@ All internal timestamps are timezone-aware UTC. Readers normalize either a
 weather, and stably sort the index. Naive forecast-origin timestamps are
 rejected by the window layer.
 
-This repository uses UTC calendar features. Consequently daylight-saving
-changes do not alter the 96-step daily grid, although upstream local-time data
-may still contain missing observations around transitions.
+Calendar features use normalized UTC timestamps. Local daylight-saving shifts
+do not alter the configured UTC grid, although an upstream source may still
+contain gaps around local-time transitions.
 
 ## Forecast windows
 
-For the supplied Liander bases, let $\Delta=15$ minutes, lookback $L=672$ steps (seven days), and horizon
-$H=96$ steps (one day). For forecast instance $i$ with origin $t^{(i)}$, the exact windows are
+Let $\Delta$ be the configured sampling interval, $L$ the lookback length, and
+$H$ the horizon length. For forecast instance $i$ with origin $t^{(i)}$, the
+exact windows are
 
 $$
 \mathcal T_{\mathrm{past}}^{(i)}
@@ -102,12 +51,9 @@ $$
 $$
 
 Thus lead $\tau$ corresponds to $t^{(i)}+\tau\Delta$ and is one-based in public
-interfaces. Origins are generated daily (`origin_stride_steps: 96`) at 23:45
-UTC on a stable phase anchored to 1970-01-01 23:45 UTC. A candidate is created
-only when the common target coverage contains both complete timestamp grids.
-
-The real all-type study retained 347 daily origins, from 2024-01-19 23:45 UTC
-through 2024-12-30 23:45 UTC.
+interfaces. Candidate origins follow the configured time, phase, and stride;
+a candidate is created only when common target coverage contains both
+complete timestamp grids.
 
 ## The point-in-time information set
 
@@ -122,18 +68,20 @@ $$
 a_k(s)=s.
 $$
 
-The target value is supplied to Chronos if $s\le t^{(i)}$; otherwise it is
-replaced with `NaN`. A target-file `available_at` column is intentionally
-ignored. This makes the target-input rule the same for every entity type.
+The shared selector supplies the target if $s\le t^{(i)}$ and otherwise
+replaces it with `NaN`. It intentionally ignores a source target
+`available_at` column, so $a_k(s)=s$ is an implementation assumption, not a
+universal property of the raw data. Any source-reported release delay must be
+handled by its adapter and documented in that source's reference.
 
 Future target values are retained solely as labels. They are not passed to the
 Chronos test-mode dataset.
 
 ### Historical weather
 
-`weather_measurements` has no separate publication timestamp. The conservative
-rule treats measurement time as availability time, selects only $s\le t^{(i)}$,
-and reindexes to the exact lookback grid.
+Measured weather without a separate publication timestamp is treated as
+available at its observation time. Only observations at or before
+$t^{(i)}$ are selected for history and reindexed to the exact lookback grid.
 
 ### Future weather
 
@@ -143,10 +91,10 @@ filters to vintages with `available_at <= t^{(i)}`, stably sorts by
 availability, and takes the newest eligible vintage for $s$. It then reindexes
 to the exact horizon grid.
 
-`covariates.future_weather_source: oracle` instead takes the realized future
-rows from `weather_measurements` on the horizon grid. This deliberately uses
-information unavailable at the forecast origin and is therefore an oracle
-diagnostic, not a leakage-safe forecasting configuration.
+`covariates.future_weather_source: oracle` instead takes realized future
+measurement rows on the horizon grid. This deliberately uses information
+unavailable at the forecast origin and is therefore an oracle diagnostic,
+not a leakage-safe forecasting configuration.
 
 If any configured past or future covariate is non-finite for any entity, the
 entire origin is skipped before Chronos inference. This is stricter than
@@ -154,15 +102,9 @@ imputing unknown exogenous information.
 
 ## Covariates
 
-The default weather vector, in fixed configured order, is:
-
-1. `temperature_2m`
-2. `relative_humidity_2m`
-3. `cloud_cover`
-4. `wind_speed_10m`
-5. `shortwave_radiation`
-
-Five deterministic UTC calendar features are appended. For a periodic variable
+The ordered weather fields are selected by `covariates.weather`; their names
+and allowed values are adapter-specific and listed in the dataset references.
+When enabled, deterministic UTC calendar features are appended. For a periodic variable
 $x$ with period $P$, the encoding is $(\sin(2\pi x/P),\cos(2\pi x/P))$.
 The implemented cyclic variables are fractional hour with $P=24$ and zero-based
 weekday with $P=7$. The additional binary channel is
@@ -171,19 +113,25 @@ $$
 \mathrm{is\_weekend}=\mathbb 1\{\mathrm{dayofweek}\ge5\}.
 $$
 
-There is no day-of-year covariate. This gives 10 past and 10 future covariate
-channels by default.
+There is no day-of-year covariate. With all three calendar blocks enabled,
+these rules contribute five channels to past and future inputs.
 
-The past and future column lists must match exactly.
+One `covariates.weather` list selects the feature columns used for both past
+and future weather. `future_weather_source` selects whether future values come
+from available forecast vintages or realized measurements (`oracle`). The
+oracle mode is intentionally leaky and is valid only for adapters with
+realized weather measurements.
 
 ## Chronological partitioning and purging
 
-Given $N$ ordered eligible origins, the unpurged boundary counts are
+Given $N$ ordered eligible origins, let $f_{\mathrm{tune}}$ be
+`split.tune_fraction` and $f_{\mathrm{val}}$ be
+`split.validation_fraction_within_tune`. The unpurged boundary counts are
 
 $$
-N_{\mathrm{tune}}=\lfloor0.8N\rfloor,
+N_{\mathrm{tune}}=\lfloor f_{\mathrm{tune}}N\rfloor,
 \quad
-N_{\mathrm{val}}=\lfloor0.2N_{\mathrm{tune}}\rfloor,
+N_{\mathrm{val}}=\lfloor f_{\mathrm{val}}N_{\mathrm{tune}}\rfloor,
 \quad
 N_{\mathrm{train}}=N_{\mathrm{tune}}-N_{\mathrm{val}}.
 $$
@@ -198,10 +146,9 @@ t^{(i)}+H\Delta\ge t^{(i_{\mathrm{next}})}+\Delta.
 $$
 
 This prevents a realized target timestamp from appearing on both sides of a
-partition boundary when the origin stride is shorter than the horizon. With
-the current daily stride equal to the daily horizon, no boundary origin needs
-to be removed; the retained counts are 222 train, 55 validation, and 70 test.
-The purge remains important when either setting changes.
+partition boundary when the origin stride is shorter than the horizon. The
+purge can remove boundary origins; the configured split and retained counts
+are saved with each run.
 
 ## Missingness and complete-vector policy
 
@@ -234,15 +181,15 @@ Before treating a new run as valid, verify that:
 
 ## Worked origin example
 
-Let $t^{(i)}=$ 2024-06-01 23:45 UTC. With $L=672$ and $H=96$, history begins
-at 2024-05-26 00:00 UTC and ends at the origin. The first future target is at
-2024-06-02 00:00 UTC and the final one at 23:45 UTC. A target measured at the
-origin is immediately admissible; the 00:00 target is a future label.
+At origin $t^{(i)}$, the history starts at
+$t^{(i)}-(L-1)\Delta$ and ends at the origin. The first future target is at
+$t^{(i)}+\Delta$ and the final one at $t^{(i)}+H\Delta$. A target measured at
+the origin is admissible; every future target remains a label only.
 
-For a 12:00 future-weather value, `vintage` admits only forecasts whose
-`available_at` is no later than the origin. If vintages were issued at 18:00
-and 00:00, it selects 18:00. `oracle` instead selects the realized 12:00
-weather measurement and must be labelled an oracle diagnostic.
+For a requested future covariate timestamp, `vintage` admits only records
+whose `available_at` is no later than the origin and selects the newest
+eligible record. `oracle` selects realized measurements and must be labelled
+an oracle diagnostic.
 
 ## Configuration and implementation guidance
 
