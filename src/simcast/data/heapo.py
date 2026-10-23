@@ -24,6 +24,11 @@ ARCHIVE_SIZE = 458317017
 ARCHIVE_MD5 = "2b92b0d52487e1a733c35ee59860450d"
 ARCHIVE_PREFIX = "heapo_data/"
 TARGET_COLUMN = "kWh_received_Total"
+TARGET_LABEL_SHIFT = pd.Timedelta(minutes=15)
+INTERVAL_CONVENTION = (
+    "Raw interval boundaries are not established conclusively by v1 metadata, loader, or daily totals. "
+    "Conservatively treat raw t as [t,t+15min); represent and expose the value at completed boundary t+15min."
+)
 SMART_METER_COLUMNS = (
     "Household_ID", "AffectsTimePoint", "Group", "Timestamp",
     TARGET_COLUMN, "kWh_received_HeatPump", "kWh_received_Other",
@@ -141,6 +146,36 @@ def target_summary(frame: pd.DataFrame) -> dict[str, Any]:
         "absent_quarter_hours": slots - len(frame),
         "missing_fraction_within_lifetime": 1 - finite / slots,
     }
+
+
+def read_target(source: str | Path | IO[bytes], household_id: int) -> pd.DataFrame:
+    """Expose energy only at its conservatively assumed completed-interval boundary."""
+
+    raw = read_smart_meter(source, household_id)
+    target = raw.loc[:, [TARGET_COLUMN]].copy()
+    target.index = pd.DatetimeIndex(target.index + TARGET_LABEL_SHIFT, name="timestamp")
+    return target
+
+
+def daily_interval_check(quarter_hours: pd.DataFrame, daily: pd.DataFrame) -> dict[str, Any]:
+    """Compare complete UTC-day sums under both boundary interpretations, without filling gaps."""
+
+    daily_values = daily[TARGET_COLUMN].copy()
+    daily_values.index = pd.DatetimeIndex(pd.to_datetime(daily["Timestamp"], utc=True)).normalize()
+    result: dict[str, Any] = {}
+    for convention, offset in (("left_labelled", 0), ("right_labelled", -15)):
+        values = quarter_hours[TARGET_COLUMN].copy()
+        values.index = pd.DatetimeIndex(values.index) + pd.Timedelta(minutes=offset)
+        totals = values.resample("D").sum(min_count=96)
+        compared = pd.concat([totals.rename("quarters"), daily_values.rename("daily")], axis=1, sort=True).dropna()
+        difference = (compared["quarters"] - compared["daily"]).abs()
+        result[convention] = {
+            "complete_compared_days": len(compared),
+            "mean_absolute_difference_kWh": float(difference.mean()) if len(compared) else None,
+            "median_absolute_difference_kWh": float(difference.median()) if len(compared) else None,
+            "fraction_within_0.02_kWh": float((difference <= 0.02).mean()) if len(compared) else None,
+        }
+    return result
 
 
 def inspect_archive(path: str | Path, output: str | Path) -> dict[str, Any]:

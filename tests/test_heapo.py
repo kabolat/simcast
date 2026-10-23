@@ -5,6 +5,7 @@ import stat
 import zipfile
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 import simcast.data.heapo as heapo
@@ -14,6 +15,7 @@ from simcast.data.heapo import (
     household_number,
     read_households,
     read_smart_meter,
+    read_target,
     target_summary,
     verify_archive,
 )
@@ -41,6 +43,31 @@ def test_actual_v1_smart_meter_schema_and_missingness() -> None:
     assert summary["finite_quarter_hours"] == 2
     assert summary["missing_values"] == 1
     assert summary["absent_quarter_hours"] == 94
+
+
+def test_completed_interval_values_are_not_available_at_left_boundary() -> None:
+    from simcast.data.availability import select_available_past_targets
+
+    target = read_target(_meter(
+        "8790869;unknown;control;2022-05-07 23:45:00+00:00;1.75;;\n"
+        "8790869;unknown;control;2022-05-08 00:00:00+00:00;2.25;;\n"
+    ), 8790869)
+    assert target.index.tolist() == [pd.Timestamp("2022-05-08T00:00Z"), pd.Timestamp("2022-05-08T00:15Z")]
+    available = select_available_past_targets(
+        target, pd.Timestamp("2022-05-08T00:00Z"), target_column="kWh_received_Total",
+    )
+    assert available.iloc[0] == 1.75
+    assert pd.Timestamp("2022-05-08T00:15Z") not in available.index
+    assert target["kWh_received_Total"].tolist() == [1.75, 2.25]
+
+
+def test_completed_interval_daily_origin_has_first_forecast_ending_at_midnight() -> None:
+    from simcast.data.windows import make_forecast_window
+
+    window = make_forecast_window("2022-05-07T23:45Z", lookback_steps=672, horizon_steps=96)
+    assert window.past_timestamps[-1] == pd.Timestamp("2022-05-07T23:45Z")
+    assert window.future_timestamps[0] == pd.Timestamp("2022-05-08T00:00Z")
+    assert window.future_timestamps[-1] == pd.Timestamp("2022-05-08T23:45Z")
 
 
 @pytest.mark.parametrize("identifier", ["household::0", "household::01", "household::1.0", "../1", "1"])
