@@ -1,0 +1,27 @@
+kind: composite
+venue: lab
+bases:
+  - id: feederbw_all
+    config: ../../bases/feederbw/all_feeders.yaml
+methods:
+  - id: m0
+    method: ../../methods/m0_independent.yaml
+  - id: m1
+    method: ../../methods/m1_static_gaussian.yaml
+  - id: m2
+    method: ../../methods/m2_conditional_low_rank.yaml
+    overrides: {features:{use_location: False}, model: {latent_rank: 50}}
+  - id: m3
+    method: ../../methods/m3_set_aware_low_rank.yaml
+    overrides: {features:{use_location: False}, model: {latent_rank: 50}}
+evaluations:
+  - id: absolute_sum
+    config: ../../evaluations/absolute_sum.yaml
+    method_ids: [m0, m1, m2, m3]
+  - id: absolute_max
+    config: ../../evaluations/absolute_max.yaml
+    method_ids: [m0, m1, m2, m3]
+reports:
+  - id: lab_main
+    config: ../../reports/lab_main.yaml
+    evaluation_ids: [absolute_sum, absolute_max]

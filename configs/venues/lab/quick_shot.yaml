@@ -1,5 +1,4 @@
 kind: composite
-name: all_groups_m1
 venue: lab
 bases:
   - id: wind_park
@@ -12,4 +11,7 @@ methods:
 evaluations:
   - id: standard
     config: ../../evaluations/standard.yaml
+    method_ids: [m0, m1]
+  - id: less_quantiles
+    config: ../../evaluations/less_quantiles.yaml
     method_ids: [m0, m1]

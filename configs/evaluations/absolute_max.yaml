@@ -1,0 +1,4 @@
+extends: standard.yaml
+id: absolute_max
+evaluation:
+  cross_entity_statistic: absolute_max

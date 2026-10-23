@@ -118,6 +118,20 @@ def test_method_files_are_strictly_role_specific(
     assert set(method.model_fields_set | {"kind"}) == allowed_fields
 
 
+def test_small_conditional_methods_reduce_capacity_and_regularize_more() -> None:
+    m2 = load_method_config(METHODS / "m2_small.yaml")
+    m3 = load_method_config(METHODS / "m3_small.yaml")
+
+    assert isinstance(m2, ConditionalLowRankMethodConfig)
+    assert isinstance(m3, SetAwareLowRankMethodConfig)
+    assert m2.model.latent_rank == m3.model.latent_rank == 2
+    assert m2.model.hidden_dims == [64, 32]
+    assert (m3.model.model_dim, m3.model.num_layers, m3.model.num_heads) == (32, 1, 4)
+    assert m2.model.dropout == m3.model.dropout == 0.3
+    assert m2.optimization.learning_rate == m3.optimization.learning_rate == 3.0e-4
+    assert m2.optimization.weight_decay == m3.optimization.weight_decay == 1.0e-3
+
+
 @pytest.mark.parametrize(
     ("filename", "entity_type", "entity_count", "repair"),
     [

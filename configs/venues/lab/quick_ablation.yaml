@@ -1,0 +1,22 @@
+kind: composite
+venue: lab
+bases:
+  - id: wind_park
+    config: ../../bases/liander2024/wind_park.yaml
+methods:
+  - id: m0
+    method: ../../methods/m0_independent.yaml
+  - id: m2_w_location
+    method: ../../methods/m2_conditional_low_rank.yaml
+    seeds: [55]
+  - id: m2_wo_location
+    method: ../../methods/m2_conditional_low_rank.yaml
+    seeds: [55]
+    overrides: {features: {use_location: false}}
+evaluations:
+  - id: standard
+    config: ../../evaluations/standard.yaml
+    method_ids: [m0, m2_w_location, m2_wo_location]
+  - id: less_quantiles
+    config: ../../evaluations/less_quantiles.yaml
+    method_ids: [m0, m2_w_location, m2_wo_location]

@@ -1,0 +1,19 @@
+kind: composite
+extends: all_groups_all_methods.yaml
+name: all_groups_all_methods_long_context
+bases:
+  - id: mv_feeder 
+    config: ../../bases/liander2024/mv_feeder.yaml
+    overrides: {forecast: {lookback_steps: 2688}}
+  - id: transformer
+    config: ../../bases/liander2024/transformer.yaml
+    overrides: {forecast: {lookback_steps: 2688}}
+  - id: station_installation
+    config: ../../bases/liander2024/station_installation.yaml
+    overrides: {forecast: {lookback_steps: 2688}}
+  - id: solar_park
+    config: ../../bases/liander2024/solar_park.yaml
+    overrides: {forecast: {lookback_steps: 2688}}
+  - id: wind_park
+    config: ../../bases/liander2024/wind_park.yaml
+    overrides: {forecast: {lookback_steps: 2688}}

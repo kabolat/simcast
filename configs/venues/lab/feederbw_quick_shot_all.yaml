@@ -1,0 +1,21 @@
+kind: composite
+venue: lab
+bases:
+  - id: feederbw_all
+    config: ../../bases/feederbw/all_feeders.yaml
+methods:
+  - id: m0
+    method: ../../methods/m0_independent.yaml
+  - id: m1
+    method: ../../methods/m1_static_gaussian.yaml
+evaluations:
+  - id: absolute_sum
+    config: ../../evaluations/absolute_sum.yaml
+    method_ids: [m0, m1]
+  - id: absolute_max
+    config: ../../evaluations/absolute_max.yaml
+    method_ids: [m0, m1]
+reports:
+  - id: lab_main
+    config: ../../reports/lab_main.yaml
+    evaluation_ids: [absolute_sum, absolute_max]

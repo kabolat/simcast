@@ -1,0 +1,29 @@
+kind: method
+id: m3_small
+family: set_aware_low_rank
+features:
+  use_forecast_embedding: true
+  layer_normalize_embedding: true
+  use_quantile_shape: true
+  use_median: true
+  use_log_spread: true
+  use_within_patch_position: true
+  use_location: true
+  shape_eps: 1.0e-6
+  standardize_scalar_features: true
+model:
+  model_dim: 32
+  num_layers: 1
+  num_heads: 4
+  latent_rank: 2
+  dropout: 0.3
+  sigma_floor: 1.0e-3
+  jitter: 1.0e-6
+optimization:
+  seed: 42
+  batch_size: 64
+  epochs: 100
+  learning_rate: 3.0e-4
+  weight_decay: 1.0e-3
+  gradient_clip_norm: 1.0
+  patience: 12

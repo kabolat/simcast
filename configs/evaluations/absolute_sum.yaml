@@ -1,0 +1,4 @@
+extends: standard.yaml
+id: absolute_sum
+evaluation:
+  cross_entity_statistic: absolute_sum

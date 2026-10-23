@@ -1,0 +1,5 @@
+extends: standard.yaml
+id: less_quantiles
+evaluation:
+  quantile_levels: [0.05, 0.50, 0.95]
+  interval_levels: [0.90]

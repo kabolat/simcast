@@ -1,0 +1,39 @@
+kind: composite
+name: all_groups_all_methods_wo_weather
+venue: lab
+bases:
+  - id: mv_feeder_wo_weather
+    config: ../../bases/liander2024/mv_feeder.yaml
+    overrides: {covariates: {weather: []}}
+  - id: transformer_wo_weather
+    config: ../../bases/liander2024/transformer.yaml
+    overrides: {covariates: {weather: []}}
+  - id: station_installation_wo_weather
+    config: ../../bases/liander2024/station_installation.yaml
+    overrides: {covariates: {weather: []}}
+  - id: solar_park_wo_weather
+    config: ../../bases/liander2024/solar_park.yaml
+    overrides: {covariates: {weather: []}}
+  - id: wind_park_wo_weather
+    config: ../../bases/liander2024/wind_park.yaml
+    overrides: {covariates: {weather: []}}
+methods:
+  - id: m0
+    method: ../../methods/m0_independent.yaml
+  - id: m1
+    method: ../../methods/m1_static_gaussian.yaml
+  - id: m2
+    method: ../../methods/m2_conditional_low_rank.yaml
+  - id: m3
+    method: ../../methods/m3_set_aware_low_rank.yaml
+evaluations:
+  - id: absolute_sum
+    config: ../../evaluations/absolute_sum.yaml
+    method_ids: [m0, m1, m2, m3]
+  - id: absolute_max
+    config: ../../evaluations/absolute_max.yaml
+    method_ids: [m0, m1, m2, m3]
+reports:
+  - id: lab_main
+    config: ../../reports/lab_main.yaml
+    evaluation_ids: [absolute_sum, absolute_max]

@@ -1,5 +1,4 @@
 kind: composite
-name: all_groups_m1
 venue: lab
 bases:
   - id: mv_feeder 
@@ -20,4 +19,10 @@ methods:
 evaluations:
   - id: standard
     config: ../../evaluations/standard.yaml
+    method_ids: [m0, m1]
+  - id: absolute_sum
+    config: ../../evaluations/absolute_sum.yaml
+    method_ids: [m0, m1]
+  - id: absolute_max
+    config: ../../evaluations/absolute_max.yaml
     method_ids: [m0, m1]
