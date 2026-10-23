@@ -127,6 +127,23 @@ def test_metadata_is_retained_for_diagnostics_not_forecaster_inputs(tmp_path: Pa
         assert all(not key.startswith("Survey_") for key in model_input["past_covariates"])
 
 
+def test_tracked_heapo_protocol_is_native_variable_and_oracle() -> None:
+    from simcast.config import load_base_config
+
+    base = load_base_config(Path(__file__).parents[1] / "configs/bases/heapo/control_station_8jB.yaml")
+    assert base.protocol.cardinality_mode == "variable" and base.protocol.min_entities_per_case == 2
+    assert base.protocol.entity_count == 128
+    assert len(set(base.protocol.ordered_entity_ids)) == 128
+    forecast = base.forecast
+    assert (forecast.lookback_steps, forecast.horizon_steps, forecast.origin_stride_steps) == (672, 96, 96)
+    assert base.forecast.origin_time.isoformat() == "23:45:00"
+    assert base.split.purge_overlapping_horizons
+    assert base.covariates.future_weather_source == "oracle"
+    assert base.covariates.weather == ["Temperature_avg_hourly"]
+    assert base.pit.mode == "discretized" and base.pit.monotone_repair == "isotonic"
+    assert base.pit.dependence_transform == "training_frequency" and base.pit.eps == 1e-7
+
+
 def test_adapter_enforces_group_and_weather_mapping(tmp_path: Path) -> None:
     _source(tmp_path)
     with pytest.raises(ValueError, match="control/treatment"):

@@ -155,3 +155,33 @@ covariates:
     include_hour: true
     include_day_of_week: true
     include_is_weekend: true
+forecast:
+  frequency_minutes: 15
+  # Completed-boundary labels: first future interval ends at the following midnight.
+  origin_time: "23:45"
+  lookback_steps: 672
+  horizon_steps: 96
+  origin_stride_steps: 96
+split:
+  tune_fraction: 0.80
+  validation_fraction_within_tune: 0.20
+  purge_overlapping_horizons: true
+chronos:
+  source_url: https://github.com/amazon-science/chronos-forecasting.git
+  source_revision: 8589d1988e9676817548e9626738ff06b6ca6370
+  model_id: amazon/chronos-2
+  model_revision: 29ec3766d36d6f73f0696f85560a422f50e8498c
+  device: ${SIMCAST_DEVICE:-cuda}
+  dtype: bfloat16
+  batch_size: 128
+pit:
+  mode: discretized
+  monotone_repair: isotonic
+  dependence_transform: training_frequency
+  eps: 1.0e-7
+runtime:
+  deterministic: true
+  log_level: INFO
+output:
+  cache_dir: artifacts/cache
+  save_resolved_config: true
