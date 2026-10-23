@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import stat
 import zipfile
 from pathlib import Path
@@ -241,6 +242,194 @@ def test_source_diagnostics_match_generic_adapter_forecastability(tmp_path: Path
     assert training["zero_overlap_pairs_by_lead"] == [4, 4]
     assert report["source_label_active_K"]["overall"]["min"] >= 2
     assert report["source_label_active_K"]["overall"]["max"] == 5
+
+
+def test_standard_download_workflow_verifies_archive_and_extracts_selected_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import hashlib
+
+    import yaml
+
+    from simcast.cli.download_data import download_data
+
+    root = tmp_path / "data"
+    (root / "archives").mkdir(parents=True)
+    archive = root / "archives/heapo_data.zip"
+    _archive(archive)
+    monkeypatch.setattr(heapo, "ARCHIVE_SIZE", archive.stat().st_size)
+    monkeypatch.setattr(heapo, "ARCHIVE_MD5", hashlib.md5(archive.read_bytes(), usedforsecurity=False).hexdigest())
+    runtime = _config(root, ids=(1,))
+    base = tmp_path / "base.yaml"
+    base.write_text(yaml.safe_dump({
+        "kind": "base", "id": "heapo_test", "data": runtime.data.model_dump(mode="json"),
+        "protocol": runtime.protocol.model_dump(mode="json"),
+    }))
+    assert download_data(base) == root
+    assert (root / "smart_meter_data/15min/1.csv").is_file()
+    assert (root / "weather_data/hourly/8jB.csv").is_file()
+    assert not (root / "smart_meter_data/15min/2.csv").exists()
+
+
+def test_download_checksum_failure_does_not_promote_corrupt_partial(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_curl(command, *, check):
+        assert check and "--continue-at" in command
+        (tmp_path / "archives/heapo_data.zip.part").write_bytes(b"abd")
+
+    monkeypatch.setattr(heapo.subprocess, "run", fake_curl)
+    monkeypatch.setattr(heapo, "ARCHIVE_SIZE", 3)
+    monkeypatch.setattr(heapo, "ARCHIVE_MD5", "900150983cd24fb0d6963f7d28e17f72")
+    with pytest.raises(ValueError, match="size/MD5"):
+        heapo._download_archive(tmp_path)
+    assert not (tmp_path / "archives/heapo_data.zip").exists()
+    assert not (tmp_path / "archives/heapo_data.zip.part").exists()
+
+
+def test_control_filter_rejects_smart_meter_group_disagreement(tmp_path: Path) -> None:
+    _source(tmp_path)
+    path = tmp_path / "smart_meter_data/15min/101.csv"
+    path.write_text(path.read_text().replace(";control;", ";treatment;"))
+    with pytest.raises(ValueError, match="disagrees"):
+        heapo.load_adapter(_config(tmp_path))
+
+
+def test_utc_offsets_are_normalized_without_treating_ids_as_coordinates() -> None:
+    target = heapo.read_target(_meter(
+        "101;unknown;control;2024-03-31 03:00:00+02:00;1.0;;\n"
+        "101;unknown;control;2024-03-31 03:15:00+02:00;;;\n"
+    ), 101)
+    assert target.index[0] == pd.Timestamp("2024-03-31T01:15Z")
+    assert target.index[1] == pd.Timestamp("2024-03-31T01:30Z")
+    assert pd.isna(target.iloc[1, 0])
+
+
+def test_location_features_are_explicitly_rejected(tmp_path: Path) -> None:
+    _source(tmp_path)
+    payload = _config(tmp_path).model_dump(mode="json")
+    payload["dependence"] = {"method": "conditional_low_rank", "model": {"latent_rank": 2}}
+    payload["features"] = {"use_location": True}
+    payload["training"] = {"epochs": 1, "patience": 1}
+    with pytest.raises(ValueError, match="use_location: false"):
+        heapo.load_adapter(ResolvedExperimentConfig.model_validate(payload))
+
+
+def test_missing_day_blocks_are_not_filled_or_padded() -> None:
+    times = pd.date_range("2024-01-01", periods=4 * 96, freq="15min", tz="UTC")
+    rows = "".join(f"101;unknown;control;{time};1.0;;\n" for time in times if time.day != 2)
+    target = heapo.read_target(_meter(rows), 101)
+    assert len(target) == 3 * 96
+    assert target.index.min() == pd.Timestamp("2024-01-01T00:15Z")
+    assert target.index.max() == pd.Timestamp("2024-01-05T00:00Z")
+    missing_day = pd.date_range("2024-01-02T00:15Z", periods=96, freq="15min")
+    assert target.reindex(missing_day)[heapo.TARGET_COLUMN].isna().all()
+
+
+def test_irregular_household_cohort_cache_fit_and_evaluate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import torch
+    from _staggered_fixture import RecordingForecaster
+
+    import simcast.cli.build_cache as cache_cli
+    import simcast.cli.train_dependence as train_cli
+    from simcast.cli.evaluate import evaluate_from_config
+    from simcast.data.heapo_diagnostics import cache_diagnostics, fitted_m1_diagnostics
+    from simcast.fm.cache import load_pit_library
+    from simcast.training.dataset import DependenceCollator
+
+    _source(tmp_path)
+    config = _config(tmp_path)
+    forecaster = RecordingForecaster()
+    cache = cache_cli.build_cache_from_config(config, forecaster=forecaster, output_dir=tmp_path / "cache")
+    sealed = load_pit_library(cache)
+    full = load_pit_library(cache, access="evaluation")
+    ids = config.protocol.ordered_entity_ids
+    assert full.dataset["entity_id"].values.tolist() == ids
+    split = full.dataset["split"].values
+    assert np.isnan(sealed.dataset["entity_valid"].values[split == "test"]).all()
+    forecastable = full.dataset["forecastable_entity"].values.astype(bool)
+    assert not forecastable[0, 1] and forecastable[-1, 1]
+    assert forecastable[0, 2] and not forecastable[-1, 2]
+    assert not forecastable[0, 4] and not forecastable[-1, 4] and forecastable[:, 4].any()
+    assert min(min(counts) for counts in forecaster.finite_history_counts) == 1
+    for call in forecaster.calls:
+        assert call == [entity for entity in ids if entity in call]
+    assert sum(map(len, forecaster.calls)) == int(forecastable.sum())
+
+    batches = []
+
+    class RecordingCollator(DependenceCollator):
+        def __call__(self, samples):
+            batch = super().__call__(samples)
+            batches.append(batch)
+            return batch
+
+    monkeypatch.setattr(train_cli, "DependenceCollator", RecordingCollator)
+    models = {
+        "independent": None,
+        "static_gaussian": {},
+        "conditional_low_rank": {"hidden_dims": [8], "latent_rank": 2, "dropout": 0.0},
+        "set_aware_low_rank": {
+            "model_dim": 8, "num_layers": 1, "num_heads": 2, "latent_rank": 2, "dropout": 0.0,
+        },
+    }
+    runs = {}
+    for method, model in models.items():
+        payload = config.model_dump(mode="json")
+        payload["dependence"] = {"method": method, "model": model}
+        if method in ("conditional_low_rank", "set_aware_low_rank"):
+            payload["features"] = {"use_location": False}
+            payload["training"] = {"batch_size": 8, "epochs": 2, "patience": 1}
+        runtime = ResolvedExperimentConfig.model_validate(payload)
+        runs[method] = train_cli.train_from_config(runtime, cache_dir=cache, output_dir=tmp_path / method)
+        with np.load(runs[method] / "pit_training_frequency_map.npz") as mapping:
+            expected = np.zeros((5, 2), dtype=bool)
+            expected[1] = True
+            np.testing.assert_array_equal(mapping["fallback_mask"], expected)
+            assert int(mapping["fallback_count"]) == 2
+    assert batches and max(batch.features.shape[1] for batch in batches) == 4
+    assert set(torch.cat([batch.active_counts for batch in batches]).tolist()) == {2, 3, 4}
+    m1 = fitted_m1_diagnostics(runs["static_gaussian"], ids)
+    assert m1["estimator_mode"] == "pairwise_complete"
+    assert m1["independent_pairs_after_psd_repair_by_lead"] == [4, 4]
+    assert (np.asarray(m1["pairwise_overlap_counts"])[:, 1] == 0).all()
+    before_test = cache_diagnostics(cache, config)
+    assert before_test["active_K"]["by_split"]["test"]["count"] == 0
+    assert before_test["pit_training_frequency_fallback"]["fallback_count"] == 2
+
+    payload = config.model_dump(mode="json")
+    payload["sampling"] = {"num_samples": 32}
+    payload["evaluation"] = {
+        "quantile_levels": [0.1, 0.5, 0.9], "interval_levels": [0.8],
+        "joint_score_num_samples": 8, "scenario_batch_size": 4, "cross_entity_statistic": "sum",
+    }
+    output = evaluate_from_config(
+        ResolvedExperimentConfig.model_validate(payload), methods=tuple(models),
+        method_runs=runs, cache_dir=cache, output_dir=tmp_path / "evaluation",
+    )
+    test = full.test_data()
+    expected_active = (
+        test["forecastable_entity"].values.astype(bool)[:, :, None] & test["entity_valid"].values.astype(bool)
+    )
+    for method in models:
+        with np.load(output / f"{method}_aggregate_predictions.npz") as saved:
+            np.testing.assert_array_equal(saved["active_entity_mask"], expected_active)
+            np.testing.assert_array_equal(saved["valid"], expected_active.sum(axis=1) >= 2)
+            assert np.isfinite(saved["pseudo_nll"][saved["valid"]]).all()
+    cases = pd.read_parquet(output / "per_origin_lead_metrics.parquet")
+    row = cases.loc[(cases["method"] == "independent") & cases["valid"]].iloc[0]
+    test_index = list(np.flatnonzero(split == "test")).index(row["origin_index"])
+    lead = int(row["lead"]) - 1
+    truth = test["true_y"].values[test_index, expected_active[test_index, :, lead], lead].sum()
+    assert row["observed_aggregate"] == pytest.approx(truth)
+    manifest = json.loads((output / "evaluation_manifest.json").read_text())
+    assert manifest["cardinality_mode"] == "variable" and manifest["group"]["entity_count"] == 5
+    assert manifest["common_random_numbers"]
+    assert manifest["active_entity_count"]["min"] == 2 and manifest["active_entity_count"]["max"] == 5
+    final = cache_diagnostics(cache, config, include_test_labels=True)
+    assert final["active_K"]["by_split"]["test"]["count"] > 0
+    assert final["m1_training_overlap"]["zero_overlap_pairs_by_lead"] == [4, 4]
+    assert final["pit_training_frequency_fallback"] == before_test["pit_training_frequency_fallback"]
 
 
 def test_actual_v1_smart_meter_schema_and_missingness() -> None:

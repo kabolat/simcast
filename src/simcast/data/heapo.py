@@ -217,7 +217,12 @@ def _download_archive(root: Path) -> Path:
         ], check=True)
     except FileNotFoundError as error:
         raise RuntimeError("HEAPO download requires curl on PATH") from error
-    verify_archive(partial)
+    try:
+        verify_archive(partial)
+    except ValueError:
+        if partial.stat().st_size >= ARCHIVE_SIZE:
+            partial.unlink()
+        raise
     partial.replace(destination)
     return destination
 
@@ -312,7 +317,7 @@ def read_smart_meter(source: str | Path | IO[bytes], household_id: int) -> pd.Da
     timestamps = pd.DatetimeIndex(pd.to_datetime(frame.pop("Timestamp"), utc=True, errors="raise"))
     if timestamps.hasnans or timestamps.has_duplicates:
         raise ValueError(f"HEAPO household {household_id} has missing/duplicate UTC timestamps")
-    if ((timestamps.minute % 15 != 0) | (timestamps.second != 0) | (timestamps.microsecond != 0)).any():
+    if not timestamps.equals(timestamps.floor("15min")):
         raise ValueError(f"HEAPO household {household_id} has off-grid 15-minute timestamps")
     values = pd.to_numeric(frame[TARGET_COLUMN], errors="raise")
     if np.isinf(values.to_numpy(dtype=float)).any():
@@ -340,10 +345,14 @@ def target_summary(frame: pd.DataFrame) -> dict[str, Any]:
     }
 
 
-def read_target(source: str | Path | IO[bytes], household_id: int) -> pd.DataFrame:
+def read_target(
+    source: str | Path | IO[bytes], household_id: int, *, expected_group: str | None = None,
+) -> pd.DataFrame:
     """Expose energy only at its conservatively assumed completed-interval boundary."""
 
     raw = read_smart_meter(source, household_id)
+    if expected_group is not None and not raw["Group"].eq(expected_group).all():
+        raise ValueError(f"HEAPO household {household_id} Group disagrees with households.csv")
     target = raw.loc[:, [TARGET_COLUMN]].copy()
     target.index = pd.DatetimeIndex(target.index + TARGET_LABEL_SHIFT, name="timestamp")
     return target
@@ -378,7 +387,7 @@ def align_hourly_weather(weather: pd.DataFrame, timestamps: pd.DatetimeIndex) ->
     index = pd.DatetimeIndex(weather.index)
     if index.tz is None or str(index.tz) != "UTC":
         raise ValueError("HEAPO hourly weather must use UTC timestamps")
-    if ((index.minute != 0) | (index.second != 0) | (index.microsecond != 0)).any():
+    if not index.equals(index.floor("h")):
         raise ValueError("HEAPO weather timestamps must align to whole hours")
     if np.isinf(weather.to_numpy(dtype=float)).any():
         raise ValueError("HEAPO weather contains infinite measurement values")
@@ -438,7 +447,10 @@ def load_adapter(config: ResolvedExperimentConfig) -> DatasetAdapter:
     frames = [
         EntityFrames(
             entity=entity,
-            target=read_target(root / f"smart_meter_data/15min/{identifier}.csv", identifier),
+            target=read_target(
+                root / f"smart_meter_data/15min/{identifier}.csv", identifier,
+                expected_group=str(selected.loc[identifier, "Group"]),
+            ),
             past_weather=weather,
             future_weather=pd.DataFrame(index=weather.index),
         )
@@ -518,7 +530,7 @@ def inspect_archive(path: str | Path, output: str | Path) -> dict[str, Any]:
             household_id = int(PurePosixPath(name).stem)
             with archive.open(members[name]) as stream:
                 frame = read_smart_meter(stream, household_id)
-            column_counts.update(frame.columns)
+            column_counts.update([*frame.columns, "Timestamp"])
             rows.append({"Household_ID": household_id, "Group": frame["Group"].iloc[0], **target_summary(frame)})
         summary = {
             "record": DATASET_ID, "revision": DATASET_REVISION, "license": LICENSE,

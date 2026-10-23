@@ -33,6 +33,7 @@ from simcast.data.heapo import (
     verify_archive,
 )
 from simcast.data.windows import ForecastWindow, build_aligned_group_windows
+from simcast.dependence.static_gaussian import StaticGaussianCopula
 from simcast.fm.cache import load_pit_library
 from simcast.fm.pit import training_frequency_fallback_summary
 from simcast.types import EntityGroup, EntityMetadata
@@ -111,7 +112,9 @@ def training_overlap_report(active: np.ndarray, entity_ids: list[str]) -> dict[s
             entity_ids[index] for index in range(len(entity_ids)) if counts[index].sum() == 0
         ],
         "training_frequency_fallback": fallback,
-        "pairwise_overlap_counts": overlaps.tolist(),
+        "household_pair_count": len(pairs[0]),
+        "zero_overlap_household_pairs_all_leads": int((overlaps[:, pairs[0], pairs[1]] == 0).all(axis=0).sum()),
+        "household_pairs_with_any_zero_overlap": int((overlaps[:, pairs[0], pairs[1]] == 0).any(axis=0).sum()),
         "zero_overlap_pairs_by_lead": [(overlap[pairs] == 0).sum().item() for overlap in overlaps],
         "m1_low_overlap_independence_pairs_by_lead": [(overlap[pairs] < 2).sum().item() for overlap in overlaps],
         "independence_note": (
@@ -234,7 +237,7 @@ def archive_station_diagnostics(archive_path: Path, config: ResolvedExperimentCo
             frames = []
             for identifier, entity in zip(ids, entities, strict=True):
                 with archive.open(members[f"smart_meter_data/15min/{identifier}.csv"]) as stream:
-                    target = read_target(stream, identifier)
+                    target = read_target(stream, identifier, expected_group="control")
                 frames.append(EntityFrames(entity, target, weather, pd.DataFrame(index=weather.index)))
             adapter = FrameDatasetAdapter(
                 station_config, EntityGroup(f"station_{station}", canonical, entities=entities), frames, {},
@@ -257,12 +260,31 @@ def archive_station_diagnostics(archive_path: Path, config: ResolvedExperimentCo
     return result
 
 
+def fitted_m1_diagnostics(run: Path, entity_ids: list[str]) -> dict[str, Any]:
+    """Report actual fitted artifacts, distinct from source-availability projections."""
+
+    model = StaticGaussianCopula.load(run / "model.npz")
+    if list(model.entity_ids) != entity_ids:
+        raise ValueError("HEAPO M1 diagnostics require exact configured canonical entities")
+    report: dict[str, Any] = json.loads((run / "m1_diagnostics.json").read_text(encoding="utf-8"))
+    pairs = np.triu_indices(len(entity_ids), k=1)
+    report["independent_pairs_after_psd_repair_by_lead"] = [
+        int(np.isclose(model.correlation_matrix(lead).numpy()[pairs], 0, atol=1e-8, rtol=0).sum())
+        for lead in range(1, model.n_leads + 1)
+    ]
+    report["pit_training_frequency_fallback"] = json.loads(
+        (run / "pit_training_frequency_diagnostics.json").read_text(encoding="utf-8"),
+    )
+    return report
+
+
 def main(
     base: Annotated[Path, typer.Option("--base", exists=True, dir_okay=False)],
     output: Annotated[Path, typer.Option("--output")],
     cache: Annotated[Path | None, typer.Option("--cache", exists=True)] = None,
     include_test_labels: Annotated[bool, typer.Option("--include-test-labels")] = False,
     all_stations_archive: Annotated[Path | None, typer.Option("--all-stations-archive", exists=True)] = None,
+    m1_run: Annotated[Path | None, typer.Option("--m1-run", exists=True)] = None,
 ) -> None:
     """Write source-cohort availability and optional access-gated cache diagnostics."""
 
@@ -277,6 +299,8 @@ def main(
         report["cache"] = cache_diagnostics(cache, config, include_test_labels=include_test_labels)
     if all_stations_archive is not None:
         report["stations"] = archive_station_diagnostics(all_stations_archive, config)
+    if m1_run is not None:
+        report["fitted_m1"] = fitted_m1_diagnostics(m1_run, config.protocol.ordered_entity_ids)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2, allow_nan=False) + "\n", encoding="utf-8")
     typer.echo(str(output))
