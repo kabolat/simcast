@@ -106,12 +106,17 @@ SMD_15min_MeasurementsAvailable_HeatPump
 SMD_15min_MeasurementsAvailable_Other
 ```
 
-Each `smart_meter_data/15min/<Household_ID>.csv` has these seven columns,
-verified across **all 1,407 files**:
+Each `smart_meter_data/15min/<Household_ID>.csv` has the same seven
+semicolon-separated columns, verified across **all 1,407 files**. The 1,193
+control files use this order:
 
 ```text
 Household_ID;AffectsTimePoint;Group;Timestamp;kWh_received_Total;kWh_received_HeatPump;kWh_received_Other
 ```
+
+The 214 treatment files swap `Group` and `AffectsTimePoint`
+(`Household_ID;Group;AffectsTimePoint;Timestamp;...`). The reader selects
+columns by name, so the order does not matter.
 
 Every file contains `kWh_received_Total`. The separate heat-pump channel is
 not universally available, so it is not the common target. Source values are
