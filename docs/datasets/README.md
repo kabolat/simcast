@@ -12,3 +12,4 @@ adapter. Shared configuration fields are documented in the
 | `liander2024` | [Liander2024](liander2024.md) | Load groups with measured historical weather and versioned forecasts |
 | `gefcom2014_wind` | [GEFCom2014 Wind](gefcom2014_wind.md) | Hourly normalized wind power with an explicitly inferred NWP availability rule |
 | `feederbw` | [FeederBW v1.1](feederbw.md) | One-minute active power aggregated to 15 minutes; the supplied future-weather mode is an oracle diagnostic |
+| `heapo` | [HEAPO v1](heapo.md) | Variable-cardinality control-household proximity cohort; imported interval energy and oracle station temperature, not electrical topology |
