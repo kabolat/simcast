@@ -5,14 +5,19 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import shutil
 import stat
+import subprocess
 import zipfile
 from collections import Counter
+from collections.abc import Callable, Sequence
 from pathlib import Path, PurePosixPath
 from typing import IO, Any
 
 import numpy as np
 import pandas as pd
+
+from simcast.config import BaseExperimentConfig, DatasetDownloadConfig
 
 ADAPTER_NAME = "heapo"
 DATASET_ID = "https://zenodo.org/records/15056919"
@@ -38,6 +43,9 @@ SMALL_FILES = (
     "meta_data/meta_data.csv",
     "meta_data/meta_data_variables.csv",
     "smart_meter_data/overview/smart_meter_data_15min_overview.csv",
+    "smart_meter_data/overview/smart_meter_data_daily_overview.csv",
+    "smart_meter_data/overview/smart_meter_data_monthly_overview.csv",
+    "smart_meter_data/overview/smart_meter_data_cumulative_counters_overview.csv",
     "weather_data/overview/weather_variables_availability.csv",
     "weather_data/overview/weather_variables.csv",
 )
@@ -100,6 +108,98 @@ def archive_members(archive: zipfile.ZipFile) -> dict[str, zipfile.ZipInfo]:
     if missing:
         raise ValueError(f"HEAPO v1 archive is missing required members: {sorted(missing)}")
     return members
+
+
+def _download_archive(root: Path) -> Path:
+    destination = root / "archives" / ARCHIVE_NAME
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.exists():
+        verify_archive(destination)
+        return destination
+    partial = destination.with_suffix(".zip.part")
+    try:
+        subprocess.run([
+            "curl", "--fail", "--location", "--retry", "3", "--continue-at", "-",
+            "--output", str(partial),
+            f"https://zenodo.org/api/records/15056919/files/{ARCHIVE_NAME}/content",
+        ], check=True)
+    except FileNotFoundError as error:
+        raise RuntimeError("HEAPO download requires curl on PATH") from error
+    verify_archive(partial)
+    partial.replace(destination)
+    return destination
+
+
+def safe_extract_selected(
+    zip_path: str | Path,
+    destination: str | Path,
+    household_ids: Sequence[int],
+) -> list[Path]:
+    """Extract metadata, requested quarter-hour files, and only their station weather."""
+
+    root = Path(destination).resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    if any(isinstance(value, bool) or value < 1 for value in household_ids):
+        raise ValueError("HEAPO selected household IDs must be positive integers")
+    with zipfile.ZipFile(zip_path) as archive:
+        members = archive_members(archive)
+        with archive.open(members["meta_data/households.csv"]) as stream:
+            households = read_households(stream).set_index("Household_ID")
+        unknown = set(household_ids) - set(households.index)
+        if unknown:
+            raise ValueError(f"unknown HEAPO households: {sorted(unknown)}")
+        stations = households.loc[list(household_ids), "Weather_ID"].unique().tolist()
+        selected = [
+            *SMALL_FILES,
+            *(f"smart_meter_data/15min/{identifier}.csv" for identifier in sorted(set(household_ids))),
+            *(f"weather_data/hourly/{station}.csv" for station in sorted(stations)),
+        ]
+        missing = set(selected) - members.keys()
+        if missing:
+            raise ValueError(f"selected HEAPO archive members are missing: {sorted(missing)}")
+        targets = [(name, (root / name).resolve()) for name in selected]
+        for name, target in targets:
+            if not target.is_relative_to(root):
+                raise ValueError(f"unsafe HEAPO extraction destination: {name}")
+        for name, target in targets:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            partial = target.with_name(target.name + ".part")
+            if partial.is_symlink():
+                raise ValueError(f"refusing symlink extraction partial: {partial}")
+            with archive.open(members[name]) as source, partial.open("wb") as sink:
+                shutil.copyfileobj(source, sink, length=1024 * 1024)
+            if partial.stat().st_size != members[name].file_size:
+                raise ValueError(f"truncated HEAPO archive member: {name}")
+            partial.replace(target)
+    return [target for _, target in targets]
+
+
+def download_data(
+    config: BaseExperimentConfig | DatasetDownloadConfig,
+    *,
+    snapshot_download_fn: Callable[..., str] | None = None,
+) -> Path:
+    del snapshot_download_fn
+    data = config.data
+    if data.adapter != ADAPTER_NAME or data.dataset_id != DATASET_ID or data.revision != DATASET_REVISION:
+        raise ValueError("HEAPO downloads require Zenodo record 15056919, revision v1")
+    root = Path(data.local_dir).expanduser().resolve()
+    archive = _download_archive(root)
+    if isinstance(config, DatasetDownloadConfig):
+        with zipfile.ZipFile(archive) as source:
+            members = archive_members(source)
+            household_ids = [
+                int(PurePosixPath(name).stem) for name in members
+                if re.fullmatch(r"smart_meter_data/15min/[1-9][0-9]*\.csv", name)
+            ]
+        if config.entity_count != len(household_ids):
+            raise ValueError("HEAPO dataset-wide entity_count must match the 1407 quarter-hour files")
+    else:
+        household_ids = [household_number(identifier) for identifier in config.protocol.ordered_entity_ids]
+        if not household_ids:
+            raise ValueError("HEAPO selective download requires explicit protocol.ordered_entity_ids")
+    safe_extract_selected(archive, root, household_ids)
+    return root
 
 
 def read_csv(source: str | Path | IO[bytes]) -> pd.DataFrame:

@@ -16,6 +16,7 @@ from simcast.data.heapo import (
     read_households,
     read_smart_meter,
     read_target,
+    safe_extract_selected,
     target_summary,
     verify_archive,
 )
@@ -152,3 +153,49 @@ def test_archive_layout_and_symlinks(tmp_path: Path) -> None:
         archive.writestr(info, "/etc/passwd")
     with zipfile.ZipFile(path) as archive, pytest.raises(ValueError, match="unsafe"):
         archive_members(archive)
+
+
+def _archive(path: Path) -> None:
+    with zipfile.ZipFile(path, "w") as archive:
+        for name in SMALL_FILES:
+            data = "column\n"
+            if name == "meta_data/households.csv":
+                data = (
+                    "Household_ID;Group;Weather_ID;SmartMeterData_Available_15min\n"
+                    "1;control;8jB;True\n2;treatment;Hg;True\n"
+                )
+            archive.writestr(f"heapo_data/{name}", data)
+        for name in [
+            "smart_meter_data/15min/1.csv", "smart_meter_data/15min/2.csv",
+            "weather_data/hourly/8jB.csv", "weather_data/hourly/Hg.csv",
+            "smart_meter_data/daily/1.csv", "reports/protocols.csv",
+        ]:
+            archive.writestr(f"heapo_data/{name}", "unused\n")
+
+
+def test_selective_extraction_keeps_only_requested_households_and_weather(tmp_path: Path) -> None:
+    path = tmp_path / "archive.zip"
+    _archive(path)
+    root = tmp_path / "selected"
+    paths = safe_extract_selected(path, root, [1])
+    assert {str(path.relative_to(root)) for path in paths} == {
+        *SMALL_FILES, "smart_meter_data/15min/1.csv", "weather_data/hourly/8jB.csv",
+    }
+    assert not (root / "smart_meter_data/15min/2.csv").exists()
+    assert not (root / "weather_data/hourly/Hg.csv").exists()
+    assert not (root / "reports").exists()
+    with pytest.raises(ValueError, match="unknown"):
+        safe_extract_selected(path, root, [3])
+
+
+def test_extraction_rejects_existing_symlink_parent(tmp_path: Path) -> None:
+    path = tmp_path / "archive.zip"
+    _archive(path)
+    root = tmp_path / "selected"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (root / "meta_data").symlink_to(outside, target_is_directory=True)
+    with pytest.raises(ValueError, match="unsafe"):
+        safe_extract_selected(path, root, [1])
+    assert not list(outside.iterdir())
