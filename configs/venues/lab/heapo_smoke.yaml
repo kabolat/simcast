@@ -1,0 +1,36 @@
+kind: composite
+name: heapo_smoke
+venue: lab
+bases:
+  - id: heapo_control_station_8jb
+    config: ../../bases/heapo/control_station_8jB.yaml
+methods:
+  - id: m0
+    method: ../../methods/m0_independent.yaml
+  - id: m1
+    method: ../../methods/m1_static_gaussian.yaml
+  - id: m2
+    method: ../../methods/m2_conditional_low_rank.yaml
+    overrides:
+      features:
+        use_location: false
+      model:
+        hidden_dims: [32]
+      optimization:
+        epochs: 2
+        patience: 1
+  - id: m3
+    method: ../../methods/m3_set_aware_low_rank.yaml
+    overrides:
+      features:
+        use_location: false
+      model:
+        model_dim: 32
+        num_layers: 1
+      optimization:
+        epochs: 2
+        patience: 1
+evaluations:
+  - id: heapo_smoke
+    config: ../../evaluations/heapo_smoke.yaml
+    method_ids: [m0, m1, m2, m3]

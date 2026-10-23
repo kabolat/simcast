@@ -144,6 +144,24 @@ def test_tracked_heapo_protocol_is_native_variable_and_oracle() -> None:
     assert base.pit.dependence_transform == "training_frequency" and base.pit.eps == 1e-7
 
 
+def test_tracked_smoke_expands_m0_through_m3_without_location() -> None:
+    from simcast.cli.run_composite import expand_methods
+    from simcast.config import load_composite_config, load_evaluation_config, resolve_run_config
+
+    root = Path(__file__).parents[1]
+    path = root / "configs/venues/lab/heapo_smoke.yaml"
+    composite = load_composite_config(path)
+    fits = expand_methods(path, composite)
+    assert [fit.method_id for fit in fits] == ["m0", "m1", "m2", "m3"]
+    for fit in fits:
+        runtime = resolve_run_config(fit.base, fit.method)
+        if runtime.features is not None:
+            assert runtime.features.use_location is False
+    evaluation = load_evaluation_config(root / "configs/evaluations/heapo_smoke.yaml")
+    assert evaluation.evaluation.cross_entity_statistic == "sum"
+    assert {"energy_score", "variogram_score", "test_pseudo_nll"} <= set(evaluation.metrics)
+
+
 def test_adapter_enforces_group_and_weather_mapping(tmp_path: Path) -> None:
     _source(tmp_path)
     with pytest.raises(ValueError, match="control/treatment"):

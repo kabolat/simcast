@@ -1,0 +1,7 @@
+extends: standard.yaml
+id: heapo_smoke
+sampling:
+  num_samples: 256
+evaluation:
+  cross_entity_statistic: sum
+  joint_score_num_samples: 64
