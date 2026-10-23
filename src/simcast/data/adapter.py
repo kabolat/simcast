@@ -35,11 +35,13 @@ class IneligibleWindow(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class PreparedWindow:
-    """Model inputs for one origin: per-entity Chronos dicts, truth ``[K, H]``, masked-history counts ``[K]``."""
+    """Full-universe truth and compact inputs for forecastable entities at one origin."""
 
     inputs: list[dict[str, object]]
     true_y: np.ndarray
     history_missing: np.ndarray
+    forecastable_entity: np.ndarray
+    entity_indices: np.ndarray
 
 
 class DatasetAdapter(Protocol):
@@ -140,8 +142,12 @@ class FrameDatasetAdapter:
         return with_calendar(select_weather_features(selected, weather), **kwargs)
 
     def _prepare_entity(
-        self, frames: EntityFrames, window: ForecastWindow
-    ) -> tuple[dict[str, object], np.ndarray, int]:
+        self,
+        frames: EntityFrames,
+        window: ForecastWindow,
+        *,
+        allow_unavailable: bool = False,
+    ) -> tuple[dict[str, object] | None, np.ndarray, int]:
         config = self.config
         target_window = frames.target.reindex(window.past_timestamps.union(window.future_timestamps))
         history = select_available_past_targets(
@@ -151,19 +157,28 @@ class FrameDatasetAdapter:
         ).reindex(window.past_timestamps)
         truth = target_window.loc[window.future_timestamps, config.data.target_column]
 
-        past_covariates = self._past_covariates(frames, window)
-        future_covariates = build_future_covariates(
-            _window_slice(frames.future_weather, window.future_timestamps),
-            window.origin_timestamp,
-            window.future_timestamps,
-            config.covariates.weather,
-            measurements=frames.past_weather,
-            future_weather_source=config.covariates.future_weather_source,
-            **self._covariate_kwargs(),
-        )
+        try:
+            past_covariates = self._past_covariates(frames, window)
+            future_covariates = build_future_covariates(
+                _window_slice(frames.future_weather, window.future_timestamps),
+                window.origin_timestamp,
+                window.future_timestamps,
+                config.covariates.weather,
+                measurements=frames.past_weather,
+                future_weather_source=config.covariates.future_weather_source,
+                **self._covariate_kwargs(),
+            )
+        except ValueError as error:
+            if allow_unavailable and "weather columns are missing:" in str(error):
+                return None, truth.to_numpy(dtype=np.float32, copy=True), int(history.isna().sum())
+            raise
         if not _finite(past_covariates) or not _finite(future_covariates):
+            if allow_unavailable:
+                return None, truth.to_numpy(dtype=np.float32, copy=True), int(history.isna().sum())
             raise IneligibleWindow(f"covariates unavailable for {frames.entity.entity_id}")
         if list(past_covariates.columns) != list(future_covariates.columns):
+            if allow_unavailable:
+                return None, truth.to_numpy(dtype=np.float32, copy=True), int(history.isna().sum())
             raise IneligibleWindow(f"past/future covariate columns differ for {frames.entity.entity_id}")
 
         prepared = {
@@ -183,13 +198,25 @@ class FrameDatasetAdapter:
         inputs: list[dict[str, object]] = []
         truth: list[np.ndarray] = []
         history_missing: list[int] = []
-        for entity_frames in self.frames:
-            entity_input, entity_truth, missing_count = self._prepare_entity(entity_frames, window)
-            inputs.append(entity_input)
+        entity_indices: list[int] = []
+        forecastable = np.zeros(len(self.frames), dtype=bool)
+        variable = self.config.protocol.cardinality_mode == "variable"
+        for entity_index, entity_frames in enumerate(self.frames):
+            entity_input, entity_truth, missing_count = self._prepare_entity(
+                entity_frames,
+                window,
+                allow_unavailable=variable,
+            )
+            if entity_input is not None:
+                inputs.append(entity_input)
+                entity_indices.append(entity_index)
+                forecastable[entity_index] = True
             truth.append(entity_truth)
             history_missing.append(missing_count)
         return PreparedWindow(
             inputs=inputs,
             true_y=np.stack(truth),
             history_missing=np.asarray(history_missing, dtype=np.int64),
+            forecastable_entity=forecastable,
+            entity_indices=np.asarray(entity_indices, dtype=np.int64),
         )

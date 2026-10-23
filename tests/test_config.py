@@ -36,6 +36,8 @@ def test_base_contains_only_the_common_scientific_design() -> None:
     assert base.chronos.model_revision == CHRONOS_MODEL_REVISION
     assert (base.forecast.lookback_steps, base.forecast.horizon_steps) == (672, 96)
     assert base.protocol.entity_count == len(base.protocol.ordered_entity_ids) == 15
+    assert base.protocol.cardinality_mode == "fixed"
+    assert base.protocol.min_entities_per_case == 2
     assert base.covariates.future_weather_source == "vintage"
     assert base.covariates.calendar.include_is_weekend
     assert not hasattr(base, "features")
@@ -319,8 +321,20 @@ def test_cache_fingerprint_ignores_runtime_but_not_marginal_design() -> None:
     changed_dependence_transform = base.model_copy(
         update={"pit": base.pit.model_copy(update={"dependence_transform": "nominal_cells"})}
     )
+    explicit_fixed = base.model_copy(
+        update={
+            "protocol": base.protocol.model_copy(
+                update={"cardinality_mode": "fixed", "min_entities_per_case": 2}
+            )
+        }
+    )
+    variable = base.model_copy(
+        update={"protocol": base.protocol.model_copy(update={"cardinality_mode": "variable"})}
+    )
     assert base_fingerprint(base) == base_fingerprint(operational)
     assert base_fingerprint(base) == base_fingerprint(changed_dependence_transform)
+    assert base_fingerprint(base) == base_fingerprint(explicit_fixed)
+    assert base_fingerprint(base) != base_fingerprint(variable)
     assert base_fingerprint(base) != base_fingerprint(changed_pit)
     assert base_fingerprint(base) != base_fingerprint(changed_mode)
 
