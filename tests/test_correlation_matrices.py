@@ -5,8 +5,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 import torch
+from sklearn.covariance import LedoitWolf
 
 from simcast.dependence import IndependentCopula, StaticGaussianCopula
+from simcast.dependence.static_gaussian import _covariance_to_correlation
 
 
 def _training_scores(n_origins: int = 500) -> np.ndarray:
@@ -84,6 +86,38 @@ def test_static_drops_an_incomplete_vector_as_a_whole() -> None:
     from_mask = StaticGaussianCopula().fit(complete, ["a", "b", "c"], expected_mask)
     assert torch.equal(from_nan.correlation_matrix(1), from_mask.correlation_matrix(1))
     assert torch.equal(from_nan.correlation_matrix(2), from_mask.correlation_matrix(2))
+
+
+def test_static_variable_complete_data_keeps_ledoit_wolf_estimator() -> None:
+    scores = _training_scores(50)
+    expected = _covariance_to_correlation(LedoitWolf().fit(scores[:, :, 0]).covariance_, 1e-6)
+    model = StaticGaussianCopula().fit(scores, ["a", "b", "c"], allow_incomplete=True)
+
+    assert model.estimator_mode == "ledoit_wolf"
+    assert model.pairwise_overlap_counts is None
+    np.testing.assert_array_equal(model.correlation_matrix(1).numpy(), expected)
+
+
+def test_static_pairwise_estimator_uses_overlap_and_zeroes_unsupported_pairs(tmp_path: Path) -> None:
+    scores = np.full((6, 3, 1), np.nan, dtype=np.float64)
+    scores[:, 0, 0] = np.arange(6)
+    scores[:4, 1, 0] = np.asarray([0.0, 1.0, 2.0, 3.0])
+    scores[4:, 2, 0] = np.asarray([5.0, 7.0])
+    scores[4, 0, 0] = np.nan
+    model = StaticGaussianCopula().fit(scores, ["a", "b", "c"], allow_incomplete=True)
+
+    correlation = model.correlation_matrix(1)
+    _assert_valid_correlation(correlation)
+    assert model.estimator_mode == "pairwise_complete"
+    assert model.pairwise_overlap_counts is not None
+    assert model.pairwise_overlap_counts.tolist() == [[[5, 4, 1], [4, 4, 0], [1, 0, 2]]]
+    assert correlation[0, 1] > 0.9
+    assert correlation[0, 2].item() == pytest.approx(0.0, abs=1e-10)
+    assert correlation[1, 2].item() == pytest.approx(0.0, abs=1e-10)
+
+    restored = StaticGaussianCopula.load(model.save(tmp_path / "pairwise.npz"))
+    assert restored.estimator_mode == "pairwise_complete"
+    np.testing.assert_array_equal(restored.pairwise_overlap_counts, model.pairwise_overlap_counts)
 
 
 def test_static_rejects_unknown_entities_and_too_few_vectors() -> None:
