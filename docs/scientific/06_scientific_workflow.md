@@ -60,31 +60,33 @@ choice, such as M2 rank, from changing the upstream marginal forecast, and
 prevents a reporting preference from being mistaken for a change in the
 data-generating experiment.
 
-## 3. Complete cases
+## 3. Fixed universe and active cases
 
-For group $g$, every tensor has the fixed entity axis
-$\mathcal E_g=[k_1,\ldots,k_{K_g}]$. Define entity validity
-$V_{k,\tau}^{(i)}\in\{0,1\}$ and group validity
+Every tensor and artifact retains the fixed canonical entity axis
+$\mathcal E_g=[k_1,\ldots,k_{K_g}]$. Two masks then determine case membership:
+`forecastable_entity[i,k]` records finite origin-time inputs and forecasts;
+`entity_valid[i,k,tau]` records label-derived PIT validity. Their intersection
+is the active set $\mathcal A_{g,\tau}^{(i)}$.
 
-$$V_{g,\tau}^{(i)}=\prod_{k\in\mathcal E_g}V_{k,\tau}^{(i)}.$$
+The default `protocol.cardinality_mode: fixed` admits a case only when all
+$K_g$ entities are active. Variable mode admits a case when the active count
+reaches `protocol.min_entities_per_case`. Conditional datasets compact entities
+in canonical order, and variable-K batches pad to their local maximum with an
+explicit mask. M1 uses only eligible cases and pairwise-complete observations
+in variable mode. Evaluation forms every method's scenarios and scores from
+the same active subset, while retaining full-universe IDs and correlation
+artifact axes.
 
-Only cases with $V_{g,\tau}^{(i)}=1$ enter dependence fitting or evaluation.
-The dataset object enumerates these complete $(i,\tau)$ pairs; the collator
-stacks them without selecting entities; and the fitter asserts an entity
-dimension of exactly $K_g$. Evaluation checks that every supplied correlation
-is $K_g\times K_g$. The formal full-group protocol is introduced in
-[Chapter 1](01_research_problem.md); its configuration safeguards are listed
-in the [base reference](../technical/configuration_reference.md#21-complete-group-and-data).
-
-Example: if one of 15 transformer observations is missing at lead 32 of origin
-$i$, all 15 components of that one case are excluded. The other leads remain
-eligible if complete. This is a missing-vector rule, not an opportunity to
-forecast a smaller group.
+Example: if one of 15 transformer entities has a missing PIT at lead 32, fixed
+mode excludes that case. Variable mode can retain the other 14 entities when
+the configured minimum is no greater than 14. An unavailable forecast-time
+input also removes that entity from the active set, but does not reveal any
+test-label information to training.
 
 Implementation: `DependenceDataset`, `DependenceCollator`,
-`ConditionalTrainer.expected_num_entities`, and `evaluate_from_config` enforce
-the rule independently. The resulting `pit_valid` mask and declared $K_g$ are
-stored as described in the [artifact reference](../technical/artifact_reference.md#pit-library-directory).
+`ConditionalTrainer`, and `evaluate_from_config` enforce the configured rule.
+Test `entity_valid` and `pit_valid` are stored separately and remain sealed as
+described in the [artifact reference](../technical/artifact_reference.md#pit-library-directory).
 
 ## 4. Frozen-marginal record
 

@@ -650,7 +650,8 @@ uv run mypy src
 uv run pytest
 ```
 
-These checks cover schemas, matrix properties, complete-vector invalidation,
+These checks cover schemas, matrix properties, fixed-mode complete-vector
+invalidation, variable-mode entity masks and active-cardinality evaluation,
 permutation equivariance, finite PIT and projection laws, cache identity,
 expansion, resume, evaluation, and reporting on synthetic temporary data. They
 do not run Chronos, fit the empirical experiments, or alter `runs/`.

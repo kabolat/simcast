@@ -1,4 +1,4 @@
-# Full-group dependence fitting, scenario generation, and scoring
+# Active-set dependence fitting, scenario generation, and scoring
 
 **Operational realization.** Sampling and evaluation arguments are defined in
 the [configuration reference](../technical/configuration_reference.md), while
@@ -7,7 +7,7 @@ saved fitted methods and evaluation records are described in the
 
 ## Dependence-fitting cases
 
-For group $g$, conditional training converts each valid $(i,\tau)$ into
+For group $g$, conditional training converts each admitted $(i,\tau)$ into
 
 $$
 (X_{g,\tau}^{(i)},\mathbf z_{g,\tau}^{(i)}),
@@ -16,29 +16,30 @@ $$
 where
 
 $$
-X_{g,\tau}^{(i)}\in\mathbb R^{K_g\times F},
+X_{g,\tau}^{(i)}\in\mathbb R^{K_{\mathrm{active}}\times F},
 \qquad
-\mathbf z_{g,\tau}^{(i)}\in\mathbb R^{K_g}.
+\mathbf z_{g,\tau}^{(i)}\in\mathbb R^{K_{\mathrm{active}}},
+\qquad K_{\mathrm{active}}=|\mathcal A_{g,\tau}^{(i)}|.
 $$
 
-A case exists only if the binary validity indicator
-$V_{g,\tau}^{(i)}=1$ and all features are finite. $X$ is the feature matrix;
-it must not be confused with $V$. The code axis
-is `[origin, entity, lead, feature]`; dataset construction flattens only the
-valid `(origin, lead)` cases. Origin and lead indices are metadata rather than
-direct network inputs. Lead information enters through the frozen forecast,
-patch representation, and within-patch position.
+A fixed-mode case exists only when every canonical entity is valid. A
+variable-mode case exists when the active set contains at least
+`protocol.min_entities_per_case` entities. Features are compacted in canonical
+entity order; the code axis before compaction is `[origin, entity, lead,
+feature]`. Origin and lead indices are metadata rather than direct network
+inputs. Lead information enters through the frozen forecast, patch
+representation, and within-patch position.
 
-The entity dimension is checked again immediately before every M2--M4 model
-call.
-Every training and validation batch therefore contains exactly the complete
-ordered $\mathcal E_g$. Missing one entity invalidates the case instead of
-shrinking it.
+Variable-cardinality batches pad only to the largest active set in the batch.
+Padded features and PIT scores are zero, and an explicit mask excludes padding
+from predictions and loss. Gaussian-copula pseudo-NLL is evaluated on each
+case's active principal submatrix, never on padded rows.
 
-M1 uses complete training vectors directly and does not use validation. M2,
+M1 uses training cases meeting $K_{\min}$ and does not use validation. In
+variable mode it uses pairwise-complete PIT observations within those cases;
+fixed mode retains its Ledoit--Wolf complete-vector estimator. M2,
 M3, and M4 fit on the chronological training partition and use chronological
-validation pseudo-likelihood for checkpoint selection. `DependenceCollator`
-only stacks complete vectors.
+validation pseudo-likelihood for checkpoint selection.
 
 ## Gaussian-copula pseudo-likelihood
 
@@ -68,7 +69,7 @@ before stabilization for every vector.
 No explicit inverse is formed. For $R=LL^{\mathsf T}$, Cholesky solves compute
 $R^{-1}\mathbf z$ and
 $\log|R|=2\sum_k\log L_{kk}$. Optimization averages batch losses. Validation
-sums then divides by the number of full-group cases.
+sums then divides by the number of admitted cases.
 
 ## Optimization and checkpoints
 
@@ -91,19 +92,20 @@ host reproduced every learned tensor exactly. Reproducibility is still scoped
 to the recorded software and hardware environment; it is not asserted across
 different PyTorch, CUDA, or GPU versions.
 
-## Full-group scenario generation
+## Active-set scenario generation
 
-For every valid $(g,i,\tau)$ and method:
+For every admitted $(g,i,\tau)$ and method:
 
-1. obtain $R_{g,\tau}^{(i)}\in\mathbb R^{K_g\times K_g}$ and assert its exact
-   full-group shape;
+1. obtain the active principal correlation
+   $R_{g,\tau}^{(i)}\in\mathbb R^{K_{\mathrm{active}}\times K_{\mathrm{active}}}$;
 2. stabilize it and compute $L_{g,\tau}^{(i)}$;
-3. draw $M=4096$ base normals $\eta^{(m)}\in\mathbb R^{K_g}$;
+3. draw $M=4096$ base normals on the complete canonical universe, then select
+   the active entities' canonical columns for common random numbers;
 4. form copula uniforms
    $u_{k,\tau}^{(i,m)}=\Phi([L_{g,\tau}^{(i)}\eta^{(m)}]_k)$;
 5. project each uniform through the configured fixed marginal law, producing
    $\widetilde Y_{k,\tau}^{(i,m)}$;
-6. apply the evaluation's cross-entity statistic to the complete group:
+6. apply the evaluation's cross-entity statistic to the active set:
 
 $$
 \widetilde T_{g,\tau}^{(i,m)}
@@ -114,9 +116,9 @@ $$
 $T_g(\mathbf y)=\sum_k y_k$; `absolute_sum` uses
 $T_g(\mathbf y)=\sum_k |y_k|$; `max` uses $\max_k y_k$; and
 `absolute_max` uses $\max_k |y_k|$. The same function is applied to the
-observed entity vector before aggregate quantile, interval, CRPS, and pinball
-scoring. Energy and Variogram Scores continue to score the full entity vector,
-independent of this choice.
+observed active entity vector before aggregate quantile, interval, CRPS, and
+pinball scoring. Energy and Variogram Scores use the same active entity vector.
+Variogram Score is undefined for a one-entity active set and is omitted there.
 
 Cases are processed in batches of `evaluation.scenario_batch_size`. Base normals are keyed by the separately
 recorded evaluation seed and flattened `(origin, lead)` index. They therefore
@@ -163,7 +165,7 @@ methods. See [Chapter 3](03_chronos_and_pit.md#7-probability-space-projection-fo
 for the formal maps and a numerical comparison.
 
 Cross-entity-statistic quantiles are nearest empirical order statistics of
-the $M$ full-group scenario statistics. For the simple sum, they are not sums
+the $M$ active-set scenario statistics. For the simple sum, they are not sums
 of equally labeled marginal quantiles:
 
 $$
@@ -175,7 +177,7 @@ in general.
 
 ## Aggregate scores
 
-All metrics pool the same valid full-group origin-lead cases unless reported by
+All metrics pool the same valid admitted origin-lead cases unless reported by
 lead. Lower loss/score is better. The aggregate scores evaluate the scalar
 cross-entity statistic $a=T(\mathbf y)$ of the observation against the $M$
 scenario statistics $x_m=T(\mathbf x_m)$; see the
@@ -446,18 +448,19 @@ interval over model uncertainty. A visually closer fan at one selected origin
 does not establish better overall performance; use paired per-origin scores
 and their moving-block intervals for that claim.
 
-## Joint full-group scores
+## Joint active-set scores
 
 Joint scores use the first `min(M,512)` members of the already generated
-full-group ensemble. This is an ensemble-size selection, not entity
-subsampling. They evaluate the entity vector $\mathbf y\in\mathbb R^{K_g}$,
+active-set ensemble. This is an ensemble-size selection, not additional entity
+subsampling. They evaluate the entity vector
+$\mathbf y\in\mathbb R^{K_{\mathrm{active}}}$,
 not the cross-entity statistic.
 
 ### Energy Score
 
 The Energy Score generalizes the CRPS kernel form to vectors (Gneiting and
 Raftery, 2007; Gneiting et al., 2008). For selected ensemble
-$x_1,\ldots,x_{M_J}\in\mathbb R^{K_g}$ and observed vector $\mathbf y$, the
+$x_1,\ldots,x_{M_J}\in\mathbb R^{K_{\mathrm{active}}}$ and observed vector $\mathbf y$, the
 baseline uses the empirical all-pairs estimator
 
 $$
@@ -476,7 +479,7 @@ Interpretation:
 1. **Accuracy minus spread.** The first term is the mean Euclidean distance from
    the scenarios to the observed vector; the second rewards ensemble spread.
    As with the CRPS, a sharper ensemble scores better only if it still
-   contains the observation. For $K_g=1$ the Energy Score equals the CRPS.
+   contains the observation. For $K_{\mathrm{active}}=1$ the Energy Score equals the CRPS.
 2. **Relation to the aggregate scores.** Since
    $\|\mathbf x\|_2=c_{K}\int_{S^{K-1}}|\theta^{\mathsf T}\mathbf x|\,d\sigma(\theta)$
    for a constant $c_K$ and the uniform distribution $\sigma$ on unit
@@ -496,8 +499,8 @@ Interpretation:
    size relative to the score; the Variogram Score is reported alongside for
    this reason.
 4. **Scale.** The score is in the units of $\mathbf y$, and the Euclidean norm
-   lets large or volatile entities dominate. It grows with $K_g$ and is not
-   comparable across groups.
+   lets large or volatile entities dominate. It grows with active cardinality
+   and is not comparable across groups or different active sizes.
 5. **Estimator.** Like the ensemble CRPS, the all-pairs estimator exceeds its
    fair counterpart by about $\mathbb E\|X-X'\|/(2M_J)$; with $M_J=512$ this
    is small relative to the score.
@@ -509,7 +512,7 @@ Hamill, 2015):
 
 $$
 \mathrm{VS}_p
-=\sum_{i=1}^{K_g}\sum_{j=1}^{K_g}(
+=\sum_{i=1}^{K_{\mathrm{active}}}\sum_{j=1}^{K_{\mathrm{active}}}(
 |y_i-y_j|^p
 -\mathbb E|X_i-X_j|^p
 )^2,
@@ -533,9 +536,9 @@ Interpretation requires care:
 2. **Discrimination.** Scheuerer and Hamill (2015) find VS distinctly more
    discriminative than the Energy Score with respect to correlation
    structure. This is why both are reported.
-3. **Scale and group size.** VS has units of $|y|^{2p}$ and sums
-   $K_g(K_g-1)$ non-zero terms. Its magnitude grows with entity scale and
-   with $K_g$, so it is not comparable across groups. Because every pair has
+5. **Scale and cardinality.** VS has units of $|y|^{2p}$ and sums
+   $K_{\mathrm{active}}(K_{\mathrm{active}}-1)$ non-zero terms. Its magnitude grows with entity scale and
+   active cardinality, so it is not comparable across groups or active sizes. Because every pair has
    equal weight, pairs of large or volatile entities dominate.
 4. **Order $p$.** Smaller $p$ gives less weight to large pairwise differences
    and is more robust to outliers. scoringRules uses $p=0.5$ by default and
@@ -545,12 +548,14 @@ Interpretation requires care:
    $\mathrm{Var}(|X_i-X_j|^p)/M_J$ per term. With $M_J=512$ this is
    small, and it is the same selected ensemble size for every method.
 
-## Full-group output scope
+## Evaluation output scope
 
-The evaluator produces only complete-group metrics, lead tables, correlation
-matrices, and figures. The dependence networks share weights across entities,
-so one architecture serves groups of different $K_g$; tests with several
-group sizes check this property.
+The evaluator reports metrics on each admitted active set while retaining the
+canonical-universe size, active count, and active mask in its tables and
+artifacts. Correlations are saved on the canonical axes, with identity rows
+and columns for inactive entities. The dependence networks share weights
+across entities, so variable active cardinalities do not change parameter
+count.
 
 ## Worked scoring example and implementation guidance
 

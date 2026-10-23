@@ -17,10 +17,13 @@ provenance. Forecast frequency, origin phase and stride, lookback, horizon,
 and chronological split use shared window and split logic. See the generic
 [adapter interface](../technical/data_adapter_interface.md) for the contract.
 
-Each experiment retains its complete group. If a member or required input is
-invalid, eligibility is evaluated for the full group rather than silently
-reducing its cardinality. Adapter-specific group definitions and exceptions
-are documented in the corresponding dataset reference.
+Each experiment retains its complete ordered canonical group. The default
+`protocol.cardinality_mode: fixed` invalidates a case if any member is missing
+or invalid. In opt-in `variable` mode, an entity with unavailable forecast-time
+inputs is marked non-forecastable; it remains on the canonical cache axis but
+is excluded from compact inference. Label validity is recorded separately.
+Adapter-specific group definitions and exceptions are documented in the
+corresponding dataset reference.
 
 ## Timestamp normalization
 
@@ -96,9 +99,10 @@ measurement rows on the horizon grid. This deliberately uses information
 unavailable at the forecast origin and is therefore an oracle diagnostic,
 not a leakage-safe forecasting configuration.
 
-If any configured past or future covariate is non-finite for any entity, the
-entire origin is skipped before Chronos inference. This is stricter than
-imputing unknown exogenous information.
+If a configured past or future covariate is missing or non-finite, fixed mode
+skips the entire origin before Chronos inference. Variable mode marks only the
+affected entity non-forecastable and forecasts the remaining available
+entities. It never imputes unknown exogenous information.
 
 ## Covariates
 
@@ -150,20 +154,27 @@ partition boundary when the origin stride is shorter than the horizon. The
 purge can remove boundary origins; the configured split and retained counts
 are saved with each run.
 
-## Missingness and complete-vector policy
+## Missingness and cardinality policy
 
-There are two different eligibility gates:
+There are two distinct masks:
 
-- an **origin gate** before Chronos: all requested covariates must exist for
-  all group members;
-- an **origin-lead gate** after forecasts: all $K$ truths and forecasts must be
-  finite and every marginal quantile row must be nondecreasing.
+- `forecastable_entity[i,k]` is forecast-time information: the required inputs
+  and entity forecast are finite and available;
+- `entity_valid[i,k,tau]` is label-derived: truth, marginal forecast, PIT, and
+  monotonicity validity all hold for that entity and lead.
 
-If entity $k$ is invalid at $(i,\tau)$, all $K$ PIT entries at that same case
-are set to `NaN`. This complete-case policy keeps the estimand tied to the
-physical group and gives every dependence model the same cases. It can,
-however, induce selection bias if missingness is informative; that limitation
-must be considered in scientific interpretation.
+In fixed mode, one invalid entity invalidates the origin-lead case and all
+group PIT scores for it are missing. In variable mode, each entity PIT is kept
+independently. The active set is the intersection of forecastable and
+label-valid entities, and a case is admitted only when its active count reaches
+`protocol.min_entities_per_case`. This same active set is shared by all
+methods. `forecastable_entity` is visible in training access because it is
+known at forecast time; `entity_valid` and case-level `pit_valid` are sealed
+with the test labels.
+
+The variable-mode estimand is conditional on this admission rule. Informative
+missingness can still induce selection bias and must be considered in
+scientific interpretation.
 
 ## Leakage audit checklist
 

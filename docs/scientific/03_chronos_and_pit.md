@@ -284,49 +284,62 @@ in discretized mode because `discretized_pit` uses a left-sided search. Linear
 mode interpolates only between supported native quantiles and never
 extrapolates a tail.
 
-## 5. Complete spatial pseudo-observations
+## 5. Entity and case validity
 
 ### Theory
 
-First define entity-level validity:
+Forecastability is determined without labels. Let $\phi_k^{(i)}=1$ when
+entity $k$ has complete, finite point-in-time inputs and a finite Chronos
+forecast. Entity-level label validity is
 
 $$
-V_{k,\tau}^{(i)}=
+\ell_{k,\tau}^{(i)}=
 \begin{aligned}
 1 &\quad \text{if }y_{k,\tau}^{(i)}\text{ and every marginal quantile are finite, and the row is valid after repair},\\
 0 &\quad \text{otherwise.}
 \end{aligned}
 $$
 
-The complete-group indicator is
+The active set combines these independent facts:
 
 $$
-V_{g,\tau}^{(i)}=\prod_{k\in\mathcal E_g}V_{k,\tau}^{(i)}.
+\mathcal A_{g,\tau}^{(i)}
+=\{k\in\mathcal E_g:\phi_k^{(i)}=1,\;\ell_{k,\tau}^{(i)}=1\}.
 $$
 
-Thus $V_{g,\tau}^{(i)}=1$ exactly when every one of the $K_g$ entity rows is
-valid. Only then is the spatial score vector defined:
+In fixed mode, the case-validity indicator is one exactly when
+$|\mathcal A_{g,\tau}^{(i)}|=K_g$. In variable mode it is one when
+$|\mathcal A_{g,\tau}^{(i)}|\ge K_{\min}$, with
+`protocol.min_entities_per_case` defining $K_{\min}$. The retained score vector
+is
 
 $$
 \mathbf z_{g,\tau}^{(i)}
-=[z_{k,\tau}^{(i)}]_{k\in\mathcal E_g}
-\in\mathbb R^{K_g}.
+=[z_{k,\tau}^{(i)}]_{k\in\mathcal A_{g,\tau}^{(i)}}
+\in\mathbb R^{|\mathcal A_{g,\tau}^{(i)}|}.
 $$
+
+In fixed mode this is the full canonical group vector. In variable mode valid
+entity PITs remain available even if a different entity is invalid. The cache
+stores `forecastable_entity` as forecast-time information; `entity_valid` and
+case-level `pit_valid` are label-derived and hidden for test origins until
+evaluation access.
 
 ### Example
 
-For a five-wind-park group, suppose four entities have valid pseudo-PITs and the
-fifth has a missing realization. The validity vector is $(1,1,1,1,0)$, hence
-$V_{g,\tau}^{(i)}=0$. The whole five-dimensional vector is recorded as invalid.
-The analysis never estimates a four-entity correlation for this case.
+For a five-wind-park universe, suppose four entities have valid pseudo-PITs and
+the fifth has a missing realization. Fixed mode marks the case invalid. With
+variable mode and $K_{\min}=3$, the four valid PITs form the active case; all
+methods receive those same four entities, while the cache keeps five canonical
+entity positions.
 
 ### Configuration and implementation
 
-`protocol.ordered_entity_ids` and
-`protocol.entity_count` declare the group. `build_group_pit` applies the
-complete-vector rule and returns `valid_origin_lead`. `PITLibrary` stores all
-invalid group scores as missing values so every dependence method receives the
-same scientific sample.
+`protocol.ordered_entity_ids` and `protocol.entity_count` declare the
+canonical universe. `protocol.cardinality_mode` selects `fixed` (default) or
+`variable`; `protocol.min_entities_per_case` sets the variable-mode threshold.
+`build_group_pit` returns both per-entity `entity_valid` and case-level
+`valid_origin_lead`. Every method uses the same admitted cases and active sets.
 
 ## 6. Training-frequency sensitivity for discretized cells
 
@@ -343,7 +356,9 @@ $$
 
 This map is estimated from training origins only and then frozen. It changes the
 pseudo-scores used to estimate dependence; it does not change marginal
-quantiles or scenario projection.
+quantiles or scenario projection. In variable mode, an entity/lead with no
+valid training observations uses nominal cell midpoints as a deterministic
+fallback; the fitted map records those fallback cells.
 
 This transform is defined only for `pit.mode: discretized`, because it estimates
 the probabilities of the $Q+1$ named cells. It is rejected with

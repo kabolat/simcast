@@ -18,9 +18,10 @@ An adapter is responsible for:
 - Provenance for source revisions and non-obvious availability assumptions.
 
 Lookback, horizon, origin time and stride, frequency, and chronological split
-remain shared configuration and window/split machinery. The full entity group
-is retained: a missing entity or required covariate gap never silently changes
-group cardinality.
+remain shared configuration and window/split machinery. The canonical entity
+group is always retained. Fixed mode rejects an origin when any required input
+is unavailable; variable mode marks that entity non-forecastable and can
+forecast the remaining members without changing the cache entity axis.
 
 ## Implementing an adapter
 
@@ -34,9 +35,10 @@ group cardinality.
    required information is unavailable.
 3. Add one registry entry in `simcast/data/registry.py`, a base YAML with an
    explicit adapter ID and ordered entity IDs, and a selective-download test.
-4. Test timestamp parsing, ordering, point-in-time availability, full-group
-   validity, window sizes, split behavior, cache-fingerprint sensitivity, and
-   a mocked cache build. Pin pre-change behavior for existing adapters.
+4. Test timestamp parsing, ordering, point-in-time availability, both fixed and
+   variable forecastability behavior, window sizes, split behavior,
+   cache-fingerprint sensitivity, and a mocked cache build. Pin pre-change
+   behavior for existing adapters.
 5. Record source revisions and scientific assumptions in cache provenance and
    the corresponding [dataset reference](../datasets/README.md).
 

@@ -40,8 +40,9 @@ here.
 | $C_{g,\tau}^{(i)}$ | cross-entity copula | Ch. 1 |
 | $R_{g,\tau}^{(i)}$ | Gaussian-copula correlation matrix | Ch. 1, Ch. 4 |
 | $u_{k,\tau}^{(i)}$, $z_{k,\tau}^{(i)}$ | finite-quantile PIT pseudo-observation, its Gaussianized score | Ch. 1, Ch. 3 |
-| $\mathbf z_{g,\tau}^{(i)}$ | complete group score vector | Ch. 1 |
-| $V_{k,\tau}^{(i)}$, $V_{g,\tau}^{(i)}$ | entity-level and group-level complete-vector validity indicators | Ch. 3 |
+| $\mathbf z_{g,\tau}^{(i)}$ | score vector on the active set, equal to the full group in fixed mode | Ch. 1, Ch. 3 |
+| $\phi_k^{(i)}$, $\ell_{k,\tau}^{(i)}$, $\mathcal A_{g,\tau}^{(i)}$ | forecastability, label validity, and active entity set | Ch. 1, Ch. 3 |
+| $V_{g,\tau}^{(i)}$ | case-validity indicator under the configured cardinality mode | Ch. 3 |
 | $\Lambda_{g,\tau}^{(i)}$, $\lambda_{k,\tau}^{(i)}$, $r$ | low-rank loading matrix, one entity's loading vector, factor rank | Ch. 4 |
 | $\sigma_{k,\tau}^{(i)}$ | entity idiosyncratic (uniqueness) scale | Ch. 4 |
 | $X_{g,\tau}^{(i)}$ | dependence-fitting feature matrix (distinct from validity $V$) | Ch. 5 |
@@ -75,9 +76,26 @@ $$
 \qquad K_g=|\mathcal E_g|.
 $$
 
-Each configured homogeneous entity type is one separate group. The entity set
-never varies with forecast instance. If any member is invalid at a case, the
-case is discarded for the complete group; $\mathcal E_g$ is not reduced.
+Each configured homogeneous entity type is one separate group. Its ordered
+canonical universe $\mathcal E_g$ never varies with forecast instance. The
+default `fixed` mode requires every entity to be valid at a case. Opt-in
+`variable` mode uses a per-case active set without changing the canonical
+universe or the cache entity axis.
+
+Forecast-time availability and label validity are distinct. Let
+$\phi_k^{(i)}$ indicate that entity $k$ has the required point-in-time inputs
+and a finite Chronos forecast, and let $\ell_{k,\tau}^{(i)}$ indicate a valid
+truth/PIT row. Then
+
+$$
+\mathcal A_{g,\tau}^{(i)}
+=\{k\in\mathcal E_g:\phi_k^{(i)}=1,\;\ell_{k,\tau}^{(i)}=1\}.
+$$
+
+Variable-mode cases are admitted when
+$|\mathcal A_{g,\tau}^{(i)}|\ge K_{\min}$, where
+`protocol.min_entities_per_case` defines $K_{\min}$. All methods use that same
+active set for the case. Test-label validity is sealed until evaluation.
 
 The one-based forecast lead is $\tau\in[H]$. Its physical target time is
 
@@ -124,8 +142,8 @@ $$
 $$
 
 More generally, evaluation targets a cross-entity statistic $T_g$ of the
-complete vector and applies the same function to each simulated vector and
-its observed counterpart. The supported choices are
+active vector and applies the same function to each simulated vector and its
+observed counterpart. In fixed mode the active set is the full universe. The supported choices are
 $T_g(\mathbf y)=\sum_k y_k$ (simple sum, the default),
 $\sum_k |y_k|$ (absolute sum), $\max_k y_k$ (maximum), and
 $\max_k |y_k|$ (absolute maximum). For the default simple sum, the random
@@ -133,10 +151,10 @@ spatial aggregate and its observation are respectively
 
 $$
 A_{g,\tau}^{(i)}
-=\sum_{k\in\mathcal E_g}Y_{k,\tau}^{(i)},
+=\sum_{k\in\mathcal A_{g,\tau}^{(i)}}Y_{k,\tau}^{(i)},
 \qquad
 a_{g,\tau}^{(i)}
-=\sum_{k\in\mathcal E_g}y_{k,\tau}^{(i)}.
+=\sum_{k\in\mathcal A_{g,\tau}^{(i)}}y_{k,\tau}^{(i)}.
 $$
 
 $\Lambda$ is reserved for low-rank factor loadings; $A$ is used only for the
@@ -148,11 +166,11 @@ For one group, forecast instance, and lead, the modeled joint distribution is
 
 $$
 P(
-Y_{k,\tau}^{(i)}\le y_k,\;k\in\mathcal E_g
+Y_{k,\tau}^{(i)}\le y_k,\;k\in\mathcal A_{g,\tau}^{(i)}
 \mid\mathcal I^{(i)}
 )
 =C_{g,\tau}^{(i)}(
-\{F_{k,\tau}^{(i)}(y_k)\}_{k\in\mathcal E_g}
+\{F_{k,\tau}^{(i)}(y_k)\}_{k\in\mathcal A_{g,\tau}^{(i)}}
 ).
 $$
 
@@ -160,17 +178,21 @@ The methods differ only in $C_{g,\tau}^{(i)}$, currently represented by a
 Gaussian-copula correlation matrix
 
 $$
-R_{g,\tau}^{(i)}\in\mathbb R^{K_g\times K_g}.
+R_{g,\tau}^{(i)}\in\mathbb R^{K_{\mathrm{active}}\times K_{\mathrm{active}}},
+\qquad K_{\mathrm{active}}=|\mathcal A_{g,\tau}^{(i)}|.
 $$
 
-All methods use the same complete ordered $\mathcal E_g$, fixed FM-derived
-quantile grid, test cases, and base random draws. The core hierarchy is:
+All methods use the same canonical ordered $\mathcal E_g$, fixed FM-derived
+quantile grid, admitted test cases, active sets, and base random draws. In
+variable mode the effective case correlation is the principal matrix on
+$\mathcal A_{g,\tau}^{(i)}$; canonical IDs remain available for mapping and
+artifacts. The core hierarchy is:
 
 - M0: independent-copula baseline;
 - M1: static lead-specific Gaussian copula;
 - M2: conditional low-rank Gaussian copula with a shared entity-wise network;
 - M3: set-aware conditional low-rank Gaussian copula that contextualizes the
-  complete group with self-attention;
+   active set with self-attention;
 - M4: conditional RBF-kernel Gaussian copula in a learned entity-feature
   geometry.
 
@@ -198,21 +220,22 @@ $$
 z_{k,\tau}^{(i)}=\Phi^{-1}(u_{k,\tau}^{(i)}),
 $$
 
-and the complete group vector is
+and the active score vector is
 
 $$
 \mathbf z_{g,\tau}^{(i)}
-=[z_{k,\tau}^{(i)}]_{k\in\mathcal E_g}
-\in\mathbb R^{K_g}.
+=[z_{k,\tau}^{(i)}]_{k\in\mathcal A_{g,\tau}^{(i)}}
+\in\mathbb R^{|\mathcal A_{g,\tau}^{(i)}|}.
 $$
 
-This vector exists for training/evaluation only when every group member is
-valid at $(i,\tau)$.
+In fixed mode this vector exists only when every group member is valid. In
+variable mode it contains each valid active entity and the case is retained
+when its cardinality reaches $K_{\min}$.
 
 ## Primary estimand
 
 For a proper aggregate score $S$, the descriptive method contrast over the
-held-out full-group cases is
+held-out admitted cases is
 
 $$
 \frac{1}{|\mathcal D_{g,\mathrm{test}}|}
@@ -251,8 +274,8 @@ level of mechanism:
 
 $$
 \begin{aligned}
-\mathrm{H}_{\mathrm{dep}}&:\quad C_{g,\tau}^{(i)}\ne\prod_{k\in\mathcal E_g}F_{k,\tau}^{(i)}
-&&\text{for some full-group cases},\\
+\mathrm{H}_{\mathrm{dep}}&:\quad C_{g,\tau}^{(i)}\ne\prod_{k\in\mathcal A_{g,\tau}^{(i)}}F_{k,\tau}^{(i)}
+&&\text{for some admitted cases},\\
 \mathrm{H}_{\mathrm{ctx}}&:\quad R_{g,\tau}^{(i)}\text{ varies with the frozen forecast context}.
 \end{aligned}
 $$
@@ -266,14 +289,15 @@ stated predictive target over a static dependence estimate.
 
 Modeled:
 
-- same-lead forecast-error dependence across all entities in one static group;
+- same-lead forecast-error dependence across active entities in one canonical
+   static group;
 - origin- and lead-dependent correlations for M2--M4;
-- aggregate uncertainty induced by full-group spatial scenarios.
+- aggregate uncertainty induced by active-set spatial scenarios.
 
 Not modeled:
 
-- random, prefix, or reduced-cardinality entity sets;
-- entity dropout or subset augmentation;
+- random or prefix-selected canonical entity universes;
+- artificial entity-dropout or subset augmentation;
 - covariance between different forecast leads;
 - trajectory-level temporal copulas;
 - mixed-type entity groups;
@@ -281,8 +305,9 @@ Not modeled:
 - parametric tail extrapolation beyond the lowest and highest native quantiles;
 - causal effects or operational decisions.
 
-M2--M4 remain mathematically capable of accepting other cardinalities, but this
-is an architectural property only and is not evaluated in the full-group study.
+M2--M4 are trained and evaluated on the configured cardinality protocol.
+Variable-mode active subsets arise from forecastability and label validity;
+they are not randomly sampled augmentations.
 
 ## Scientific assumptions
 
@@ -292,8 +317,8 @@ is an architectural property only and is not evaluated in the full-group study.
    and tail-specific dependence.
 3. Training-period dependence transfers to the chronological test period.
 4. Each homogeneous metadata-defined entity group is scientifically meaningful.
-5. Complete-case filtering does not invalidate the intended full-group
-   interpretation; its possible selection effect remains a limitation.
+5. The configured validity rule yields an interpretable case population;
+   informative missingness and active-set selection can still bias results.
 6. The configured finite-quantile marginal approximation is acceptable for a
    controlled method comparison.
 7. Target measurement timestamps and weather vintages correctly represent
@@ -303,11 +328,11 @@ is an architectural property only and is not evaluated in the full-group study.
 
 1. How much residual dependence remains after the fixed FM-derived marginal
    forecasts?
-2. How well does the independent-copula baseline represent full-group aggregate
+2. How well does the independent-copula baseline represent active-set aggregate
    uncertainty?
 3. Does a static lead-specific PIT copula improve aggregate forecasts?
 4. Does context-conditioned low-rank dependence improve over static dependence?
-5. Does full-group set-aware contextualization improve over entity-wise
+5. Does active-set contextualization improve over entity-wise
    conditioning?
 6. How does the nonnegative learned-kernel restriction of M4 compare with
    signed low-rank dependence?
@@ -315,7 +340,7 @@ is an architectural property only and is not evaluated in the full-group study.
    entity groups?
 
 These are predictive questions. “Best” means lowest held-out mean aggregate
-pinball among M0--M4 under the declared full-group protocol, not causal,
+pinball among M0--M4 under the declared cardinality protocol, not causal,
 universally superior, or statistically significant.
 
 ## Interpretation discipline

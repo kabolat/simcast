@@ -17,7 +17,7 @@ The canonical location is
 
 ```text
 dataset.zarr/                 public arrays; test labels replaced by NaN
-test_labels.zarr/             true_y, pit_u, pit_z for test origins only
+test_labels.zarr/             label values and validity masks for test origins only
 metadata.json                 provenance, protocol, missingness, crossings
 marginal_diagnostics.json     train+validation marginal diagnostics only
 resolved_config.json          internal numerical view used to build the record
@@ -25,7 +25,8 @@ resolved_config.json          internal numerical view used to build the record
 
 ### `dataset.zarr`
 
-The xarray schema is `simcast.pit_library`, version 1.
+The xarray schema is `simcast.pit_library`, version 2. The canonical `entity`
+axis always represents the complete ordered universe.
 
 | Variable/coordinate | Dimensions | Typical dtype | Meaning |
 |---|---|---|---|
@@ -40,25 +41,30 @@ The xarray schema is `simcast.pit_library`, version 1.
 | `hidden` | `[D]` | int64 | embedding channel |
 | `true_y` | `[N,K,H]` | float | realization; test slice masked publicly |
 | `quantile_prediction` | `[N,K,H,Q]` | float32 | fixed native marginal; never test-masked |
+| `forecastable_entity` | `[N,K]` | bool | required inputs and forecast available; public because known at forecast time |
 | `crossing_{origin,entity,lead}_index` | `[C]` | int64 | coordinates of the `C` raw quantile rows that cross, retained only with isotonic repair |
 | `crossing_raw_quantile_prediction` | `[C,Q]` | float32 | raw Chronos values for those crossed rows; the matching repaired row is addressed in `quantile_prediction` by its stored coordinates |
 | `pit_u` | `[N,K,H]` | float32 | configured finite-quantile PIT; test slice masked publicly |
 | `pit_z` | `[N,K,H]` | float32 | Gaussian score; test slice masked publicly |
+| `entity_valid` | `[N,K,H]` | bool/float32 | label-derived per-entity PIT validity; test slice masked publicly |
 | `forecast_embedding` | `[N,K,P,D]` | float16 | frozen output-patch representation |
-| `pit_valid` | `[N,H]` | bool | complete-vector gate |
+| `pit_valid` | `[N,H]` | bool/float32 | case-validity gate under the configured cardinality mode; test slice masked publicly |
 | `latitude`, `longitude` | `[K]` | float32 | static location |
 
-`test_labels.zarr` stores only label variables for test `origin` positions.
-Training access leaves public NaNs intact. Evaluation access loads the separate
-group and inserts those arrays at their original integer positions.
+`test_labels.zarr` stores `true_y`, `pit_u`, `pit_z`, `entity_valid`, and
+`pit_valid` only for test `origin` positions. Training access leaves public
+NaNs intact. Evaluation access loads the separate group and inserts those
+arrays at their original integer positions. `forecastable_entity` remains
+visible in both modes.
 
 ### Cache metadata
 
 `metadata.json` contains adapter ID, dataset ID/revision, adapter-reported
 source provenance (including any explicit availability assumptions), group
 membership/names and optional coordinates, Chronos source/model revisions and native output structure,
-forecast window protocol, covariate config, raw crossing diagnostics, invalid
-vector counts, historical/future missingness, eligible/skipped/retained origin
+forecast window protocol, covariate config, raw crossing diagnostics,
+train/validation-only PIT validity counts, historical and train/validation
+future-truth missingness, eligible/skipped/retained origin
 counts, purged boundary timestamps, full resolved config, schema version, and
 `test_labels_sealed: true`.
 
@@ -75,6 +81,7 @@ Every fitted method directory contains:
 resolved_config.yaml
 run_metadata.json
 model.npz                       M0/M1 only
+m1_diagnostics.json             M1 estimator and pairwise overlaps
 best.pt                         M2/M3/M4 only
 final.pt                        M2/M3/M4 only
 training_metrics.csv/json       M2/M3/M4 only
@@ -116,17 +123,19 @@ figures are written once to `evaluations/<evaluation-id>/<base-id>/figures/`
 ### `metrics.json`
 
 Top-level keys are method names. Each method includes valid and dropped case
-counts plus exactly its declared metrics. `mean_pinball` includes per-quantile
+counts, active-entity count summaries, and exactly its declared metrics. `mean_pinball` includes per-quantile
+counts, active-entity count summaries, and exactly its declared metrics. `mean_pinball` includes per-quantile
 pinball values; `weighted_interval_score` includes coverage, width, and
 interval-score values for its configured central intervals. Values pool all
 valid test origins and leads.
 
 ### Tidy per-case tables
 
-`per_origin_lead_metrics.parquet` has one row per complete declared group,
-method, neural seed, origin, and lead. It records $K_g$, validity, observed and
-forecast aggregate quantiles, and exactly the declared metrics. Invalid rows
-remain present with `valid: false`; the group never shrinks. The existing
+`per_origin_lead_metrics.parquet` has one row per canonical universe, method,
+neural seed, origin, and lead. It records universe size $K_g$, active entity
+count, validity, observed and forecast aggregate quantiles, and exactly the
+declared metrics. Invalid rows remain present with `valid: false`; the
+canonical universe never shrinks. The existing
 `observed_aggregate` and `aggregate_q*` columns refer
 to the configured cross-entity statistic (sum, absolute sum, max, or absolute max).
 `per_origin_metrics.parquet` averages metrics across valid leads within each
@@ -144,20 +153,23 @@ uncertainty bands; interpretation and formulas are in
 
 ### `metrics_by_lead.csv`
 
-Each row is `(lead, method)`. It holds exactly the declared metrics and the
-diagnostics implied by `mean_pinball` or `weighted_interval_score` for that
-one-based lead. Invalid cases at a lead are omitted. The table is always written.
+Each row is `(lead, method)`. It holds declared metrics, active-entity count
+summaries, and the diagnostics implied by `mean_pinball` or
+`weighted_interval_score` for that one-based lead. Invalid cases at a lead are
+omitted from summaries. The table is always written.
 
 ### Per-method NPZ
 
 | Array | Shape | Meaning |
 |---|---|---|
 | `quantile_predictions` | `[N_test,H,Q_eval]` | empirical aggregate quantiles |
-| `correlations` | `[N_test,H,K,K]` | evaluated copula correlations |
-| `energy_score` | `[N_test,H]` | empirical all-pairs score on the selected joint ensemble; present only when declared |
-| `variogram_score` | `[N_test,H]` | score; present only when declared |
+| `correlations` | `[N_test,H,K,K]` | active correlation scattered onto canonical axes; inactive rows/columns are identity |
+| `active_entity_mask` | `[N_test,K,H]` | common forecastable and label-valid entities used at each case |
+| `active_entity_count` | `[N_test,H]` | active set size, including invalid cases |
+| `energy_score` | `[N_test,H]` | empirical all-pairs score on the selected active joint ensemble; present only when declared |
+| `variogram_score` | `[N_test,H]` | active-set score; present only when declared |
 | `pseudo_nll` | `[N_test,H]` | finite-quantile Gaussian-copula pseudo-NLL; present only when declared |
-| `valid` | `[N_test,H]` | common evaluation mask |
+| `valid` | `[N_test,H]` | common evaluation mask enforcing the configured cardinality threshold |
 
 Entity-level and aggregate Monte Carlo samples are not persisted, which keeps
 artifacts manageable but means exact secondary analyses requiring raw scenarios
@@ -167,8 +179,9 @@ must regenerate them.
 
 `evaluation_manifest.json` records cache path, method-run paths, methods, the
 declared `metrics`, the `cross_entity_statistic`, test-origin/case counts, the
-complete ordered group and $K_g$, full-group protocol flags, scenario and
-selected joint ensemble sizes, common-random-number status, evaluation seed,
+complete ordered universe and $K_g$, cardinality mode, minimum active count,
+overall and per-lead active-count summaries, scenario and selected joint
+ensemble sizes, common-random-number status, evaluation seed,
 revisions, config/model hashes, PIT mode and dependence transform, Git commit,
 and time. The declared `metrics` list is the authoritative set of metrics for
 that evaluation; a report may present a subset but cannot add metrics.
