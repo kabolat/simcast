@@ -75,6 +75,8 @@ class MethodEvaluation:
     pseudo_nll: torch.Tensor
     correlations: torch.Tensor
     interval_predictions: torch.Tensor
+    active_entity_mask: torch.Tensor
+    valid_mask: torch.Tensor
 
 
 def _entity_ids(library: PITLibrary, indices: Sequence[int] | None = None) -> list[str]:
@@ -102,16 +104,49 @@ def _test_arrays(
     return split_origin_indices, truth, predictions, embeddings
 
 
+def _test_masks(
+    library: PITLibrary,
+    entity_indices: Sequence[int],
+) -> tuple[torch.Tensor, torch.Tensor]:
+    dataset = library.test_data().isel(entity=list(entity_indices))
+    forecastable = torch.tensor(dataset["forecastable_entity"].values, dtype=torch.bool)
+    raw_validity = np.asarray(dataset["entity_valid"].values)
+    entity_valid = torch.tensor(np.isfinite(raw_validity) & (raw_validity > 0.5), dtype=torch.bool)
+    return forecastable, entity_valid
+
+
 def _prepare_method(
     name: str,
     run_paths: Mapping[str, Path],
     library: PITLibrary,
     config: ResolvedExperimentConfig,
     entity_indices: Sequence[int],
+    forecastable_entity: torch.Tensor | None = None,
+    active_entity_mask: torch.Tensor | None = None,
+    valid_cases: torch.Tensor | None = None,
 ) -> PreparedMethod:
     _, _, predictions, embeddings = _test_arrays(library, entity_indices)
     n_origin, n_entity, horizon, _ = predictions.shape
     ids = _entity_ids(library, entity_indices)
+    forecastable = (
+        torch.ones((n_origin, n_entity), dtype=torch.bool)
+        if forecastable_entity is None
+        else torch.as_tensor(forecastable_entity, dtype=torch.bool)
+    )
+    active = (
+        torch.ones((n_origin, n_entity, horizon), dtype=torch.bool)
+        if active_entity_mask is None
+        else torch.as_tensor(active_entity_mask, dtype=torch.bool)
+    )
+    case_valid = (
+        torch.ones((n_origin, horizon), dtype=torch.bool)
+        if valid_cases is None
+        else torch.as_tensor(valid_cases, dtype=torch.bool)
+    )
+    if forecastable.shape != (n_origin, n_entity) or active.shape != (n_origin, n_entity, horizon):
+        raise ValueError("evaluation masks must match the test origin/entity/lead dimensions")
+    if case_valid.shape != (n_origin, horizon):
+        raise ValueError("valid_cases must have shape [origin, lead]")
     if name == "independent":
         matrix = IndependentCopula(ids, n_leads=horizon).correlation_matrix(1).to(torch.float32)
         return PreparedMethod(name, matrix.expand(n_origin, horizon, n_entity, n_entity).clone())
@@ -128,27 +163,74 @@ def _prepare_method(
         raise ValueError(f"evaluation requires the exact ordered {name} checkpoint entity set")
     levels = torch.tensor(library.dataset["quantile"].values, dtype=torch.float32)
     features = checkpoint.feature_builder.transform(
-        embeddings, predictions, levels, _locations(library, entity_indices)
+        embeddings,
+        predictions,
+        levels,
+        _locations(library, entity_indices),
+        forecastable_mask=forecastable,
     )
     flat = features.permute(0, 2, 1, 3).reshape(-1, n_entity, features.shape[-1])
+    flat_active = active.permute(0, 2, 1).reshape(-1, n_entity)
+    valid_positions = case_valid.reshape(-1).nonzero(as_tuple=False).flatten()
     device = torch.device(config.chronos.device if torch.cuda.is_available() else "cpu")
     checkpoint.model.to(device).eval()
-    chunks: list[torch.Tensor] = []
+    matrices = torch.eye(n_entity, dtype=torch.float32).expand(flat.shape[0], -1, -1).clone()
     with torch.no_grad():
-        for start in range(0, flat.shape[0], 256):
-            correlation = checkpoint.model(flat[start : start + 256].to(device))
+        for start in range(0, valid_positions.numel(), 256):
+            positions = valid_positions[start : start + 256]
+            case_features = flat.index_select(0, positions)
+            case_active = flat_active.index_select(0, positions)
+            active_indices = [mask.nonzero(as_tuple=False).flatten() for mask in case_active]
+            max_active = max((indices.numel() for indices in active_indices), default=0)
+            if max_active == 0:
+                continue
+            compact_features = case_features.new_zeros((positions.numel(), max_active, features.shape[-1]))
+            padding_mask = torch.ones((positions.numel(), max_active), dtype=torch.bool)
+            for row, indices in enumerate(active_indices):
+                count = indices.numel()
+                if count:
+                    compact_features[row, :count] = case_features[row].index_select(0, indices)
+                    padding_mask[row, :count] = False
+            if bool(padding_mask.any()):
+                correlation = checkpoint.model(compact_features.to(device), padding_mask=padding_mask.to(device))
+            else:
+                correlation = checkpoint.model(compact_features.to(device))
             if not isinstance(correlation, torch.Tensor):
                 raise TypeError("conditional model did not return tensor correlations")
-            chunks.append(correlation.to(device="cpu", dtype=torch.float32))
+            correlation = correlation.to(device="cpu", dtype=torch.float32)
+            for row, (position, indices) in enumerate(zip(positions, active_indices, strict=True)):
+                count = indices.numel()
+                if count:
+                    matrices[position][indices[:, None], indices] = correlation[row, :count, :count]
     checkpoint.model.to("cpu")
-    matrices = torch.cat(chunks).reshape(n_origin, horizon, n_entity, n_entity)
+    matrices = matrices.reshape(n_origin, horizon, n_entity, n_entity)
     return PreparedMethod(name, matrices, conditional=checkpoint, features=features)
 
 
-def _valid_pairs(truth: torch.Tensor, predictions: torch.Tensor) -> torch.Tensor:
-    finite = torch.isfinite(truth).all(dim=1) & torch.isfinite(predictions).all(dim=(1, 3))
-    crossing = (predictions[..., :-1] > predictions[..., 1:]).any(dim=(1, 3))
-    return finite & ~crossing
+def _active_cases(
+    truth: torch.Tensor,
+    predictions: torch.Tensor,
+    forecastable_entity: torch.Tensor,
+    entity_valid: torch.Tensor,
+    dependence_z: torch.Tensor,
+    config: ResolvedExperimentConfig,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    finite_marginals = torch.isfinite(predictions).all(dim=-1)
+    crossing = (predictions[..., :-1] > predictions[..., 1:]).any(dim=-1)
+    active = (
+        forecastable_entity.unsqueeze(-1)
+        & entity_valid
+        & torch.isfinite(truth)
+        & finite_marginals
+        & ~crossing
+        & torch.isfinite(dependence_z)
+    )
+    counts = active.sum(dim=1)
+    if config.protocol.cardinality_mode == "fixed":
+        valid = counts == truth.shape[1]
+    else:
+        valid = counts >= config.protocol.min_entities_per_case
+    return active, valid
 
 
 def _base_normal_draws(
@@ -182,6 +264,7 @@ def _sample_and_evaluate(
     config: ResolvedExperimentConfig,
     *,
     dependence_z: torch.Tensor | None = None,
+    active_entity_mask: torch.Tensor | None = None,
     num_samples: int | None = None,
     metrics: Sequence[str] = ("mean_pinball", "crps", "weighted_interval_score"),
 ) -> MethodEvaluation:
@@ -192,14 +275,23 @@ def _sample_and_evaluate(
         raise ValueError(
             f"full group requires correlations with shape {expected_shape}, got {tuple(prepared.correlations.shape)}"
         )
+    active = (
+        torch.ones((n_origin, n_entity, horizon), dtype=torch.bool)
+        if active_entity_mask is None
+        else torch.as_tensor(active_entity_mask, dtype=torch.bool)
+    )
+    if active.shape != (n_origin, n_entity, horizon):
+        raise ValueError("active_entity_mask must have shape [origin, entity, lead]")
     aggregate = torch.full((n_origin * horizon, sample_count), torch.nan)
     energy = torch.full((n_origin * horizon,), torch.nan)
     variogram = torch.full((n_origin * horizon,), torch.nan)
     pseudo_nll = torch.full((n_origin * horizon,), torch.nan)
+    aggregate_truth = torch.full((n_origin * horizon,), torch.nan)
     correlations = prepared.correlations.reshape(-1, n_entity, n_entity)
     marginal = predictions.permute(0, 2, 1, 3).reshape(-1, n_entity, predictions.shape[-1])
     realized = truth.permute(0, 2, 1).reshape(-1, n_entity)
     flattened_z = None if dependence_z is None else dependence_z.permute(0, 2, 1).reshape(-1, n_entity)
+    flattened_active = active.permute(0, 2, 1).reshape(-1, n_entity)
     selected = set(metrics)
     case_indices = valid.reshape(-1).nonzero(as_tuple=False).flatten()
     device = torch.device(config.chronos.device if torch.cuda.is_available() else "cpu")
@@ -215,45 +307,76 @@ def _sample_and_evaluate(
         evaluation_seed = config.sampling.evaluation_seed
         if not config.sampling.common_random_numbers:
             evaluation_seed += zlib.crc32(prepared.name.encode())
-        base_normals = _base_normal_draws(
-            positions,
-            sample_count,
-            n_entity,
-            seed=evaluation_seed,
-            device=device,
-        )
-        scenarios = generate_scenarios(
-            correlations.index_select(0, positions).to(device),
-            marginal.index_select(0, positions).to(device),
-            levels.to(device),
-            num_samples=sample_count,
-            base_normals=base_normals,
-            marginal_mode=config.pit.mode,
-        )
-        aggregate[positions] = _cross_entity_statistic(
-            scenarios.entity_samples, config.evaluation.cross_entity_statistic, dim=-1
-        ).cpu()
-        if {"energy_score", "variogram_score"} & selected:
-            joint_count = min(sample_count, config.evaluation.joint_score_num_samples)
-            joint_samples = scenarios.entity_samples[:, :joint_count]
-            joint_truth = realized.index_select(0, positions).to(device)
-            if "energy_score" in selected:
-                energy[positions] = energy_score(joint_samples, joint_truth, pair_chunk_size=128).cpu()
-            if "variogram_score" in selected:
-                variogram[positions] = variogram_score(
-                    joint_samples, joint_truth, power=config.evaluation.variogram_power
-                ).cpu()
-        if "test_pseudo_nll" in selected and flattened_z is not None:
-            pseudo_nll[positions] = gaussian_copula_pseudo_nll(
-                flattened_z.index_select(0, positions).to(device),
-                correlations.index_select(0, positions).to(device),
-                reduction="none",
+        batch_active = flattened_active.index_select(0, positions)
+        active_counts = batch_active.sum(dim=-1)
+        for active_count in torch.unique(active_counts, sorted=True).tolist():
+            rows = (active_counts == active_count).nonzero(as_tuple=False).flatten()
+            group_positions = positions.index_select(0, rows)
+            group_active = batch_active.index_select(0, rows)
+            entity_indices = group_active.nonzero(as_tuple=False)[:, 1].reshape(-1, active_count)
+            batch_indices = torch.arange(group_positions.numel())
+            group_correlation = correlations.index_select(0, group_positions)
+            compact_correlation = group_correlation[
+                batch_indices[:, None, None], entity_indices[:, :, None], entity_indices[:, None, :]
+            ].to(device)
+            group_marginal = marginal.index_select(0, group_positions)
+            compact_marginal = torch.gather(
+                group_marginal,
+                1,
+                entity_indices[:, :, None].expand(-1, -1, group_marginal.shape[-1]),
+            ).to(device)
+            full_base_normals = _base_normal_draws(
+                group_positions,
+                sample_count,
+                n_entity,
+                seed=evaluation_seed,
+                device=device,
+            )
+            compact_base_normals = torch.gather(
+                full_base_normals,
+                2,
+                entity_indices.to(device)[:, None, :].expand(-1, sample_count, -1),
+            )
+            scenarios = generate_scenarios(
+                compact_correlation,
+                compact_marginal,
+                levels.to(device),
+                num_samples=sample_count,
+                base_normals=compact_base_normals,
+                marginal_mode=config.pit.mode,
+            )
+            aggregate[group_positions] = _cross_entity_statistic(
+                scenarios.entity_samples, config.evaluation.cross_entity_statistic, dim=-1
             ).cpu()
+            joint_truth = torch.gather(
+                realized.index_select(0, group_positions), 1, entity_indices
+            ).to(device)
+            aggregate_truth[group_positions] = _cross_entity_statistic(
+                joint_truth, config.evaluation.cross_entity_statistic, dim=-1
+            ).cpu()
+            if {"energy_score", "variogram_score"} & selected:
+                joint_count = min(sample_count, config.evaluation.joint_score_num_samples)
+                joint_samples = scenarios.entity_samples[:, :joint_count]
+                if "energy_score" in selected:
+                    energy[group_positions] = energy_score(
+                        joint_samples, joint_truth, pair_chunk_size=128
+                    ).cpu()
+                if "variogram_score" in selected and active_count >= 2:
+                    variogram[group_positions] = variogram_score(
+                        joint_samples, joint_truth, power=config.evaluation.variogram_power
+                    ).cpu()
+            if "test_pseudo_nll" in selected and flattened_z is not None:
+                group_z = torch.gather(flattened_z.index_select(0, group_positions), 1, entity_indices).to(device)
+                pseudo_nll[group_positions] = gaussian_copula_pseudo_nll(
+                    group_z,
+                    compact_correlation,
+                    reduction="none",
+                ).cpu()
     aggregate = aggregate.reshape(n_origin, horizon, sample_count)
     energy = energy.reshape(n_origin, horizon)
     variogram = variogram.reshape(n_origin, horizon)
     pseudo_nll = pseudo_nll.reshape(n_origin, horizon)
-    aggregate_truth = _cross_entity_statistic(truth, config.evaluation.cross_entity_statistic, dim=1)
+    aggregate_truth = aggregate_truth.reshape(n_origin, horizon)
     interval_levels = torch.tensor(config.evaluation.interval_levels, dtype=aggregate.dtype)
     interval_bounds = empirical_quantiles(
         aggregate,
@@ -269,7 +392,15 @@ def _sample_and_evaluate(
         valid_mask=valid,
     )
     return MethodEvaluation(
-        prepared.name, report, energy, variogram, pseudo_nll, prepared.correlations, interval_predictions
+        prepared.name,
+        report,
+        energy,
+        variogram,
+        pseudo_nll,
+        prepared.correlations,
+        interval_predictions,
+        active,
+        valid,
     )
 
 
@@ -280,6 +411,10 @@ def _serializable_metrics(
     selected = set(metrics)
     summary["valid_origin_lead_count"] = int(valid.sum())
     summary["dropped_origin_lead_count"] = int(valid.numel() - valid.sum())
+    active_counts = result.active_entity_mask.sum(dim=1)[valid]
+    summary["mean_active_entity_count"] = float(active_counts.float().mean())
+    summary["min_active_entity_count"] = int(active_counts.min())
+    summary["max_active_entity_count"] = int(active_counts.max())
     if "energy_score" in selected:
         summary["energy_score"] = float(result.energy_score[torch.isfinite(result.energy_score)].mean())
     if "variogram_score" in selected:
@@ -297,6 +432,8 @@ def _save_method_result(
         "quantile_predictions": result.aggregate.quantile_predictions.numpy(),
         "correlations": result.correlations.numpy(),
         "valid": valid.numpy(),
+        "active_entity_count": result.active_entity_mask.sum(dim=1).numpy(),
+        "active_entity_mask": result.active_entity_mask.numpy(),
     }
     if "energy_score" in metrics:
         payload["energy_score"] = result.energy_score.numpy()
@@ -310,6 +447,19 @@ def _save_method_result(
 
 def _lead_table(result: MethodEvaluation, metrics: Sequence[str]) -> pd.DataFrame:
     table = result.aggregate.by_lead.copy()
+    counts = result.active_entity_mask.sum(dim=1)
+    mean_counts: list[float] = []
+    minimum_counts: list[float] = []
+    maximum_counts: list[float] = []
+    for lead in table.index:
+        lead_index = int(lead) - 1
+        lead_counts = counts[:, lead_index][result.valid_mask[:, lead_index]]
+        mean_counts.append(float(lead_counts.float().mean()) if lead_counts.numel() else np.nan)
+        minimum_counts.append(float(lead_counts.min()) if lead_counts.numel() else np.nan)
+        maximum_counts.append(float(lead_counts.max()) if lead_counts.numel() else np.nan)
+    table["mean_active_entity_count"] = mean_counts
+    table["min_active_entity_count"] = minimum_counts
+    table["max_active_entity_count"] = maximum_counts
     for name, values in (
         ("energy_score", result.energy_score),
         ("variogram_score", result.variogram_score),
@@ -347,7 +497,14 @@ def _case_tables(
     observed = np.asarray(test["true_y"].values)
     statistic = config.evaluation.cross_entity_statistic
     selected = np.abs(observed) if statistic in {"absolute_sum", "absolute_max"} else observed
-    observed_aggregate = selected.max(axis=1) if statistic in {"max", "absolute_max"} else selected.sum(axis=1)
+    active = next(iter(results.values())).active_entity_mask.numpy()
+    active_counts = active.sum(axis=1)
+    if statistic in {"max", "absolute_max"}:
+        observed_aggregate = np.where(active, selected, -np.inf).max(axis=1)
+        observed_aggregate[active_counts == 0] = np.nan
+    else:
+        observed_aggregate = np.where(active, selected, 0.0).sum(axis=1)
+    observed_aggregate[~valid.numpy()] = np.nan
     n_origin, horizon = valid.shape
     rows: list[pd.DataFrame] = []
     for name, result in results.items():
@@ -360,6 +517,7 @@ def _case_tables(
                 "origin": np.repeat(origins, horizon),
                 "lead": np.tile(np.arange(1, horizon + 1), n_origin),
                 "K": result.correlations.shape[-1],
+                "active_entity_count": active_counts.reshape(-1),
                 "cross_entity_statistic": config.evaluation.cross_entity_statistic,
                 "valid": valid.numpy().reshape(-1),
                 "observed_aggregate": observed_aggregate.reshape(-1),
@@ -439,15 +597,29 @@ def _case_tables(
     )
 
 
-def _training_correlations(library: PITLibrary) -> tuple[np.ndarray, np.ndarray]:
+def _training_correlations(
+    library: PITLibrary, *, allow_missing: bool = False
+) -> tuple[np.ndarray, np.ndarray]:
     dataset = library.dataset
     train = dataset.where(dataset["split"] == "train", drop=True)["pit_z"].values
     lead = train[:, :, 0]
-    lead = lead[np.isfinite(lead).all(axis=1)]
-    if lead.shape[0] < 2:
-        raise ValueError("at least two complete training PIT vectors are required for diagnostics")
-    empirical = np.corrcoef(lead, rowvar=False)
-    empirical = np.nan_to_num(empirical, nan=0.0, posinf=0.0, neginf=0.0)
+    if allow_missing and not np.isfinite(lead).all():
+        empirical = np.eye(lead.shape[1], dtype=np.float64)
+        for first in range(lead.shape[1]):
+            for second in range(first):
+                pair = lead[:, [first, second]]
+                pair = pair[np.isfinite(pair).all(axis=1)]
+                if pair.shape[0] >= 2:
+                    correlation = np.corrcoef(pair, rowvar=False)[0, 1]
+                    empirical[first, second] = empirical[second, first] = (
+                        correlation if np.isfinite(correlation) else 0.0
+                    )
+    else:
+        lead = lead[np.isfinite(lead).all(axis=1)]
+        if lead.shape[0] < 2:
+            raise ValueError("at least two complete training PIT vectors are required for diagnostics")
+        empirical = np.corrcoef(lead, rowvar=False)
+        empirical = np.nan_to_num(empirical, nan=0.0, posinf=0.0, neginf=0.0)
     np.fill_diagonal(empirical, 1.0)
     off_diagonal = empirical[~np.eye(empirical.shape[0], dtype=bool)]
     return empirical, off_diagonal
@@ -499,17 +671,19 @@ def _plots(
         dataset["quantile"].values,
         base_figures_dir / "marginal_pinball.png",
     )
-    empirical, _ = _training_correlations(library)
+    empirical, _ = _training_correlations(
+        library, allow_missing=config.protocol.cardinality_mode == "variable"
+    )
     if "static_gaussian" in prepared:
         static = prepared["static_gaussian"].correlations[0, 0].numpy()
         plot_correlation_heatmap(
             empirical, ids, base_figures_dir / "pit_empirical_correlation.png", title="Training PIT correlation"
         )
         plot_correlation_heatmap(
-            static, ids, base_figures_dir / "static_correlation.png", title="Ledoit-Wolf PIT correlation"
+            static, ids, base_figures_dir / "static_correlation.png", title="M1 fitted PIT correlation"
         )
         plot_eigenvalue_spectrum(
-            {"Empirical": empirical, "Ledoit-Wolf": static}, base_figures_dir / "static_eigenvalues.png"
+            {"Empirical": empirical, "M1 fitted": static}, base_figures_dir / "static_eigenvalues.png"
         )
 
     test_origins = pd.to_datetime(library.test_data()["origin_timestamp"].values, utc=True)
@@ -518,10 +692,17 @@ def _plots(
     correlation_lead = figures.correlation_lead - 1
     if correlation_lead >= truth.shape[-1]:
         raise ValueError("figures.correlation_lead exceeds the configured forecast horizon")
+    active_mask = next(iter(results.values())).active_entity_mask
     if valid[aggregate_origin].any():
-        aggregate_truth = _cross_entity_statistic(
-            truth[aggregate_origin], config.evaluation.cross_entity_statistic, dim=0
-        ).numpy()
+        origin_truth = truth[aggregate_origin]
+        origin_active = active_mask[aggregate_origin]
+        statistic = config.evaluation.cross_entity_statistic
+        selected_truth = origin_truth.abs() if statistic in {"absolute_sum", "absolute_max"} else origin_truth
+        if statistic in {"max", "absolute_max"}:
+            aggregate_truth_tensor = selected_truth.masked_fill(~origin_active, -torch.inf).max(dim=0).values
+        else:
+            aggregate_truth_tensor = selected_truth.masked_fill(~origin_active, 0.0).sum(dim=0)
+        aggregate_truth_array = aggregate_truth_tensor.masked_fill(~valid[aggregate_origin], torch.nan).numpy()
         for _name, result in results.items():
             method_figures = output / "figures" if len(results) == 1 else output / "figures" / _name
             method_figures.mkdir(parents=True, exist_ok=True)
@@ -534,7 +715,7 @@ def _plots(
             plot_aggregate_fan(
                 result.aggregate.quantile_predictions[aggregate_origin].numpy(),
                 config.evaluation.quantile_levels,
-                aggregate_truth,
+                aggregate_truth_array,
                 method_figures / "aggregate_fan.png",
                 interval_predictions=result.interval_predictions[aggregate_origin].numpy(),
                 interval_levels=config.evaluation.interval_levels,
@@ -543,12 +724,15 @@ def _plots(
                 title="Cross-entity forecast",
             )
     if valid[correlation_origin, correlation_lead]:
+        active_indices = active_mask[correlation_origin, :, correlation_lead].nonzero(as_tuple=False).flatten()
         for name, result in results.items():
             method_figures = output / "figures" if len(results) == 1 else output / "figures" / name
             method_figures.mkdir(parents=True, exist_ok=True)
+            correlation = result.correlations[correlation_origin, correlation_lead]
+            correlation = correlation.index_select(0, active_indices).index_select(1, active_indices)
             plot_correlation_heatmap(
-                result.correlations[correlation_origin, correlation_lead].numpy(),
-                ids,
+                correlation.numpy(),
+                [ids[index] for index in active_indices.tolist()],
                 method_figures / "correlation.png",
                 title=f"Origin {correlation_origin}, lead {correlation_lead + 1}",
             )
@@ -566,11 +750,21 @@ def _plots(
                 method_figures / f"dependence_dynamics_{name}.png",
             )
             if item.conditional is not None and item.features is not None:
-                with torch.no_grad():
-                    loadings, sigma = cast(_FactorModel, item.conditional.model).factor_parameters(
-                        item.features[0, :, 0]
+                factor_cases = valid[:, 0].nonzero(as_tuple=False).flatten()
+                if factor_cases.numel():
+                    factor_origin = int(factor_cases[0])
+                    factor_indices = active_mask[factor_origin, :, 0].nonzero(as_tuple=False).flatten()
+                    factor_features = item.features[factor_origin].index_select(0, factor_indices)[:, 0]
+                    with torch.no_grad():
+                        loadings, sigma = cast(_FactorModel, item.conditional.model).factor_parameters(
+                            factor_features
+                        )
+                    plot_factor_parameters(
+                        loadings.numpy(),
+                        sigma.numpy(),
+                        [ids[index] for index in factor_indices.tolist()],
+                        method_figures / f"factors_{name}.png",
                     )
-                plot_factor_parameters(loadings.numpy(), sigma.numpy(), ids, method_figures / f"factors_{name}.png")
     for metric in metrics:
         for name, result in results.items():
             method_figures = output / "figures" if len(results) == 1 else output / "figures" / name
@@ -653,12 +847,32 @@ def evaluate_from_config(
     if config.protocol.entity_count is not None and len(entity_ids) != config.protocol.entity_count:
         raise ValueError("configured entity_count does not match the complete cached group")
     test_origin_indices, truth, predictions, _ = _test_arrays(library, all_entities)
+    forecastable_entity, entity_valid = _test_masks(library, all_entities)
     levels = torch.tensor(library.dataset["quantile"].values, dtype=torch.float32)
     dependence_z, frequency_mapping = _dependence_scores(library, config)
     test_z = torch.tensor(dependence_z[test_origin_indices], dtype=torch.float32)
-    valid = _valid_pairs(truth, predictions) & torch.isfinite(test_z).all(dim=1)
+    active_entity_mask, valid = _active_cases(
+        truth,
+        predictions,
+        forecastable_entity,
+        entity_valid,
+        test_z,
+        config,
+    )
     LOGGER.info("Evaluation uses %d/%d valid origin-lead cases", int(valid.sum()), int(valid.numel()))
-    prepared = {name: _prepare_method(name, runs, library, config, all_entities) for name in methods}
+    prepared = {
+        name: _prepare_method(
+            name,
+            runs,
+            library,
+            config,
+            all_entities,
+            forecastable_entity,
+            active_entity_mask,
+            valid,
+        )
+        for name in methods
+    }
     results = {
         name: _sample_and_evaluate(
             item,
@@ -668,6 +882,7 @@ def evaluate_from_config(
             valid,
             config,
             dependence_z=test_z,
+            active_entity_mask=active_entity_mask,
             metrics=declared_metrics,
         )
         for name, item in prepared.items()
@@ -700,14 +915,33 @@ def evaluate_from_config(
         figures=figures or EvaluationFiguresConfig(),
         base_figures_dir=Path(base_figures_dir) if base_figures_dir is not None else output / "figures",
     )
+    active_counts = active_entity_mask.sum(dim=1)
+    active_counts_by_lead: dict[str, dict[str, int | float | None]] = {}
+    for lead_index in range(truth.shape[-1]):
+        selected_counts = active_counts[:, lead_index][valid[:, lead_index]]
+        active_counts_by_lead[str(lead_index + 1)] = {
+            "valid_case_count": int(selected_counts.numel()),
+            "mean": float(selected_counts.float().mean()) if selected_counts.numel() else None,
+            "min": int(selected_counts.min()) if selected_counts.numel() else None,
+            "max": int(selected_counts.max()) if selected_counts.numel() else None,
+        }
+    valid_active_counts = active_counts[valid]
     manifest = {
         "cache_path": str(cache_path),
         "method_runs": {name: str(path) for name, path in runs.items()},
         "methods": list(methods),
         "metrics": declared_metrics,
         "cross_entity_statistic": config.evaluation.cross_entity_statistic,
+        "cardinality_mode": config.protocol.cardinality_mode,
+        "min_entities_per_case": config.protocol.min_entities_per_case,
         "test_origin_count": int(truth.shape[0]),
         "valid_origin_lead_count": int(valid.sum()),
+        "active_entity_count": {
+            "mean": float(valid_active_counts.float().mean()),
+            "min": int(valid_active_counts.min()),
+            "max": int(valid_active_counts.max()),
+            "by_lead": active_counts_by_lead,
+        },
         "entity_ids": entity_ids,
         "group": {
             "name": config.data.entity_type,

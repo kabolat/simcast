@@ -13,7 +13,12 @@ from simcast.config import DependenceConfig, ResolvedExperimentConfig, StaticGau
 from simcast.fm.cache import build_cache_dataset, load_pit_library, save_pit_library
 
 
-def _cache(path: Path, *, signed: bool = False) -> Path:
+def _cache(
+    path: Path,
+    *,
+    signed: bool = False,
+    invalid_entity_cases: tuple[tuple[int, int, int], ...] = (),
+) -> Path:
     rng = np.random.default_rng(8)
     n_origin, n_entity, horizon = 10, 4, 3
     truth = rng.normal(10.0, 1.0, size=(n_origin, n_entity, horizon)).astype(np.float32)
@@ -22,6 +27,10 @@ def _cache(path: Path, *, signed: bool = False) -> Path:
     predictions = np.stack((truth - 1.0, truth, truth + 1.0), axis=-1)
     pit_z = rng.normal(size=(n_origin, n_entity, horizon)).astype(np.float32)
     pit_u = (0.5 * (1.0 + np.vectorize(erf)(pit_z / np.sqrt(2.0)))).astype(np.float32)
+    for origin, entity, lead in invalid_entity_cases:
+        truth[origin, entity, lead] = np.nan
+        pit_u[origin, entity, lead] = np.nan
+        pit_z[origin, entity, lead] = np.nan
     dataset = build_cache_dataset(
         origin_timestamps=np.arange(n_origin).astype("datetime64[D]"),
         entity_ids=[f"transformer::entity-{index}" for index in range(n_entity)],
@@ -166,7 +175,109 @@ def test_evaluation_persists_only_declared_metrics(tmp_path: Path) -> None:
     assert {"mean_pinball", "pinball_q0.1", "pinball_q0.5", "pinball_q0.9"} <= case_columns
     assert not {"crps", "weighted_interval_score", "energy_score", "variogram_score", "test_pseudo_nll"} & case_columns
     with np.load(output / "independent_aggregate_predictions.npz") as arrays:
-        assert set(arrays.files) == {"quantile_predictions", "correlations", "valid"}
+        assert set(arrays.files) == {
+            "quantile_predictions",
+            "correlations",
+            "valid",
+            "active_entity_count",
+            "active_entity_mask",
+        }
+
+
+def test_variable_cardinality_evaluation_uses_active_subsets(tmp_path: Path) -> None:
+    cache = _cache(
+        tmp_path / "cache",
+        invalid_entity_cases=((0, 0, 0), (6, 1, 1), (8, 0, 0), (9, 1, 1)),
+    )
+    training_config = ResolvedExperimentConfig.model_validate(
+        {
+            "chronos": {"device": "cpu"},
+            "protocol": {"cardinality_mode": "variable", "min_entities_per_case": 2},
+            "dependence": {
+                "method": "conditional_low_rank",
+                "model": {"hidden_dims": [8], "latent_rank": 2, "dropout": 0.0},
+            },
+            "features": {"use_location": True},
+            "training": {"batch_size": 4, "epochs": 2, "patience": 2},
+            "sampling": {"num_samples": 32},
+            "evaluation": {
+                "quantile_levels": [0.1, 0.5, 0.9],
+                "interval_levels": [0.8],
+                "scenario_batch_size": 2,
+                "joint_score_num_samples": 8,
+            },
+        }
+    )
+    run = train_from_config(
+        training_config,
+        cache_dir=cache,
+        output_dir=tmp_path / "conditional",
+    )
+    method_runs = {"conditional_low_rank": run}
+    static_config = training_config.model_copy(
+        update={"dependence": DependenceConfig(method="static_gaussian", model=StaticGaussianConfig())}
+    )
+    method_runs["static_gaussian"] = train_from_config(
+        static_config,
+        cache_dir=cache,
+        output_dir=tmp_path / "static",
+    )
+    for method, model in (
+        ("set_aware_low_rank", {"model_dim": 8, "num_layers": 1, "num_heads": 2, "latent_rank": 2}),
+        ("conditional_kernel", {"hidden_dims": [8], "embedding_dim": 3, "dropout": 0.0}),
+    ):
+        payload = training_config.model_dump(mode="json")
+        payload["dependence"] = {"method": method, "model": model}
+        method_config = ResolvedExperimentConfig.model_validate(payload)
+        method_runs[method] = train_from_config(
+            method_config,
+            cache_dir=cache,
+            output_dir=tmp_path / method,
+        )
+    methods = (
+        "independent",
+        "static_gaussian",
+        "conditional_low_rank",
+        "set_aware_low_rank",
+        "conditional_kernel",
+    )
+    output = evaluate_from_config(
+        training_config,
+        methods=methods,
+        method_runs=method_runs,
+        cache_dir=cache,
+        output_dir=tmp_path / "evaluation",
+    )
+
+    with np.load(output / "conditional_low_rank_aggregate_predictions.npz") as arrays:
+        active = arrays["active_entity_mask"]
+        counts = arrays["active_entity_count"]
+        correlations = arrays["correlations"]
+        assert counts[0, 0] == 3
+        assert counts[1, 1] == 3
+        assert counts[0, 1] == counts[1, 0] == 4
+        assert not active[0, 0, 0]
+        assert not active[1, 1, 1]
+        assert correlations[0, 0, 0, 1] == 0.0
+        assert correlations[0, 0, 0, 0] == 1.0
+
+    for method in methods:
+        with np.load(output / f"{method}_aggregate_predictions.npz") as arrays:
+            np.testing.assert_array_equal(arrays["active_entity_mask"], active)
+            np.testing.assert_array_equal(arrays["active_entity_count"], counts)
+
+    test = load_pit_library(cache, access="evaluation").test_data()
+    metrics = pd.read_parquet(output / "per_origin_lead_metrics.parquet")
+    first_case = metrics[(metrics["origin_index"] == 8) & (metrics["lead"] == 1)].iloc[0]
+    expected = test["true_y"].values[0, 1:, 0].sum()
+    assert first_case["active_entity_count"] == 3
+    assert first_case["observed_aggregate"] == pytest.approx(expected)
+    summary = json.loads((output / "metrics.json").read_text())["conditional_low_rank"]
+    assert summary["min_active_entity_count"] == 3
+    assert summary["max_active_entity_count"] == 4
+    manifest = json.loads((output / "evaluation_manifest.json").read_text())
+    assert manifest["cardinality_mode"] == "variable"
+    assert manifest["active_entity_count"]["by_lead"]["1"]["min"] == 3
 
 
 def test_evaluation_rejects_a_shrunken_correlation_matrix(tmp_path: Path) -> None:
