@@ -1,7 +1,7 @@
 # Data Adapter Interface
 
 The adapter layer translates a source into an ordered entity group, UTC
-measurements, point-in-time covariates, common coverage, and provenance. The
+measurements, point-in-time covariates, candidate coverage, and provenance. The
 cache builder, forecast model, PIT construction, dependence models, and
 evaluation use the shared adapter protocol rather than branching on source
 identity.
@@ -10,8 +10,12 @@ An adapter is responsible for:
 
 - Ordered canonical entity IDs and per-entity static metadata, including
   optional coordinates.
-- UTC target and covariate frames, common coverage, and the configured target
-  column.
+- UTC target and covariate frames, candidate coverage, and the configured
+  target column. `coverage()` returns the candidate-origin span appropriate to
+  `protocol.cardinality_mode`: the intersection of entity target lifetimes in
+  `fixed` mode and their envelope (earliest start to latest end) in `variable`
+  mode. It must not encode dataset-specific eligibility; per-origin entity
+  availability belongs in `prepare_window`.
 - Past-target masking and historical-covariate availability.
 - Future covariates available at each forecast origin, with incomplete
   windows marked ineligible.

@@ -54,7 +54,12 @@ class DatasetAdapter(Protocol):
     """JSON-serializable source description stored in the cache metadata."""
 
     def coverage(self) -> tuple[pd.Timestamp, pd.Timestamp]:
-        """First and last UTC timestamp for which every entity has a target row."""
+        """Inclusive UTC bounds of candidate-origin coverage under the configured cardinality policy.
+
+        ``fixed`` returns the span shared by every entity's target rows (latest start, earliest end).
+        ``variable`` returns the envelope of all entity lifetimes (earliest start, latest end); an entity
+        outside its own lifetime is simply non-forecastable at that origin in :meth:`prepare_window`.
+        """
 
     def prepare_window(self, window: ForecastWindow) -> PreparedWindow:
         """Point-in-time inputs for ``window``; raise :class:`IneligibleWindow` if they are incomplete."""
@@ -107,13 +112,16 @@ class FrameDatasetAdapter:
         self.past_weather_source = past_weather_source
 
     def coverage(self) -> tuple[pd.Timestamp, pd.Timestamp]:
-        start = max(frame.target.index.min() for frame in self.frames)
-        end = min(frame.target.index.max() for frame in self.frames)
+        starts = [frame.target.index.min() for frame in self.frames]
+        ends = [frame.target.index.max() for frame in self.frames]
+        variable = self.config.protocol.cardinality_mode == "variable"
+        start, end = (min(starts), max(ends)) if variable else (max(starts), min(ends))
         total_rows = sum(len(frame.target) for frame in self.frames)
         column = self.config.data.target_column
         missing = sum(int(frame.target[column].isna().sum()) for frame in self.frames)
         LOGGER.info(
-            "Aligned target coverage %s to %s; %d rows and %.4f%% missing observations",
+            "%s target coverage %s to %s; %d rows and %.4f%% missing observations",
+            "Entity-envelope" if variable else "Aligned",
             start,
             end,
             total_rows,

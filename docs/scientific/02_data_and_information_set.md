@@ -12,7 +12,7 @@ availability assumptions, and adapter options are documented in the separate
 
 The pipeline consumes a configured adapter rather than assuming one source
 schema. An adapter supplies an ordered, static entity group, UTC target and
-covariate frames, common coverage, point-in-time input assembly, and
+covariate frames, candidate coverage, point-in-time input assembly, and
 provenance. Forecast frequency, origin phase and stride, lookback, horizon,
 and chronological split use shared window and split logic. See the generic
 [adapter interface](../technical/data_adapter_interface.md) for the contract.
@@ -55,8 +55,27 @@ $$
 
 Thus lead $\tau$ corresponds to $t^{(i)}+\tau\Delta$ and is one-based in public
 interfaces. Candidate origins follow the configured time, phase, and stride;
-a candidate is created only when common target coverage contains both
-complete timestamp grids.
+a candidate is created only when the adapter's candidate coverage contains
+both complete timestamp grids. If entity $k$ has target rows from
+$t_k^{\min}$ to $t_k^{\max}$, the candidate coverage depends on the
+cardinality policy:
+
+$$
+\text{fixed:}\quad
+[t_{\mathrm{start}},t_{\mathrm{end}}]
+=[\max_k t_k^{\min},\ \min_k t_k^{\max}],
+$$
+
+$$
+\text{variable:}\quad
+[t_{\mathrm{start}},t_{\mathrm{end}}]
+=[\min_k t_k^{\min},\ \max_k t_k^{\max}].
+$$
+
+Fixed mode therefore uses only the period shared by every entity. Variable
+mode spans the envelope of all entity lifetimes; the canonical entity universe
+is unchanged, and an entity that does not yet exist, or no longer has usable
+data, at an origin is simply non-forecastable there.
 
 ## The point-in-time information set
 
