@@ -64,9 +64,18 @@ source provenance (including any explicit availability assumptions), group
 membership/names and optional coordinates, Chronos source/model revisions and native output structure,
 forecast window protocol, covariate config, raw crossing diagnostics,
 train/validation-only PIT validity counts, historical and train/validation
-future-truth missingness, eligible/skipped/retained origin
+future-truth missingness, target-history-rule counts, eligible/skipped/retained origin
 counts, purged boundary timestamps, full resolved config, schema version, and
 `test_labels_sealed: true`.
+
+The `missingness` block separates two quantities. `masked_history_count*`
+counts missing historical target values over retained origins (in total, by
+entity, and restricted to forecastable entity-origins). The minimum-history
+rule (`history_rule: at_least_one_finite_lookback_target`) is reported as
+`empty_history_rejected_origin_count` (fixed-mode candidate origins rejected
+because some entity had no finite lookback target) and
+`empty_history_non_forecastable_count[_by_entity]` (variable-mode entity-origins
+marked non-forecastable for that reason), both over candidate origins.
 
 `marginal_diagnostics.json` is explicitly scoped `train_and_validation`. It
 contains overall and per-entity median MAE, native-level pinball losses,

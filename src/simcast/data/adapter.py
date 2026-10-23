@@ -33,6 +33,10 @@ class IneligibleWindow(ValueError):
     """A forecast window lacks some required covariate or target information."""
 
 
+class InsufficientTargetHistory(IneligibleWindow):
+    """A required entity has no finite target observation in its lookback window."""
+
+
 @dataclass(frozen=True, slots=True)
 class PreparedWindow:
     """Full-universe truth and compact inputs for forecastable entities at one origin."""
@@ -42,6 +46,8 @@ class PreparedWindow:
     history_missing: np.ndarray
     forecastable_entity: np.ndarray
     entity_indices: np.ndarray
+    empty_history: np.ndarray | None = None
+    """Per canonical entity: the lookback has no finite target observation (``None`` means none were)."""
 
 
 class DatasetAdapter(Protocol):
@@ -62,7 +68,10 @@ class DatasetAdapter(Protocol):
         """
 
     def prepare_window(self, window: ForecastWindow) -> PreparedWindow:
-        """Point-in-time inputs for ``window``; raise :class:`IneligibleWindow` if they are incomplete."""
+        """Point-in-time inputs for ``window``; raise :class:`IneligibleWindow` if they are incomplete.
+
+        An entity is forecastable only if its lookback holds at least one finite target observation.
+        """
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,7 +164,9 @@ class FrameDatasetAdapter:
         window: ForecastWindow,
         *,
         allow_unavailable: bool = False,
-    ) -> tuple[dict[str, object] | None, np.ndarray, int]:
+    ) -> tuple[dict[str, object] | None, np.ndarray, int, bool]:
+        """Return compact inputs (``None`` if non-forecastable), truth, missing-history count, empty flag."""
+
         config = self.config
         target_window = frames.target.reindex(window.past_timestamps.union(window.future_timestamps))
         history = select_available_past_targets(
@@ -163,7 +174,16 @@ class FrameDatasetAdapter:
             window.origin_timestamp,
             target_column=config.data.target_column,
         ).reindex(window.past_timestamps)
-        truth = target_window.loc[window.future_timestamps, config.data.target_column]
+        truth = target_window.loc[window.future_timestamps, config.data.target_column].to_numpy(
+            dtype=np.float32, copy=True
+        )
+        missing_count = int(history.isna().sum())
+        if not np.isfinite(history.to_numpy(dtype=np.float64)).any():
+            if allow_unavailable:
+                return None, truth, missing_count, True
+            raise InsufficientTargetHistory(
+                f"no finite historical target observation for {frames.entity.entity_id}"
+            )
 
         try:
             past_covariates = self._past_covariates(frames, window)
@@ -178,15 +198,15 @@ class FrameDatasetAdapter:
             )
         except ValueError as error:
             if allow_unavailable and "weather columns are missing:" in str(error):
-                return None, truth.to_numpy(dtype=np.float32, copy=True), int(history.isna().sum())
+                return None, truth, missing_count, False
             raise
         if not _finite(past_covariates) or not _finite(future_covariates):
             if allow_unavailable:
-                return None, truth.to_numpy(dtype=np.float32, copy=True), int(history.isna().sum())
+                return None, truth, missing_count, False
             raise IneligibleWindow(f"covariates unavailable for {frames.entity.entity_id}")
         if list(past_covariates.columns) != list(future_covariates.columns):
             if allow_unavailable:
-                return None, truth.to_numpy(dtype=np.float32, copy=True), int(history.isna().sum())
+                return None, truth, missing_count, False
             raise IneligibleWindow(f"past/future covariate columns differ for {frames.entity.entity_id}")
 
         prepared = {
@@ -200,7 +220,7 @@ class FrameDatasetAdapter:
                 for column in future_covariates.columns
             },
         }
-        return prepared, truth.to_numpy(dtype=np.float32, copy=True), int(history.isna().sum())
+        return prepared, truth, missing_count, False
 
     def prepare_window(self, window: ForecastWindow) -> PreparedWindow:
         inputs: list[dict[str, object]] = []
@@ -208,9 +228,10 @@ class FrameDatasetAdapter:
         history_missing: list[int] = []
         entity_indices: list[int] = []
         forecastable = np.zeros(len(self.frames), dtype=bool)
+        empty_history = np.zeros(len(self.frames), dtype=bool)
         variable = self.config.protocol.cardinality_mode == "variable"
         for entity_index, entity_frames in enumerate(self.frames):
-            entity_input, entity_truth, missing_count = self._prepare_entity(
+            entity_input, entity_truth, missing_count, empty = self._prepare_entity(
                 entity_frames,
                 window,
                 allow_unavailable=variable,
@@ -219,6 +240,7 @@ class FrameDatasetAdapter:
                 inputs.append(entity_input)
                 entity_indices.append(entity_index)
                 forecastable[entity_index] = True
+            empty_history[entity_index] = empty
             truth.append(entity_truth)
             history_missing.append(missing_count)
         return PreparedWindow(
@@ -227,4 +249,5 @@ class FrameDatasetAdapter:
             history_missing=np.asarray(history_missing, dtype=np.int64),
             forecastable_entity=forecastable,
             entity_indices=np.asarray(entity_indices, dtype=np.int64),
+            empty_history=empty_history,
         )

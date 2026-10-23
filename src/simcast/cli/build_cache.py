@@ -23,7 +23,7 @@ from simcast.config import (
     load_base_config,
     resolve_run_config,
 )
-from simcast.data.adapter import IneligibleWindow
+from simcast.data.adapter import IneligibleWindow, InsufficientTargetHistory
 from simcast.data.registry import adapter_spec
 from simcast.data.windows import ChronologicalSplit, build_aligned_group_windows, chronological_split
 from simcast.fm.cache import build_cache_dataset, save_pit_library
@@ -201,6 +201,8 @@ def build_cache_from_config(
     quantile_levels: np.ndarray | None = None
     output_patch_size: int | None = None
     skipped: list[dict[str, str]] = []
+    empty_history_rejected_origins = 0
+    empty_history_by_entity = np.zeros(len(group.entity_ids), dtype=np.int64)
 
     for window in tqdm(
         candidates,
@@ -213,6 +215,7 @@ def build_cache_from_config(
         try:
             prepared = adapter.prepare_window(window)
         except IneligibleWindow as error:
+            empty_history_rejected_origins += isinstance(error, InsufficientTargetHistory)
             skipped.append({"origin_timestamp": window.origin_timestamp.isoformat(), "reason": str(error)})
             LOGGER.warning("Skipping ineligible origin %s: %s", window.origin_timestamp, error)
             continue
@@ -222,6 +225,11 @@ def build_cache_from_config(
             np.flatnonzero(forecastable), entity_indices
         ):
             raise ValueError("prepared window forecastability does not match its canonical entity indices")
+        if prepared.empty_history is not None:
+            empty_history = np.asarray(prepared.empty_history, dtype=bool)
+            if empty_history.shape != forecastable.shape or np.any(empty_history & forecastable):
+                raise ValueError("an entity without usable target history was marked forecastable")
+            empty_history_by_entity += empty_history
         if entity_indices.size == 0:
             skipped.append(
                 {"origin_timestamp": window.origin_timestamp.isoformat(), "reason": "no forecastable entities"}
@@ -341,6 +349,12 @@ def build_cache_from_config(
         config.protocol.cardinality_mode,
     )
     LOGGER.info(
+        "Target-history rule: %d origins rejected (fixed) and %d entity-origins non-forecastable (variable) "
+        "for lacking any finite lookback target",
+        empty_history_rejected_origins,
+        int(empty_history_by_entity.sum()),
+    )
+    LOGGER.info(
         "Retained origins %s to %s; train=%d validation=%d test=%d; masked historical targets by entity=%s",
         kept_origins[0],
         kept_origins[-1],
@@ -431,8 +445,22 @@ def build_cache_from_config(
             "valid_train_validation_case_count_with_configured_repair": int(tune_valid_origin_lead.sum()),
         },
         "missingness": {
+            "history_rule": "at_least_one_finite_lookback_target",
+            "masked_history_count": int(history_missing.sum()),
             "masked_history_count_by_entity": dict(
                 zip(group.entity_ids, history_missing.sum(axis=0).astype(int).tolist(), strict=True)
+            ),
+            "masked_history_count_forecastable_by_entity": dict(
+                zip(
+                    group.entity_ids,
+                    (history_missing * forecastable_entity).sum(axis=0).astype(int).tolist(),
+                    strict=True,
+                )
+            ),
+            "empty_history_rejected_origin_count": empty_history_rejected_origins,
+            "empty_history_non_forecastable_count": int(empty_history_by_entity.sum()),
+            "empty_history_non_forecastable_count_by_entity": dict(
+                zip(group.entity_ids, empty_history_by_entity.astype(int).tolist(), strict=True)
             ),
             "future_truth_count_by_entity": dict(zip(group.entity_ids, truth_missing_by_entity.tolist(), strict=True)),
         },

@@ -99,6 +99,23 @@ handled by its adapter and documented in that source's reference.
 Future target values are retained solely as labels. They are not passed to the
 Chronos test-mode dataset.
 
+### Minimum target history
+
+An entity is forecastable at origin $i$ only if its lookback contains at
+least one finite target observation:
+
+$$
+\sum_{t\in\mathcal T_{\mathrm{past}}^{(i)}}
+\mathbf 1\{Y_{k,t}\ \text{finite}\}\ge 1.
+$$
+
+Partially missing histories are passed to Chronos with `NaN` at the missing
+positions; a completely missing history is never filled with zeros or other
+fabricated values. In variable mode such an entity has
+$A_{i,k}^{\mathrm{forecast}}=0$ and is not sent to Chronos; in fixed mode the
+whole origin is ineligible. The cache metadata counts both outcomes
+separately from the number of masked historical values.
+
 ### Historical weather
 
 Measured weather without a separate publication timestamp is treated as
