@@ -25,12 +25,13 @@ class AdapterSpec:
 
 
 def adapter_spec(name: str) -> AdapterSpec:
-    from simcast.data import feederbw, gefcom2014, liander2024
+    from simcast.data import feederbw, gefcom2014, heapo, liander2024
 
     specs = {
         liander2024.ADAPTER_NAME: liander2024,
         gefcom2014.ADAPTER_NAME: gefcom2014,
         feederbw.ADAPTER_NAME: feederbw,
+        heapo.ADAPTER_NAME: heapo,
     }
     if name not in specs:
         raise ValueError(f"unknown data.adapter {name!r}; expected one of: {', '.join(sorted(specs))}")

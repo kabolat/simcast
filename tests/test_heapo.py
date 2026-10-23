@@ -5,10 +5,12 @@ import stat
 import zipfile
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
 
 import simcast.data.heapo as heapo
+from simcast.config import ResolvedExperimentConfig
 from simcast.data.heapo import (
     SMALL_FILES,
     archive_members,
@@ -20,6 +22,7 @@ from simcast.data.heapo import (
     target_summary,
     verify_archive,
 )
+from simcast.data.registry import adapter_spec
 
 HEADER = (
     "Household_ID;AffectsTimePoint;Group;Timestamp;"
@@ -29,6 +32,83 @@ HEADER = (
 
 def _meter(rows: str) -> io.BytesIO:
     return io.BytesIO((HEADER + rows).encode())
+
+
+def _config(root: Path, *, ids: tuple[int, ...] = (101, 202, 303, 404, 505), group: str = "control"):
+    return ResolvedExperimentConfig.model_validate({
+        "data": {
+            "adapter": "heapo", "dataset_id": heapo.DATASET_ID, "revision": "v1", "local_dir": root,
+            "entity_type": "household", "target_column": heapo.TARGET_COLUMN,
+            "options": {"group": group, "weather_id": "8jB"},
+        },
+        "protocol": {
+            "entity_count": len(ids), "ordered_entity_ids": [f"household::{hh}" for hh in ids],
+            "cardinality_mode": "variable", "min_entities_per_case": min(2, len(ids)),
+        },
+        "forecast": {
+            "lookback_steps": 4, "horizon_steps": 2, "origin_stride_steps": 2, "origin_time": "00:45",
+        },
+        "covariates": {"weather": ["Temperature_avg_hourly"], "future_weather_source": "oracle"},
+        "split": {"tune_fraction": 0.6, "validation_fraction_within_tune": 0.25},
+        "chronos": {"device": "cpu"},
+        "pit": {"dependence_transform": "training_frequency"},
+    })
+
+
+def _source(root: Path) -> None:
+    for name in ["meta_data", "smart_meter_data/15min", "weather_data/hourly"]:
+        (root / name).mkdir(parents=True, exist_ok=True)
+    pd.DataFrame({
+        "Household_ID": [101, 202, 303, 404, 505, 606, 707],
+        "Group": ["control"] * 5 + ["treatment", "control"],
+        "Weather_ID": ["8jB"] * 6 + ["Hg"],
+        "SmartMeterData_Available_15min": [True] * 7,
+    }).to_csv(root / "meta_data/households.csv", sep=";", index=False)
+    times = pd.date_range("2024-01-01", periods=160, freq="15min", tz="UTC")
+    lifetimes = ((0, 159), (80, 159), (0, 110), (0, 159), (60, 100), (0, 159), (0, 159))
+    rng = np.random.default_rng(17)
+    common = rng.normal(size=160)
+    for hh, (first, last) in zip([101, 202, 303, 404, 505, 606, 707], lifetimes, strict=True):
+        values = 10 + common + 0.3 * rng.normal(size=160)
+        data = pd.DataFrame({
+            "Household_ID": hh, "AffectsTimePoint": "unknown", "Group": "treatment" if hh == 606 else "control",
+            "Timestamp": times[first:last + 1], "kWh_received_Total": values[first:last + 1],
+            "kWh_received_HeatPump": np.nan, "kWh_received_Other": np.nan,
+        })
+        if hh == 404:
+            data.loc[data["Timestamp"].between(times[30], times[37]), "kWh_received_Total"] = np.nan
+            data.loc[data["Timestamp"].between(times[120], times[127]), "kWh_received_Total"] = np.nan
+        data.to_csv(root / f"smart_meter_data/15min/{hh}.csv", sep=";", index=False)
+    hourly = pd.date_range("2023-12-31", periods=6 * 24, freq="h", tz="UTC")
+    for station in ["8jB", "Hg"]:
+        pd.DataFrame({
+            "Weather_ID": station, "Timestamp": hourly, "Temperature_avg_hourly": np.arange(len(hourly)) / 10,
+        }).to_csv(root / f"weather_data/hourly/{station}.csv", sep=";", index=False)
+
+
+def test_adapter_registry_native_energy_and_real_lifetimes(tmp_path: Path) -> None:
+    _source(tmp_path)
+    config = _config(tmp_path, ids=(303, 101, 202))
+    adapter = adapter_spec("heapo").load(config)
+    assert isinstance(adapter, heapo.FrameDatasetAdapter)
+    assert adapter.group.entity_ids == ["household::303", "household::101", "household::202"]
+    assert adapter.frames[2].target.index.min() == pd.Timestamp("2024-01-01T20:15Z")
+    assert len(adapter.frames[2].target) == 80
+    assert all(entity.latitude is None and entity.longitude is None for entity in adapter.group.entities)
+    assert adapter.provenance["license"] == "CC-BY-4.0"
+    assert adapter.provenance["units"] == "kWh"
+    raw = pd.read_csv(tmp_path / "smart_meter_data/15min/202.csv", sep=";")
+    np.testing.assert_array_equal(adapter.frames[2].target[heapo.TARGET_COLUMN], raw[heapo.TARGET_COLUMN])
+
+
+def test_adapter_enforces_group_and_weather_mapping(tmp_path: Path) -> None:
+    _source(tmp_path)
+    with pytest.raises(ValueError, match="control/treatment"):
+        heapo.load_adapter(_config(tmp_path, ids=(101, 606)))
+    assert heapo.load_adapter(_config(tmp_path, ids=(606,), group="treatment")).group.entity_ids == ["household::606"]
+    assert len(heapo.load_adapter(_config(tmp_path, ids=(101, 606), group="all")).group) == 2
+    with pytest.raises(ValueError, match="Weather_ID"):
+        heapo.load_adapter(_config(tmp_path, ids=(101, 707)))
 
 
 def test_actual_v1_smart_meter_schema_and_missingness() -> None:

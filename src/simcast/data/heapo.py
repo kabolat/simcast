@@ -17,7 +17,15 @@ from typing import IO, Any
 import numpy as np
 import pandas as pd
 
-from simcast.config import BaseExperimentConfig, DatasetDownloadConfig
+from simcast.config import (
+    BaseExperimentConfig,
+    DataConfig,
+    DatasetDownloadConfig,
+    DownloadDataConfig,
+    ResolvedExperimentConfig,
+)
+from simcast.data.adapter import DatasetAdapter, EntityFrames, FrameDatasetAdapter
+from simcast.types import EntityGroup, EntityMetadata
 
 ADAPTER_NAME = "heapo"
 DATASET_ID = "https://zenodo.org/records/15056919"
@@ -67,6 +75,32 @@ def read_households(source: str | Path | IO[bytes]) -> pd.DataFrame:
     if not frame["SmartMeterData_Available_15min"].isin([True, False]).all():
         raise ValueError("HEAPO 15-minute availability must be boolean")
     return frame.sort_values("Household_ID", kind="stable").reset_index(drop=True)
+
+
+def validate_data_config(data: DataConfig) -> None:
+    if data.dataset_id != DATASET_ID or data.revision != DATASET_REVISION:
+        raise ValueError("HEAPO requires Zenodo record 15056919, revision v1")
+    if data.entity_type != "household" or data.target_column != TARGET_COLUMN:
+        raise ValueError("HEAPO requires entity_type: household and target_column: kWh_received_Total")
+    if set(data.options) != {"group", "weather_id"}:
+        raise ValueError("HEAPO data.options must contain exactly group and weather_id")
+    if data.options["group"] not in ("control", "treatment", "all"):
+        raise ValueError("HEAPO group must be control, treatment, or all")
+    station = data.options["weather_id"]
+    if not isinstance(station, str) or re.fullmatch(r"[A-Za-z0-9]+", station) is None:
+        raise ValueError("HEAPO weather_id must be an opaque alphanumeric station identifier")
+
+
+def default_cache_name(data: DataConfig) -> str:
+    validate_data_config(data)
+    return f"heapo_{data.options['group']}_station_{data.options['weather_id']}"
+
+
+def allow_patterns(data: DataConfig | DownloadDataConfig, *, entity_ids: Sequence[str] = ()) -> list[str]:
+    del entity_ids
+    if data.dataset_id != DATASET_ID or data.revision != DATASET_REVISION:
+        raise ValueError("HEAPO requires Zenodo record 15056919, revision v1")
+    return [ARCHIVE_NAME]
 
 
 def household_number(entity_id: str) -> int:
@@ -255,6 +289,74 @@ def read_target(source: str | Path | IO[bytes], household_id: int) -> pd.DataFra
     target = raw.loc[:, [TARGET_COLUMN]].copy()
     target.index = pd.DatetimeIndex(target.index + TARGET_LABEL_SHIFT, name="timestamp")
     return target
+
+
+def load_adapter(config: ResolvedExperimentConfig) -> DatasetAdapter:
+    validate_data_config(config.data)
+    if config.forecast.frequency_minutes != 15:
+        raise ValueError("HEAPO requires native 15-minute resolution")
+    if config.covariates.future_weather_source != "oracle":
+        raise ValueError("HEAPO has observed weather only; require future_weather_source: oracle")
+    if config.features is not None and config.features.use_location:
+        raise ValueError("HEAPO has no household coordinates; set features.use_location: false")
+    root = Path(config.data.local_dir).expanduser().resolve()
+    households = read_households(root / "meta_data/households.csv").set_index("Household_ID")
+    ids = [household_number(identifier) for identifier in config.protocol.ordered_entity_ids]
+    if not ids or len(set(ids)) != len(ids) or config.protocol.entity_count != len(ids):
+        raise ValueError("HEAPO requires explicit unique canonical household IDs and matching entity_count")
+    unknown = set(ids) - set(households.index)
+    if unknown:
+        raise ValueError(f"unknown HEAPO households: {sorted(unknown)}")
+    selected = households.loc[ids]
+    station = str(config.data.options["weather_id"])
+    group_name = config.data.options["group"]
+    if not selected["Weather_ID"].eq(station).all():
+        raise ValueError("selected HEAPO households do not all map to configured Weather_ID")
+    if group_name != "all" and not selected["Group"].eq(group_name).all():
+        raise ValueError("selected HEAPO households violate configured control/treatment filter")
+    if not selected["SmartMeterData_Available_15min"].all():
+        raise ValueError("selected HEAPO household has no 15-minute data")
+    weather_raw = read_csv(root / f"weather_data/hourly/{station}.csv")
+    if "Weather_ID" not in weather_raw or not weather_raw["Weather_ID"].eq(station).all():
+        raise ValueError("HEAPO hourly weather station ID mismatch")
+    weather_raw.index = pd.DatetimeIndex(pd.to_datetime(weather_raw.pop("Timestamp"), utc=True))
+    if weather_raw.index.has_duplicates or weather_raw.index.hasnans:
+        raise ValueError("HEAPO weather has missing or duplicate UTC timestamps")
+    fields = config.covariates.weather
+    if not fields or set(fields) - set(weather_raw.columns) or "Weather_ID" in fields:
+        raise ValueError("HEAPO weather must select supplied hourly measurement columns")
+    weather = weather_raw.loc[:, fields].apply(pd.to_numeric, errors="raise").sort_index()
+    entities = [
+        EntityMetadata(
+            name=str(identifier), group_name="household",
+            description=f"HEAPO {group_name} household, coarse weather-station cohort {station}",
+            extra={"Household_ID": identifier, "Group": selected.loc[identifier, "Group"], "Weather_ID": station},
+        )
+        for identifier in ids
+    ]
+    frames = [
+        EntityFrames(
+            entity=entity,
+            target=read_target(root / f"smart_meter_data/15min/{identifier}.csv", identifier),
+            past_weather=weather,
+            future_weather=pd.DataFrame(index=weather.index),
+        )
+        for identifier, entity in zip(ids, entities, strict=True)
+    ]
+    group = EntityGroup(
+        group_id=default_cache_name(config.data), entity_ids=[entity.entity_id for entity in entities],
+        entities=entities, metadata={"Weather_ID": station, "group": group_name, "topology": "not_electrical"},
+    )
+    provenance = {
+        "adapter": ADAPTER_NAME, "dataset_id": DATASET_ID, "dataset_revision": DATASET_REVISION,
+        "dataset_doi": DATASET_DOI, "license": LICENSE, "archive_md5": ARCHIVE_MD5,
+        "target": TARGET_COLUMN, "units": "kWh", "target_label_shift_minutes": 15,
+        "interval_convention": INTERVAL_CONVENTION, "Weather_ID": station,
+        "future_weather_source": "oracle", "coordinates": "not supplied",
+        "grouping": "nearest weather station; coarse proximity cohort, not electrical topology",
+        "households": json.loads(selected.reset_index().to_json(orient="records")),
+    }
+    return FrameDatasetAdapter(config, group, frames, provenance)
 
 
 def daily_interval_check(quarter_hours: pd.DataFrame, daily: pd.DataFrame) -> dict[str, Any]:
