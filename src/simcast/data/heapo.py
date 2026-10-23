@@ -349,6 +349,21 @@ def read_target(source: str | Path | IO[bytes], household_id: int) -> pd.DataFra
     return target
 
 
+def align_hourly_weather(weather: pd.DataFrame, timestamps: pd.DatetimeIndex) -> pd.DataFrame:
+    """Hold a sample at h through h+45min, never across a missing hourly block."""
+
+    if weather.empty or weather.index.has_duplicates:
+        raise ValueError("HEAPO hourly weather must be nonempty with unique timestamps")
+    index = pd.DatetimeIndex(weather.index)
+    if index.tz is None or str(index.tz) != "UTC":
+        raise ValueError("HEAPO hourly weather must use UTC timestamps")
+    if ((index.minute != 0) | (index.second != 0) | (index.microsecond != 0)).any():
+        raise ValueError("HEAPO weather timestamps must align to whole hours")
+    if np.isinf(weather.to_numpy(dtype=float)).any():
+        raise ValueError("HEAPO weather contains infinite measurement values")
+    return weather.sort_index().reindex(timestamps, method="ffill", tolerance=pd.Timedelta(minutes=45))
+
+
 def load_adapter(config: ResolvedExperimentConfig) -> DatasetAdapter:
     validate_data_config(config.data)
     if config.forecast.frequency_minutes != 15:
@@ -384,6 +399,10 @@ def load_adapter(config: ResolvedExperimentConfig) -> DatasetAdapter:
     if not fields or set(fields) - set(weather_raw.columns) or "Weather_ID" in fields:
         raise ValueError("HEAPO weather must select supplied hourly measurement columns")
     weather = weather_raw.loc[:, fields].apply(pd.to_numeric, errors="raise").sort_index()
+    weather = align_hourly_weather(weather, pd.date_range(
+        start=weather.index.min(), end=weather.index.max() + pd.Timedelta(minutes=45),
+        freq="15min", name="timestamp",
+    ))
     entities = [
         EntityMetadata(
             name=str(identifier), group_name="household",
@@ -411,6 +430,8 @@ def load_adapter(config: ResolvedExperimentConfig) -> DatasetAdapter:
         "target": TARGET_COLUMN, "units": "kWh", "target_label_shift_minutes": 15,
         "interval_convention": INTERVAL_CONVENTION, "Weather_ID": station,
         "future_weather_source": "oracle", "coordinates": "not supplied",
+        "weather_alignment": "zero-order hold at h,h+15,h+30,h+45min; no hold into a missing hour",
+        "weather_warning": "realized future station weather, not operationally deployable forecasting",
         "grouping": "nearest weather station; coarse proximity cohort, not electrical topology",
         "households": json.loads(selected.reset_index().to_json(orient="records")),
     }

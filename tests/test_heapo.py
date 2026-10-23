@@ -125,6 +125,41 @@ def test_selection_uses_stable_hash_not_coverage_and_filters_groups(tmp_path: Pa
     assert heapo.select_households(households, "8jB", maximum=3, seed=13) != chosen
 
 
+def test_hourly_weather_uses_bounded_hold_not_future_interpolation() -> None:
+    hours = pd.to_datetime(["2024-01-01T00:00Z", "2024-01-01T02:00Z", "2024-01-01T03:00Z"])
+    weather = pd.DataFrame({"Temperature_avg_hourly": [1.0, 9.0, np.nan]}, index=hours)
+    grid = pd.date_range("2024-01-01", periods=17, freq="15min", tz="UTC")
+    aligned = heapo.align_hourly_weather(weather, grid)
+    np.testing.assert_array_equal(aligned.iloc[:4, 0], [1.0] * 4)
+    assert aligned.iloc[4:8, 0].isna().all()
+    np.testing.assert_array_equal(aligned.iloc[8:12, 0], [9.0] * 4)
+    assert aligned.iloc[12:, 0].isna().all()
+
+
+def test_adapter_uses_oracle_weather_and_excludes_weather_gaps(tmp_path: Path) -> None:
+    from simcast.config import CovariatesConfig
+    from simcast.data.windows import make_forecast_window
+
+    _source(tmp_path)
+    config = _config(tmp_path, ids=(101, 303))
+    adapter = heapo.load_adapter(config)
+    assert isinstance(adapter, heapo.FrameDatasetAdapter)
+    window = make_forecast_window("2024-01-01T05:45Z", lookback_steps=4, horizon_steps=2)
+    prepared = adapter.prepare_window(window)
+    assert prepared.forecastable_entity.all()
+    future = prepared.inputs[0]["future_covariates"]["Temperature_avg_hourly"]
+    past = prepared.inputs[0]["past_covariates"]["Temperature_avg_hourly"]
+    assert future[0] > past[-1]
+    source = tmp_path / "weather_data/hourly/8jB.csv"
+    weather = pd.read_csv(source, sep=";")
+    weather = weather.loc[~weather["Timestamp"].str.startswith("2024-01-01 06:00")]
+    weather.to_csv(source, sep=";", index=False)
+    assert not heapo.load_adapter(config).prepare_window(window).forecastable_entity.any()
+    non_oracle = config.model_copy(update={"covariates": CovariatesConfig(future_weather_source="vintage")})
+    with pytest.raises(ValueError, match="oracle"):
+        heapo.load_adapter(non_oracle)
+
+
 def test_actual_v1_smart_meter_schema_and_missingness() -> None:
     frame = read_smart_meter(_meter(
         "8790869;unknown;control;2022-05-07 00:00:00+00:00;0.0;;\n"

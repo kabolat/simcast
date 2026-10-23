@@ -146,3 +146,12 @@ protocol:
     - household::8969472
     - household::9115910
     - household::9894115
+covariates:
+  weather: [Temperature_avg_hourly]
+  # Realized observations, not archived forecasts: explicitly an oracle-weather experiment.
+  future_weather_source: oracle
+  calendar:
+    enabled: true
+    include_hour: true
+    include_day_of_week: true
+    include_is_weekend: true
