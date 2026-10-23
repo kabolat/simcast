@@ -349,6 +349,27 @@ def read_target(source: str | Path | IO[bytes], household_id: int) -> pd.DataFra
     return target
 
 
+def read_survey(root: Path, household_ids: Sequence[int]) -> dict[str, Any]:
+    survey = read_csv(root / "meta_data/meta_data.csv")
+    if (
+        "Household_ID" not in survey or survey["Household_ID"].isna().any()
+        or survey["Household_ID"].duplicated().any()
+    ):
+        raise ValueError("HEAPO survey metadata requires unique nonmissing Household_ID")
+    descriptions = read_csv(root / "meta_data/meta_data_variables.csv")
+    if not {"VariableName", "Description"} <= set(descriptions.columns):
+        raise ValueError("HEAPO survey variable descriptions require VariableName and Description")
+    selected = survey.loc[survey["Household_ID"].isin(household_ids)]
+    return {
+        "usage": "diagnostics_and_provenance_only; never model inputs or entity-ID embeddings",
+        "households_with_survey": len(selected),
+        "households_without_survey": len(household_ids) - len(selected),
+        "variables": json.loads(descriptions.to_json(orient="records")),
+        "households": json.loads(selected.to_json(orient="records")),
+        "missing_count_by_field": {str(column): int(selected[column].isna().sum()) for column in selected.columns},
+    }
+
+
 def align_hourly_weather(weather: pd.DataFrame, timestamps: pd.DatetimeIndex) -> pd.DataFrame:
     """Hold a sample at h through h+45min, never across a missing hourly block."""
 
@@ -434,6 +455,7 @@ def load_adapter(config: ResolvedExperimentConfig) -> DatasetAdapter:
         "weather_warning": "realized future station weather, not operationally deployable forecasting",
         "grouping": "nearest weather station; coarse proximity cohort, not electrical topology",
         "households": json.loads(selected.reset_index().to_json(orient="records")),
+        "survey_metadata": read_survey(root, ids),
     }
     return FrameDatasetAdapter(config, group, frames, provenance)
 

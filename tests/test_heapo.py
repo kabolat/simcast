@@ -64,6 +64,15 @@ def _source(root: Path) -> None:
         "Weather_ID": ["8jB"] * 6 + ["Hg"],
         "SmartMeterData_Available_15min": [True] * 7,
     }).to_csv(root / "meta_data/households.csv", sep=";", index=False)
+    pd.DataFrame({
+        "Household_ID": [101, 202, 303, 606],
+        "Survey_Building_LivingArea": [150.0, 200.0, np.nan, 120.0],
+        "Survey_HeatPump_Installation_Type": ["air-source", "ground-source", None, "air-source"],
+    }).to_csv(root / "meta_data/meta_data.csv", sep=";", index=False)
+    pd.DataFrame({
+        "VariableName": ["Household_ID", "Survey_Building_LivingArea", "Survey_HeatPump_Installation_Type"],
+        "Description": ["identifier", "living area in square meters", "heat pump type"],
+    }).to_csv(root / "meta_data/meta_data_variables.csv", sep=";", index=False)
     times = pd.date_range("2024-01-01", periods=160, freq="15min", tz="UTC")
     lifetimes = ((0, 159), (80, 159), (0, 110), (0, 159), (60, 100), (0, 159), (0, 159))
     rng = np.random.default_rng(17)
@@ -99,6 +108,23 @@ def test_adapter_registry_native_energy_and_real_lifetimes(tmp_path: Path) -> No
     assert adapter.provenance["units"] == "kWh"
     raw = pd.read_csv(tmp_path / "smart_meter_data/15min/202.csv", sep=";")
     np.testing.assert_array_equal(adapter.frames[2].target[heapo.TARGET_COLUMN], raw[heapo.TARGET_COLUMN])
+
+
+def test_metadata_is_retained_for_diagnostics_not_forecaster_inputs(tmp_path: Path) -> None:
+    from simcast.data.windows import make_forecast_window
+
+    _source(tmp_path)
+    adapter = heapo.load_adapter(_config(tmp_path))
+    survey = adapter.provenance["survey_metadata"]
+    assert survey["households_with_survey"] == 3
+    assert survey["households_without_survey"] == 2
+    assert survey["missing_count_by_field"]["Survey_Building_LivingArea"] == 1
+    assert survey["households"][2]["Survey_Building_LivingArea"] is None
+    window = make_forecast_window("2024-01-01T23:45Z", lookback_steps=4, horizon_steps=2)
+    prepared = adapter.prepare_window(window)
+    for model_input in prepared.inputs:
+        assert set(model_input) == {"target", "past_covariates", "future_covariates"}
+        assert all(not key.startswith("Survey_") for key in model_input["past_covariates"])
 
 
 def test_adapter_enforces_group_and_weather_mapping(tmp_path: Path) -> None:
