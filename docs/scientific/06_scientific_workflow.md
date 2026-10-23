@@ -83,6 +83,15 @@ the configured minimum is no greater than 14. An unavailable forecast-time
 input also removes that entity from the active set, but does not reveal any
 test-label information to training.
 
+The same rule handles staggered entity lifetimes. In variable mode, candidate
+origins span the envelope of all lifetimes, and an entity that has not yet
+entered, or has already left, the population is non-forecastable at that
+origin. An entity also needs at least one finite lookback target to be
+forecastable. An entity with no training observations at a lead keeps its
+canonical slot; M1 treats pairs without overlap as independent, and the
+training-frequency PIT map falls back to nominal midpoints and records the
+fallback in its diagnostics.
+
 Implementation: `DependenceDataset`, `DependenceCollator`,
 `ConditionalTrainer`, and `evaluate_from_config` enforce the configured rule.
 Test `entity_valid` and `pit_valid` are stored separately and remain sealed as

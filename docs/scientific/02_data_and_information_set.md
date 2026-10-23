@@ -22,6 +22,18 @@ Each experiment retains its complete ordered canonical group. The default
 or invalid. In opt-in `variable` mode, an entity with unavailable forecast-time
 inputs is marked non-forecastable; it remains on the canonical cache axis but
 is excluded from compact inference. Label validity is recorded separately.
+
+Variable mode supports two missingness patterns with the same machinery:
+
+1. intermittent missing entities within a shared observation period, such as
+   gaps in a target or covariate series; and
+2. staggered entity lifetimes, where entities enter or leave the population at
+   different dates.
+
+In both cases an entity is forecastable at an origin only if its forecast-time
+inputs are available and its lookback satisfies the
+[minimum target history](#minimum-target-history) rule. Candidate coverage for
+staggered lifetimes is defined [below](#forecast-windows).
 Adapter-specific group definitions and exceptions are documented in the
 corresponding dataset reference.
 
@@ -194,8 +206,9 @@ are saved with each run.
 
 There are two distinct masks:
 
-- `forecastable_entity[i,k]` is forecast-time information: the required inputs
-  and entity forecast are finite and available;
+- `forecastable_entity[i,k]` is forecast-time information: the entity lies
+  within its lifetime, the required inputs and entity forecast are finite and
+  available, and the lookback has at least one finite target;
 - `entity_valid[i,k,tau]` is label-derived: truth, marginal forecast, PIT, and
   monotonicity validity all hold for that entity and lead.
 

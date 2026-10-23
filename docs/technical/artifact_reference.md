@@ -190,7 +190,7 @@ omitted from summaries. The table is always written.
 | Array | Shape | Meaning |
 |---|---|---|
 | `quantile_predictions` | `[N_test,H,Q_eval]` | empirical aggregate quantiles |
-| `correlations` | `[N_test,H,K,K]` | active correlation scattered onto canonical axes; inactive rows/columns are identity |
+| `correlations` | `[N_test,H,K,K]` | canonical-axis correlations; M0/M1 store their universe matrix, M2/M3/M4 scatter the predicted active submatrix with identity inactive rows/columns. Sampling and scoring use only the active submatrix |
 | `active_entity_mask` | `[N_test,K,H]` | common forecastable and label-valid entities used at each case |
 | `active_entity_count` | `[N_test,H]` | active set size, including invalid cases |
 | `energy_score` | `[N_test,H]` | empirical all-pairs score on the selected active joint ensemble; present only when declared |

@@ -54,7 +54,7 @@ subset when its size reaches `min_entities_per_case`.
 | `id` | safe slug: lowercase letters, digits, `_`, `-` | **required** | human-readable base identity; not a cache-compatibility claim |
 | `protocol.ordered_entity_ids` | non-empty list of unique strings | **required** | ordered definition of $\mathcal E_g$ |
 | `protocol.entity_count` | positive integer | **required** | $K_g$; must equal the list length |
-| `protocol.cardinality_mode` | `fixed` or `variable` | `fixed` | fixed complete cases or label-valid active subsets |
+| `protocol.cardinality_mode` | `fixed` or `variable` | `fixed` | fixed complete cases over the common entity lifetime, or label-valid active subsets over the envelope of entity lifetimes |
 | `protocol.min_entities_per_case` | positive integer no larger than the universe | `2` | minimum active cardinality admitted in variable mode |
 | `data.adapter` | registered adapter identifier | adapter-specific default | selects the data reader and validation rules |
 | `data.dataset_id` | string | adapter-specific source identifier | identifies the source population |

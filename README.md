@@ -24,7 +24,12 @@ or absolute maximum $\max_k |Y_k|$. The evaluation YAML selects the statistic;
 In fixed mode, one invalid entity invalidates the complete case. In variable
 mode, valid entity PITs are retained independently and all methods use the same
 active subset for fitting, scenarios, and scoring. Test-label validity remains
-sealed until evaluation.
+sealed until evaluation. Variable mode covers both entities that are
+intermittently missing within a shared period and entities with staggered
+observation lifetimes; candidate origins then span the envelope of all
+lifetimes, and an entity is forecastable only with at least one finite lookback
+target (see
+[Chapter 2](docs/scientific/02_data_and_information_set.md#minimum-target-history)).
 
 Detailed scientific documentation begins at
 [`docs/README.md`](docs/README.md). Executable explanations are in
