@@ -5,18 +5,25 @@ import numpy as np
 import torch
 
 from simcast.cli.train_dependence import train_from_config
-from simcast.config import ResolvedExperimentConfig
+from simcast.config import ProtocolConfig, ResolvedExperimentConfig
 from simcast.fm.cache import build_cache_dataset, save_pit_library
 from simcast.training.checkpoint import load_conditional_checkpoint
 
 
-def _cache(path: Path, *, invalid_train_prefix: int = 0) -> Path:
+def _cache(
+    path: Path,
+    *,
+    invalid_train_prefix: int = 0,
+    missing_entity_cases: tuple[tuple[int, int, int], ...] = (),
+) -> Path:
     rng = np.random.default_rng(31)
     n, k, h, p, d = 10, 4, 2, 1, 5
     medians = rng.normal(size=(n, k, h)).astype(np.float32)
     predictions = np.stack((medians - 1, medians, medians + 1), axis=-1)
     pit_z = rng.normal(size=(n, k, h)).astype(np.float32)
     pit_z[:invalid_train_prefix] = np.nan
+    for origin, entity, lead in missing_entity_cases:
+        pit_z[origin, entity, lead] = np.nan
     dataset = build_cache_dataset(
         origin_timestamps=np.arange(n).astype("datetime64[D]"),
         entity_ids=[f"e-{idx}" for idx in range(k)],
@@ -76,6 +83,25 @@ def test_train_static_from_sealed_cache(tmp_path: Path) -> None:
     assert (run / "model.npz").is_file()
     assert (run / "resolved_config.yaml").is_file()
     assert (run / "run_metadata.json").is_file()
+
+
+def test_train_static_variable_filters_cases_below_minimum(tmp_path: Path) -> None:
+    cache = _cache(
+        tmp_path / "cache",
+        missing_entity_cases=((0, 0, 0), (0, 1, 0)),
+    )
+    config = _config(tmp_path, "static_gaussian").model_copy(
+        update={
+            "protocol": ProtocolConfig(cardinality_mode="variable", min_entities_per_case=3),
+        }
+    )
+
+    run = train_from_config(config, cache_dir=cache, output_dir=tmp_path / "m1-variable")
+
+    diagnostics = json.loads((run / "m1_diagnostics.json").read_text(encoding="utf-8"))
+    assert diagnostics["estimator_mode"] == "pairwise_complete"
+    assert diagnostics["training_cases_used_by_lead"] == [5, 6]
+    assert diagnostics["pairwise_overlap_counts"][0][2][3] == 5
 
 
 def test_train_and_restore_conditional_model(tmp_path: Path) -> None:

@@ -69,16 +69,24 @@ class ConditionalKernelGaussianCopula(nn.Module):
         *,
         padding_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        embeddings = self.entity_embeddings(features)
+        values = torch.as_tensor(features)
+        mask: torch.Tensor | None = None
+        if padding_mask is not None:
+            mask = torch.as_tensor(padding_mask, dtype=torch.bool, device=values.device)
+            if mask.shape != values.shape[:-1]:
+                raise ValueError("padding_mask must have shape [..., entity]")
+            if bool(mask.all(dim=-1).any()):
+                raise ValueError("each set must contain at least one active entity")
+            values = torch.where(mask.unsqueeze(-1), torch.zeros_like(values), values)
+            if not bool(torch.isfinite(values).all()):
+                raise ValueError("active entity features must be finite")
+        embeddings = self.entity_embeddings(values)
         squared_distance = torch.cdist(embeddings, embeddings).square()
         kernel = torch.exp(-squared_distance / (2.0 * self.length_scale.square()))
         if self.nugget:
             kernel = kernel + self.nugget * torch.eye(kernel.shape[-1], dtype=kernel.dtype, device=kernel.device)
         correlation = covariance_to_correlation(kernel, jitter=self.jitter)
-        if padding_mask is not None:
-            mask = torch.as_tensor(padding_mask, dtype=torch.bool, device=correlation.device)
-            if mask.shape != correlation.shape[:-1]:
-                raise ValueError("padding_mask must have shape [..., entity]")
+        if mask is not None:
             valid_pairs = (~mask).unsqueeze(-1) & (~mask).unsqueeze(-2)
             correlation = correlation * valid_pairs + torch.diag_embed(mask.to(correlation.dtype))
         return correlation

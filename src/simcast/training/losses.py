@@ -39,6 +39,8 @@ def gaussian_copula_pseudo_nll(
     *,
     jitter: float = 1.0e-6,
     reduction: Reduction = "mean",
+    active_mask: torch.Tensor | None = None,
+    min_entities_per_case: int = 2,
 ) -> torch.Tensor:
     r"""Gaussian-copula negative pseudo-log-likelihood up to constants.
 
@@ -62,12 +64,50 @@ def gaussian_copula_pseudo_nll(
         raise ValueError("correlation entity dimensions must match z")
     if reduction not in {"none", "mean", "sum"}:
         raise ValueError("reduction must be 'none', 'mean', or 'sum'")
+    if min_entities_per_case < 1:
+        raise ValueError("min_entities_per_case must be positive")
 
     try:
         scores, _ = torch.broadcast_tensors(scores, matrix[..., 0])  # type: ignore[no-untyped-call]
     except RuntimeError as error:
         raise ValueError("z and correlation batch dimensions are not broadcastable") from error
     matrix = matrix.expand(*scores.shape[:-1], *matrix.shape[-2:])
+
+    if active_mask is not None:
+        mask = torch.as_tensor(active_mask, dtype=torch.bool, device=scores.device)
+        try:
+            mask = mask.expand_as(scores)
+        except RuntimeError as error:
+            raise ValueError("active_mask must broadcast to z") from error
+        counts = mask.sum(dim=-1)
+        if bool((counts < min_entities_per_case).any()):
+            raise ValueError("each case must contain at least min_entities_per_case active entities")
+        if not bool(torch.isfinite(scores[mask]).all()):
+            raise ValueError("active PIT scores must be finite")
+        if not bool(mask.all()):
+            flat_scores = scores.reshape(-1, scores.shape[-1])
+            flat_mask = mask.reshape(-1, scores.shape[-1])
+            flat_matrix = matrix.reshape(-1, matrix.shape[-2], matrix.shape[-1])
+            losses: list[torch.Tensor] = []
+            for case_scores, case_mask, case_matrix in zip(flat_scores, flat_mask, flat_matrix, strict=True):
+                indices = case_mask.nonzero(as_tuple=False).flatten()
+                active_scores = case_scores.index_select(0, indices)
+                active_matrix = case_matrix.index_select(0, indices).index_select(1, indices)
+                losses.append(
+                    gaussian_copula_pseudo_nll(
+                        active_scores,
+                        active_matrix,
+                        jitter=jitter,
+                        reduction="none",
+                    )
+                )
+            active_loss = torch.stack(losses).reshape(scores.shape[:-1])
+            if reduction == "mean":
+                return torch.as_tensor(active_loss.mean())
+            if reduction == "sum":
+                return torch.as_tensor(active_loss.sum())
+            return active_loss
+
     matrix = stabilize_correlation(matrix, jitter=jitter)
 
     cholesky = torch.linalg.cholesky(matrix)

@@ -38,12 +38,20 @@ class TrainingResult:
     history: tuple[EpochMetrics, ...]
 
 
-def _forward(model: nn.Module, features: torch.Tensor, expected_num_entities: int | None = None) -> torch.Tensor:
+def _forward(
+    model: nn.Module,
+    features: torch.Tensor,
+    expected_num_entities: int | None = None,
+    padding_mask: torch.Tensor | None = None,
+) -> torch.Tensor:
     if expected_num_entities is not None and features.shape[-2] != expected_num_entities:
         raise ValueError(
             f"full-group protocol expected {expected_num_entities} entities, received {features.shape[-2]}"
         )
-    correlation = model(features)
+    if padding_mask is not None and bool(padding_mask.any()):
+        correlation = model(features, padding_mask=padding_mask)
+    else:
+        correlation = model(features)
     if not isinstance(correlation, torch.Tensor):
         raise TypeError("dependence model must return a torch.Tensor correlation matrix")
     return correlation
@@ -65,6 +73,7 @@ class ConditionalTrainer:
         seed: int = 42,
         device: torch.device | str = "cpu",
         expected_num_entities: int | None = None,
+        min_entities_per_case: int = 2,
     ) -> None:
         if min(batch_size, epochs, patience) <= 0:
             raise ValueError("batch_size, epochs, and patience must be positive")
@@ -80,6 +89,7 @@ class ConditionalTrainer:
         self.seed = seed
         self.device = torch.device(device)
         self.expected_num_entities = expected_num_entities
+        self.min_entities_per_case = min_entities_per_case
 
     @staticmethod
     def _mean_loss(
@@ -88,6 +98,7 @@ class ConditionalTrainer:
         device: torch.device,
         jitter: float,
         expected_num_entities: int | None,
+        min_entities_per_case: int,
     ) -> float:
         model.eval()
         total = 0.0
@@ -98,9 +109,11 @@ class ConditionalTrainer:
                 scores = batch.z.to(device)
                 loss = gaussian_copula_pseudo_nll(
                     scores,
-                    _forward(model, features, expected_num_entities),
+                    _forward(model, features, expected_num_entities, batch.padding_mask.to(device)),
                     jitter=jitter,
                     reduction="sum",
+                    active_mask=batch.active_mask.to(device),
+                    min_entities_per_case=min_entities_per_case,
                 )
                 total += float(loss)
                 count += scores.shape[0]
@@ -167,9 +180,16 @@ class ConditionalTrainer:
                 optimizer.zero_grad(set_to_none=True)
                 loss = gaussian_copula_pseudo_nll(
                     scores,
-                    _forward(model, features, self.expected_num_entities),
+                    _forward(
+                        model,
+                        features,
+                        self.expected_num_entities,
+                        batch.padding_mask.to(self.device),
+                    ),
                     jitter=self.jitter,
                     reduction="mean",
+                    active_mask=batch.active_mask.to(self.device),
+                    min_entities_per_case=self.min_entities_per_case,
                 )
                 loss.backward()  # type: ignore[no-untyped-call]
                 nn.utils.clip_grad_norm_(model.parameters(), self.gradient_clip_norm)
@@ -182,6 +202,7 @@ class ConditionalTrainer:
                 self.device,
                 self.jitter,
                 self.expected_num_entities,
+                self.min_entities_per_case,
             )
             metrics = EpochMetrics(epoch, total / count, validation_loss)
             history.append(metrics)

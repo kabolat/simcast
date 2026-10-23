@@ -33,13 +33,18 @@ class ScalarStandardizer:
         return self.mean is not None and self.scale is not None
 
     @torch.no_grad()
-    def fit(self, training_features: torch.Tensor) -> Self:
+    def fit(self, training_features: torch.Tensor, valid_mask: torch.Tensor | None = None) -> Self:
         """Fit on a scalar-feature tensor whose last axis indexes features."""
 
         values = torch.as_tensor(training_features, dtype=torch.float32)
         if values.ndim < 1 or values.shape[-1] == 0:
             raise ValueError("training_features must have a non-empty feature axis")
         flat = values.reshape(-1, values.shape[-1])
+        if valid_mask is not None:
+            mask = torch.as_tensor(valid_mask, dtype=torch.bool, device=values.device)
+            if mask.shape != values.shape[:-1]:
+                raise ValueError("valid_mask must match the non-feature training dimensions")
+            flat = flat[mask.reshape(-1)]
         if flat.shape[0] == 0:
             raise ValueError("training_features must contain at least one observation")
         if not bool(torch.isfinite(flat).all()):
@@ -176,7 +181,8 @@ class FeatureBuilder:
         forecast_embeddings: torch.Tensor,
         quantile_predictions: torch.Tensor,
         quantile_levels: torch.Tensor | Sequence[float],
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        forecastable_mask: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor | None]:
         embeddings = torch.as_tensor(forecast_embeddings, dtype=torch.float32)
         predictions = torch.as_tensor(
             quantile_predictions,
@@ -197,9 +203,19 @@ class FeatureBuilder:
         patch_indices = lead_to_patch_indices(predictions.shape[2], self.output_patch_size, device=embeddings.device)
         if int(patch_indices[-1]) >= embeddings.shape[2]:
             raise ValueError("forecast_embeddings do not cover every prediction lead")
-        if not bool(torch.isfinite(embeddings).all()) or not bool(torch.isfinite(predictions).all()):
-            raise ValueError("forecast embeddings and quantile predictions must be finite")
-        return embeddings, predictions, levels
+        mask = None
+        if forecastable_mask is None:
+            if not bool(torch.isfinite(embeddings).all()) or not bool(torch.isfinite(predictions).all()):
+                raise ValueError("forecast embeddings and quantile predictions must be finite")
+        else:
+            mask = torch.as_tensor(forecastable_mask, dtype=torch.bool, device=embeddings.device)
+            if mask.shape != embeddings.shape[:2]:
+                raise ValueError("forecastable_mask must have shape [origin, entity]")
+            if not bool(torch.isfinite(embeddings[mask]).all()) or not bool(torch.isfinite(predictions[mask]).all()):
+                raise ValueError("forecastable entities must have finite embeddings and quantile predictions")
+            embeddings = torch.where(mask[..., None, None], embeddings, torch.zeros_like(embeddings))
+            predictions = torch.where(mask[..., None, None], predictions, torch.zeros_like(predictions))
+        return embeddings, predictions, levels, mask
 
     @staticmethod
     def _level_index(levels: torch.Tensor, requested: float) -> int:
@@ -240,9 +256,10 @@ class FeatureBuilder:
         quantile_predictions: torch.Tensor,
         quantile_levels: torch.Tensor | Sequence[float],
         locations: torch.Tensor | None,
-    ) -> tuple[list[torch.Tensor], torch.Tensor | None]:
-        embeddings, predictions, levels = self._validate_and_convert(
-            forecast_embeddings, quantile_predictions, quantile_levels
+        forecastable_mask: torch.Tensor | None = None,
+    ) -> tuple[list[torch.Tensor], torch.Tensor | None, torch.Tensor | None]:
+        embeddings, predictions, levels, entity_mask = self._validate_and_convert(
+            forecast_embeddings, quantile_predictions, quantile_levels, forecastable_mask
         )
         n_origin, n_entity, horizon, _ = predictions.shape
         feature_parts: list[torch.Tensor] = []
@@ -278,7 +295,7 @@ class FeatureBuilder:
             )
 
         scalar_features = torch.cat(scalar_parts, dim=-1) if scalar_parts else None
-        return feature_parts, scalar_features
+        return feature_parts, scalar_features, entity_mask
 
     def fit(
         self,
@@ -286,12 +303,25 @@ class FeatureBuilder:
         quantile_predictions: torch.Tensor,
         quantile_levels: torch.Tensor | Sequence[float],
         locations: torch.Tensor | None = None,
+        *,
+        forecastable_mask: torch.Tensor | None = None,
+        valid_mask: torch.Tensor | None = None,
     ) -> Self:
         """Fit scalar statistics; arguments must contain training origins only."""
 
-        _, scalar_features = self._components(forecast_embeddings, quantile_predictions, quantile_levels, locations)
+        _, scalar_features, entity_mask = self._components(
+            forecast_embeddings, quantile_predictions, quantile_levels, locations, forecastable_mask
+        )
         if self.standardize_scalar_features and scalar_features is not None:
-            self.scalar_standardizer.fit(scalar_features)
+            fit_mask = None
+            if valid_mask is not None:
+                fit_mask = torch.as_tensor(valid_mask, dtype=torch.bool, device=scalar_features.device)
+                if fit_mask.shape != scalar_features.shape[:-1]:
+                    raise ValueError("valid_mask must have shape [origin, entity, lead]")
+            if entity_mask is not None:
+                forecastable_rows = entity_mask.unsqueeze(-1).expand(scalar_features.shape[:-1])
+                fit_mask = forecastable_rows if fit_mask is None else fit_mask & forecastable_rows
+            self.scalar_standardizer.fit(scalar_features, fit_mask)
         return self
 
     def transform(
@@ -300,17 +330,22 @@ class FeatureBuilder:
         quantile_predictions: torch.Tensor,
         quantile_levels: torch.Tensor | Sequence[float],
         locations: torch.Tensor | None = None,
+        *,
+        forecastable_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Build features using frozen scalar statistics."""
 
-        feature_parts, scalar_features = self._components(
-            forecast_embeddings, quantile_predictions, quantile_levels, locations
+        feature_parts, scalar_features, entity_mask = self._components(
+            forecast_embeddings, quantile_predictions, quantile_levels, locations, forecastable_mask
         )
         if scalar_features is not None:
             if self.standardize_scalar_features:
                 scalar_features = self.scalar_standardizer.transform(scalar_features)
             feature_parts.append(scalar_features)
-        return torch.cat(feature_parts, dim=-1)
+        features = torch.cat(feature_parts, dim=-1)
+        if entity_mask is not None:
+            features = features.masked_fill(~entity_mask[:, :, None, None], 0.0)
+        return features
 
     def fit_transform(
         self,
@@ -318,9 +353,25 @@ class FeatureBuilder:
         quantile_predictions: torch.Tensor,
         quantile_levels: torch.Tensor | Sequence[float],
         locations: torch.Tensor | None = None,
+        *,
+        forecastable_mask: torch.Tensor | None = None,
+        valid_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        self.fit(forecast_embeddings, quantile_predictions, quantile_levels, locations)
-        return self.transform(forecast_embeddings, quantile_predictions, quantile_levels, locations)
+        self.fit(
+            forecast_embeddings,
+            quantile_predictions,
+            quantile_levels,
+            locations,
+            forecastable_mask=forecastable_mask,
+            valid_mask=valid_mask,
+        )
+        return self.transform(
+            forecast_embeddings,
+            quantile_predictions,
+            quantile_levels,
+            locations,
+            forecastable_mask=forecastable_mask,
+        )
 
     def build(
         self,
@@ -328,7 +379,15 @@ class FeatureBuilder:
         quantile_predictions: torch.Tensor,
         quantile_levels: torch.Tensor | Sequence[float],
         locations: torch.Tensor | None = None,
+        *,
+        forecastable_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Alias for :meth:`transform` for inference-time call sites."""
 
-        return self.transform(forecast_embeddings, quantile_predictions, quantile_levels, locations)
+        return self.transform(
+            forecast_embeddings,
+            quantile_predictions,
+            quantile_levels,
+            locations,
+            forecastable_mask=forecastable_mask,
+        )
