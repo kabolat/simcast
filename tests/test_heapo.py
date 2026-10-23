@@ -203,6 +203,28 @@ def test_adapter_uses_oracle_weather_and_excludes_weather_gaps(tmp_path: Path) -
         heapo.load_adapter(non_oracle)
 
 
+def test_source_diagnostics_match_generic_adapter_forecastability(tmp_path: Path) -> None:
+    from simcast.data.heapo_diagnostics import _availability, source_diagnostics
+
+    _source(tmp_path)
+    adapter = heapo.load_adapter(_config(tmp_path))
+    assert isinstance(adapter, heapo.FrameDatasetAdapter)
+    windows, forecast, empty, active = _availability(adapter)
+    for index, window in enumerate(windows):
+        prepared = adapter.prepare_window(window)
+        np.testing.assert_array_equal(forecast[index], prepared.forecastable_entity)
+        np.testing.assert_array_equal(empty[index], prepared.empty_history)
+        np.testing.assert_array_equal(active[index], forecast[index, :, None] & np.isfinite(prepared.true_y))
+    report = source_diagnostics(adapter)
+    assert report["canonical_K_max"] == 5
+    training = report["potential_training_diagnostics"]
+    assert training["households_without_training_observations"] == ["household::202"]
+    assert training["training_frequency_fallback"]["fallback_count"] == 2
+    assert training["zero_overlap_pairs_by_lead"] == [4, 4]
+    assert report["source_label_active_K"]["overall"]["min"] >= 2
+    assert report["source_label_active_K"]["overall"]["max"] == 5
+
+
 def test_actual_v1_smart_meter_schema_and_missingness() -> None:
     frame = read_smart_meter(_meter(
         "8790869;unknown;control;2022-05-07 00:00:00+00:00;0.0;;\n"

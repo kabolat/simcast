@@ -32,6 +32,7 @@ report = "simcast.cli.report_composite:cli"
 cache = "simcast.cli.build_cache:cli"
 download-data = "simcast.cli.download_data:cli"
 feederbw-info = "simcast.data.feederbw:cli"
+heapo-info = "simcast.data.heapo_diagnostics:cli"
 singular = "simcast.cli.run_singular:cli"
 
 [dependency-groups]

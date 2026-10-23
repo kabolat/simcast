@@ -385,6 +385,22 @@ def align_hourly_weather(weather: pd.DataFrame, timestamps: pd.DatetimeIndex) ->
     return weather.sort_index().reindex(timestamps, method="ffill", tolerance=pd.Timedelta(minutes=45))
 
 
+def read_weather(source: str | Path | IO[bytes], station: str, fields: Sequence[str]) -> pd.DataFrame:
+    weather_raw = read_csv(source)
+    if "Weather_ID" not in weather_raw or not weather_raw["Weather_ID"].eq(station).all():
+        raise ValueError("HEAPO hourly weather station ID mismatch")
+    weather_raw.index = pd.DatetimeIndex(pd.to_datetime(weather_raw.pop("Timestamp"), utc=True))
+    if weather_raw.index.has_duplicates or weather_raw.index.hasnans:
+        raise ValueError("HEAPO weather has missing or duplicate UTC timestamps")
+    if not fields or set(fields) - set(weather_raw.columns) or "Weather_ID" in fields:
+        raise ValueError("HEAPO weather must select supplied hourly measurement columns")
+    weather = weather_raw.loc[:, list(fields)].apply(pd.to_numeric, errors="raise").sort_index()
+    return align_hourly_weather(weather, pd.date_range(
+        start=weather.index.min(), end=weather.index.max() + pd.Timedelta(minutes=45),
+        freq="15min", name="timestamp",
+    ))
+
+
 def load_adapter(config: ResolvedExperimentConfig) -> DatasetAdapter:
     validate_data_config(config.data)
     if config.forecast.frequency_minutes != 15:
@@ -410,20 +426,7 @@ def load_adapter(config: ResolvedExperimentConfig) -> DatasetAdapter:
         raise ValueError("selected HEAPO households violate configured control/treatment filter")
     if not selected["SmartMeterData_Available_15min"].all():
         raise ValueError("selected HEAPO household has no 15-minute data")
-    weather_raw = read_csv(root / f"weather_data/hourly/{station}.csv")
-    if "Weather_ID" not in weather_raw or not weather_raw["Weather_ID"].eq(station).all():
-        raise ValueError("HEAPO hourly weather station ID mismatch")
-    weather_raw.index = pd.DatetimeIndex(pd.to_datetime(weather_raw.pop("Timestamp"), utc=True))
-    if weather_raw.index.has_duplicates or weather_raw.index.hasnans:
-        raise ValueError("HEAPO weather has missing or duplicate UTC timestamps")
-    fields = config.covariates.weather
-    if not fields or set(fields) - set(weather_raw.columns) or "Weather_ID" in fields:
-        raise ValueError("HEAPO weather must select supplied hourly measurement columns")
-    weather = weather_raw.loc[:, fields].apply(pd.to_numeric, errors="raise").sort_index()
-    weather = align_hourly_weather(weather, pd.date_range(
-        start=weather.index.min(), end=weather.index.max() + pd.Timedelta(minutes=45),
-        freq="15min", name="timestamp",
-    ))
+    weather = read_weather(root / f"weather_data/hourly/{station}.csv", station, config.covariates.weather)
     entities = [
         EntityMetadata(
             name=str(identifier), group_name="household",
