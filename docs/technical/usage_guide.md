@@ -434,7 +434,10 @@ forecast instance.
 
 A venue is a named, cloneable research workspace, not a Python environment. A
 composite must live below `configs/venues/<venue>/` and its `venue` field must
-match that directory. Venue, composite, and run identifiers are lowercase safe
+match that directory. Local exploratory composites may instead live below the
+git-ignored `configs/local/<venue>/` or be named `*.local.yaml`; see
+[tracked versus local configurations](../../configs/local/README.md).
+Venue, composite, and run identifiers are lowercase safe
 slugs. Every artifact of a run nests under one root:
 
 ```text

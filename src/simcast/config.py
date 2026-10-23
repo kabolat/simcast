@@ -744,14 +744,24 @@ def load_method_config(path: str | Path, overrides: Sequence[str] = ()) -> Metho
 
 
 def load_composite_config(path: str | Path, overrides: Sequence[str] = ()) -> CompositeExperimentConfig:
-    """Load a venue-scoped explicit composite experiment declaration."""
+    """Load a venue-scoped explicit composite experiment declaration.
+
+    Tracked composites live in ``configs/venues/<venue>/``. Untracked local
+    composites may live in ``configs/local/<venue>/`` (the same depth, so
+    inherited relative paths keep resolving) or be named ``*.local.yaml``; the
+    default name of ``study.local.yaml`` is ``study_local``.
+    """
 
     source = Path(path).expanduser().resolve()
     values = _load_role_values(source, overrides)
-    values.setdefault("name", source.stem)
+    stem = source.stem
+    values.setdefault("name", f"{stem.removesuffix('.local')}_local" if stem.endswith(".local") else stem)
     config = CompositeExperimentConfig.model_validate(values)
-    if source.parent.parent.name != "venues" or source.parent.parent.parent.name != "configs":
-        raise ValueError("composite configurations must be stored directly under configs/venues/<venue>")
+    if source.parent.parent.name not in {"venues", "local"} or source.parent.parent.parent.name != "configs":
+        raise ValueError(
+            "composite configurations must be stored directly under configs/venues/<venue> "
+            "or configs/local/<venue>"
+        )
     directory_venue = source.parent.name
     if config.venue != directory_venue:
         raise ValueError(

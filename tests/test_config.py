@@ -80,6 +80,30 @@ def test_composite_name_defaults_to_filename(tmp_path: Path) -> None:
     assert load_composite_config(path).name == "filename_composite"
 
 
+def test_local_composites_extend_tracked_ones_without_breaking_relative_paths(tmp_path: Path) -> None:
+    from simcast.cli._composite_paths import _resolve_path
+
+    configs = tmp_path / "configs"
+    tracked = configs / "venues" / "lab" / "study.yaml"
+    local = configs / "local" / "lab" / "study_variant.yaml"
+    suffixed = configs / "venues" / "lab" / "study.local.yaml"
+    for path in (tracked, local):
+        path.parent.mkdir(parents=True, exist_ok=True)
+    tracked.write_text(
+        "kind: composite\nvenue: lab\n"
+        "bases: [{id: base, config: ../../bases/base.yaml}]\n"
+        "methods: [{id: m0, method: ../../methods/m0.yaml}]\n",
+        encoding="utf-8",
+    )
+    local.write_text("extends: ../../venues/lab/study.yaml\n", encoding="utf-8")
+    suffixed.write_text("extends: study.yaml\n", encoding="utf-8")
+
+    local_config = load_composite_config(local)
+    assert (local_config.name, local_config.venue) == ("study_variant", "lab")
+    assert _resolve_path(local, local_config.bases[0].config) == (configs / "bases" / "base.yaml").resolve()
+    assert load_composite_config(suffixed).name == "study_local"
+
+
 def test_linear_interpolation_is_a_valid_consistent_pit_mode() -> None:
     pit = PitConfig(mode="linear_interpolation")
     assert pit.mode == "linear_interpolation"

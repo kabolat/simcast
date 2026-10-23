@@ -12,3 +12,10 @@ external/chronos-forecasting/
 artifacts/
 runs/
 .env
+
+# Local exploratory experiment configurations
+configs/local/**
+configs/**/*.local.yaml
+
+# Keep the convention documented
+!configs/local/README.md

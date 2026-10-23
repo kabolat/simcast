@@ -324,7 +324,10 @@ with ten seeds expand to $5+5+50+50+50=160$ fits.
 ## 5. Venue and path validity
 
 A composite at `configs/venues/<venue>/study.yaml` must declare the same safe
-slug in `venue`. Every artifact of a run nests under one output root:
+slug in `venue`. Untracked local composites follow the same rule at
+`configs/local/<venue>/study.yaml` or as `configs/venues/<venue>/study.local.yaml`
+(default name `study_local`); see [`configs/local/README.md`](../../configs/local/README.md).
+Every artifact of a run nests under one output root:
 
 ```text
 runs/<venue>/<composite>/<run-id>/
