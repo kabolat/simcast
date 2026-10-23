@@ -8,6 +8,7 @@ import os
 import random
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import torch
@@ -27,7 +28,11 @@ from simcast.dependence.set_aware_low_rank import SetAwareLowRankGaussianCopula
 from simcast.evaluation.plots import plot_training_history
 from simcast.fm.cache import PITLibrary, load_pit_library
 from simcast.fm.feature_builder import FeatureBuilder
-from simcast.fm.pit import dependence_pit_scores
+from simcast.fm.pit import (
+    dependence_pit_scores,
+    training_frequency_fallback_mask,
+    training_frequency_fallback_summary,
+)
 from simcast.reproducibility import config_sha256, environment_metadata, sha256_file
 from simcast.training import ConditionalTrainer, DependenceCollator, DependenceDataset
 
@@ -50,7 +55,11 @@ def _seed_everything(seed: int, deterministic: bool) -> None:
 
 
 def _write_run_metadata(
-    run_dir: Path, config: ResolvedExperimentConfig, cache_path: Path, entity_ids: list[str]
+    run_dir: Path,
+    config: ResolvedExperimentConfig,
+    cache_path: Path,
+    entity_ids: list[str],
+    frequency_fallback: dict[str, Any] | None = None,
 ) -> None:
     resolved = config.model_dump(mode="json")
     (run_dir / "resolved_config.yaml").write_text(yaml.safe_dump(resolved, sort_keys=False), encoding="utf-8")
@@ -76,6 +85,8 @@ def _write_run_metadata(
         "cardinality_mode": config.protocol.cardinality_mode,
         "min_entities_per_case": config.protocol.min_entities_per_case,
     }
+    if frequency_fallback is not None:
+        metadata["pit_training_frequency_fallback"] = frequency_fallback
     (run_dir / "run_metadata.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
 
 
@@ -110,18 +121,45 @@ def _feature_builder(config: ResolvedExperimentConfig, library: PITLibrary) -> F
 
 def _dependence_scores(
     library: PITLibrary, config: ResolvedExperimentConfig
-) -> tuple[np.ndarray, np.ndarray | None]:
+) -> tuple[np.ndarray, np.ndarray | None, np.ndarray | None]:
+    """Dependence scores plus, for ``training_frequency``, the train-only midpoint table and fallback mask."""
+
     dataset = library.dataset
+    pit_u = torch.tensor(dataset["pit_u"].values, dtype=torch.float32)
+    training = torch.tensor(np.asarray(dataset["split"].values) == "train")
     scores, mapping = dependence_pit_scores(
-        torch.tensor(dataset["pit_u"].values, dtype=torch.float32),
+        pit_u,
         torch.tensor(dataset["pit_z"].values, dtype=torch.float32),
-        torch.tensor(np.asarray(dataset["split"].values) == "train"),
+        training,
         torch.tensor(dataset["quantile"].values, dtype=torch.float32),
         mode=config.pit.dependence_transform,
         eps=config.pit.eps,
         allow_missing=config.protocol.cardinality_mode == "variable",
     )
-    return scores.numpy(), None if mapping is None else mapping.numpy()
+    if mapping is None:
+        return scores.numpy(), None, None
+    return scores.numpy(), mapping.numpy(), training_frequency_fallback_mask(pit_u[training]).numpy()
+
+
+def _save_frequency_map(
+    directory: Path, mapping: np.ndarray, fallback_mask: np.ndarray, entity_ids: list[str]
+) -> dict[str, Any]:
+    """Persist the train-only PIT-frequency table with its fallback diagnostics; return the summary."""
+
+    summary = training_frequency_fallback_summary(fallback_mask, entity_ids)
+    np.savez_compressed(
+        directory / "pit_training_frequency_map.npz",
+        midpoints=mapping,
+        fallback_mask=fallback_mask,
+        fallback_count=np.int64(summary["fallback_count"]),
+        fallback_count_by_entity=fallback_mask.sum(axis=1).astype(np.int64),
+        fallback_count_by_lead=fallback_mask.sum(axis=0).astype(np.int64),
+        entity_ids=np.asarray(entity_ids, dtype=str),
+    )
+    (directory / "pit_training_frequency_diagnostics.json").write_text(
+        json.dumps({"scope": "train", **summary}, indent=2) + "\n", encoding="utf-8"
+    )
+    return summary
 
 
 def _arrays(
@@ -335,10 +373,16 @@ def train_from_config(
         len(entity_ids),
         run_dir,
     )
-    _write_run_metadata(run_dir, config, cache_path, entity_ids)
-    dependence_z, frequency_mapping = _dependence_scores(library, config)
-    if frequency_mapping is not None:
-        np.savez_compressed(run_dir / "pit_training_frequency_map.npz", midpoints=frequency_mapping)
+    dependence_z, frequency_mapping, frequency_fallback = _dependence_scores(library, config)
+    fallback_summary = None
+    if frequency_mapping is not None and frequency_fallback is not None:
+        fallback_summary = _save_frequency_map(run_dir, frequency_mapping, frequency_fallback, entity_ids)
+        LOGGER.info(
+            "Training-frequency PIT map uses nominal midpoints for %d/%d entity-lead pairs",
+            fallback_summary["fallback_count"],
+            fallback_summary["entity_lead_count"],
+        )
+    _write_run_metadata(run_dir, config, cache_path, entity_ids, fallback_summary)
     train_indices = _split_indices(library, "train")
     train_z = dependence_z[train_indices]
     if method == "independent":

@@ -378,6 +378,10 @@ frequencies. This avoids validation/test leakage.
 `pit.dependence_transform: training_frequency` selects the sensitivity.
 `fit_training_frequency_midpoints`, `apply_training_frequency_midpoints`, and
 `dependence_pit_scores` implement the train-only transformation.
+`training_frequency_fallback_mask` marks the entity/lead pairs that use the
+nominal fallback. Dependence fits and evaluations persist the mask and its
+counts; see the
+[artifact reference](../technical/artifact_reference.md#dependence-fit-directory).
 
 ## 7. Probability-space projection for scenarios
 

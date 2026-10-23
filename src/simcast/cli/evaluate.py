@@ -18,7 +18,7 @@ import torch
 import yaml  # type: ignore[import-untyped]
 from tqdm.auto import tqdm
 
-from simcast.cli.train_dependence import _dependence_scores
+from simcast.cli.train_dependence import _dependence_scores, _save_frequency_map
 from simcast.config import EvaluationFiguresConfig, ResolvedExperimentConfig
 from simcast.dependence import IndependentCopula, StaticGaussianCopula
 from simcast.evaluation.aggregate import AggregateEvaluation, evaluate_aggregate_ensemble
@@ -800,6 +800,22 @@ def _figure_origin_index(origins: pd.DatetimeIndex, requested: datetime | None) 
     return int(matches[0])
 
 
+def _check_fitted_frequency_maps(
+    runs: Mapping[str, Path], mapping: np.ndarray, fallback_mask: np.ndarray
+) -> None:
+    """Fail if a fitted run was trained under a different train-only PIT-frequency map."""
+
+    for name, path in runs.items():
+        saved_path = path / "pit_training_frequency_map.npz"
+        if not saved_path.is_file():
+            continue
+        with np.load(saved_path) as saved:
+            same_mapping = np.allclose(saved["midpoints"], mapping, rtol=0.0, atol=1.0e-6)
+            same_fallback = "fallback_mask" not in saved or np.array_equal(saved["fallback_mask"], fallback_mask)
+        if not (same_mapping and same_fallback):
+            raise ValueError(f"{name} was fitted with a different training-frequency PIT map")
+
+
 def evaluate_from_config(
     config: ResolvedExperimentConfig,
     *,
@@ -849,7 +865,9 @@ def evaluate_from_config(
     test_origin_indices, truth, predictions, _ = _test_arrays(library, all_entities)
     forecastable_entity, entity_valid = _test_masks(library, all_entities)
     levels = torch.tensor(library.dataset["quantile"].values, dtype=torch.float32)
-    dependence_z, frequency_mapping = _dependence_scores(library, config)
+    dependence_z, frequency_mapping, frequency_fallback = _dependence_scores(library, config)
+    if frequency_mapping is not None and frequency_fallback is not None:
+        _check_fitted_frequency_maps(runs, frequency_mapping, frequency_fallback)
     test_z = torch.tensor(dependence_z[test_origin_indices], dtype=torch.float32)
     active_entity_mask, valid = _active_cases(
         truth,
@@ -899,8 +917,9 @@ def evaluate_from_config(
     per_case, per_origin = _case_tables(config, library, results, runs, valid, declared_metrics)
     per_case.to_parquet(output / "per_origin_lead_metrics.parquet", index=False)
     per_origin.to_parquet(output / "per_origin_metrics.parquet", index=False)
-    if frequency_mapping is not None:
-        np.savez_compressed(output / "pit_training_frequency_map.npz", midpoints=frequency_mapping)
+    fallback_summary = None
+    if frequency_mapping is not None and frequency_fallback is not None:
+        fallback_summary = _save_frequency_map(output, frequency_mapping, frequency_fallback, entity_ids)
 
     _plots(
         output,
@@ -958,6 +977,11 @@ def evaluate_from_config(
         "chronos_source_revision": config.chronos.source_revision,
         "chronos_model_revision": config.chronos.model_revision,
         "dependence_pit_transform": config.pit.dependence_transform,
+        **(
+            {"pit_training_frequency_fallback": fallback_summary}
+            if fallback_summary is not None
+            else {}
+        ),
         "pit_mode": config.pit.mode,
         "model_sha256": {
             name: sha256_file(

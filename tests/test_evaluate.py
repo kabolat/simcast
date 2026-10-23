@@ -9,7 +9,13 @@ import torch
 
 from simcast.cli.evaluate import PreparedMethod, _base_normal_draws, _sample_and_evaluate, evaluate_from_config
 from simcast.cli.train_dependence import train_from_config
-from simcast.config import DependenceConfig, ResolvedExperimentConfig, StaticGaussianConfig
+from simcast.config import (
+    DependenceConfig,
+    PitConfig,
+    ProtocolConfig,
+    ResolvedExperimentConfig,
+    StaticGaussianConfig,
+)
 from simcast.fm.cache import build_cache_dataset, load_pit_library, save_pit_library
 
 
@@ -306,3 +312,71 @@ def test_common_random_normals_are_keyed_by_evaluation_seed_and_case() -> None:
     torch.testing.assert_close(first, second)
     torch.testing.assert_close(first, reversed_draws.flip(0))
     assert not torch.equal(first[0], first[1])
+
+
+def test_training_frequency_fallback_is_persisted_by_fit_and_evaluation(tmp_path: Path) -> None:
+    # Entity 3 has no finite training PIT at lead 3; validation/test values exist but must not matter.
+    cache = _cache(tmp_path / "cache", invalid_entity_cases=tuple((origin, 3, 2) for origin in range(6)))
+    config = _config(tmp_path).model_copy(
+        update={
+            "protocol": ProtocolConfig(cardinality_mode="variable", min_entities_per_case=2),
+            "pit": PitConfig(dependence_transform="training_frequency"),
+        }
+    )
+    static_config = config.model_copy(
+        update={"dependence": DependenceConfig(method="static_gaussian", model=StaticGaussianConfig())}
+    )
+    run = train_from_config(static_config, cache_dir=cache, output_dir=tmp_path / "static")
+
+    expected_mask = np.zeros((4, 3), dtype=bool)
+    expected_mask[3, 2] = True
+    with np.load(run / "pit_training_frequency_map.npz") as saved:
+        np.testing.assert_array_equal(saved["fallback_mask"], expected_mask)
+        assert int(saved["fallback_count"]) == 1
+        np.testing.assert_array_equal(saved["fallback_count_by_entity"], [0, 0, 0, 1])
+        np.testing.assert_array_equal(saved["fallback_count_by_lead"], [0, 0, 1])
+        np.testing.assert_allclose(saved["midpoints"][3, 2], [0.05, 0.3, 0.7, 0.95])
+        fitted_midpoints = saved["midpoints"]
+    run_metadata = json.loads((run / "run_metadata.json").read_text(encoding="utf-8"))
+    summary = run_metadata["pit_training_frequency_fallback"]
+    assert summary["fallback_count"] == 1
+    assert summary["fallback_count_by_entity"]["transformer::entity-3"] == 1
+    assert summary["fallback_count_by_lead"] == {"1": 0, "2": 0, "3": 1}
+    diagnostics = json.loads((run / "pit_training_frequency_diagnostics.json").read_text(encoding="utf-8"))
+    assert diagnostics == {"scope": "train", **summary}
+
+    output = evaluate_from_config(
+        config,
+        methods=("independent", "static_gaussian"),
+        method_runs={"static_gaussian": run},
+        cache_dir=cache,
+        output_dir=tmp_path / "evaluation",
+    )
+    assert json.loads((output / "evaluation_manifest.json").read_text())["pit_training_frequency_fallback"] == summary
+    with np.load(output / "pit_training_frequency_map.npz") as evaluated:
+        np.testing.assert_array_equal(evaluated["fallback_mask"], expected_mask)
+        np.testing.assert_array_equal(evaluated["midpoints"], fitted_midpoints)
+
+    with np.load(run / "pit_training_frequency_map.npz") as saved:
+        arrays = dict(saved)
+    arrays["fallback_mask"] = ~arrays["fallback_mask"]
+    np.savez_compressed(run / "pit_training_frequency_map.npz", **arrays)
+    with pytest.raises(ValueError, match="different training-frequency PIT map"):
+        evaluate_from_config(
+            config,
+            methods=("independent", "static_gaussian"),
+            method_runs={"static_gaussian": run},
+            cache_dir=cache,
+            output_dir=tmp_path / "evaluation-mismatch",
+        )
+
+
+def test_nominal_cell_runs_do_not_report_frequency_fallback(tmp_path: Path) -> None:
+    output = evaluate_from_config(
+        _config(tmp_path),
+        methods=("independent",),
+        cache_dir=_cache(tmp_path / "cache"),
+        output_dir=tmp_path / "evaluation",
+    )
+    assert "pit_training_frequency_fallback" not in json.loads((output / "evaluation_manifest.json").read_text())
+    assert not (output / "pit_training_frequency_map.npz").exists()

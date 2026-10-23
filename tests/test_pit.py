@@ -11,7 +11,10 @@ from simcast.fm.pit import (
     fit_training_frequency_midpoints,
     gaussianize_pit,
     interpolated_pit,
+    nominal_cell_midpoints,
     quantile_crossings,
+    training_frequency_fallback_mask,
+    training_frequency_fallback_summary,
 )
 
 
@@ -189,3 +192,48 @@ def test_training_frequency_uses_nominal_midpoints_for_empty_cells() -> None:
     torch.testing.assert_close(mapping[1, 0], nominal)
     torch.testing.assert_close(mapping[0, 1], nominal)
     assert torch.isfinite(mapping).all()
+
+
+def test_training_frequency_fallback_mask_identifies_exactly_the_nominal_entries() -> None:
+    levels = torch.tensor([0.1, 0.5, 0.9])
+    training_u = torch.full((4, 3, 2), torch.nan)
+    training_u[:, 0, 0] = torch.tensor([0.05, 0.3, 0.3, 0.95])
+    training_u[:, 1, :] = 0.7
+    training_u[1, 2, 1] = 0.05
+
+    mapping = fit_training_frequency_midpoints(training_u, levels, allow_missing=True)
+    fallback = training_frequency_fallback_mask(training_u)
+
+    expected = torch.tensor([[False, True], [False, False], [True, False]])
+    torch.testing.assert_close(fallback, expected)
+    nominal = nominal_cell_midpoints(levels)
+    for entity, lead in expected.nonzero().tolist():
+        torch.testing.assert_close(mapping[entity, lead], nominal)
+    torch.testing.assert_close(mapping[0, 0], torch.tensor([0.125, 0.5, 0.75, 0.875]))
+    torch.testing.assert_close(mapping[1, 0], torch.tensor([0.0, 0.0, 0.5, 1.0]))
+    torch.testing.assert_close(mapping[2, 1], torch.tensor([0.5, 1.0, 1.0, 1.0]))
+
+    summary = training_frequency_fallback_summary(fallback, ["a", "b", "c"])
+    assert summary["fallback_count"] == 2
+    assert summary["entity_lead_count"] == 6
+    assert summary["fallback_count_by_entity"] == {"a": 1, "b": 0, "c": 1}
+    assert summary["fallback_count_by_lead"] == {"1": 1, "2": 1}
+
+
+def test_validation_and_test_pits_do_not_change_fallback_or_mapping() -> None:
+    levels = torch.tensor([0.1, 0.5, 0.9])
+    training_u = torch.full((3, 2, 2), torch.nan)
+    training_u[:, 0, :] = torch.tensor([[0.05, 0.3], [0.3, 0.7], [0.95, 0.7]])
+    later_u = torch.full((4, 2, 2), 0.95)
+    all_u = torch.cat((training_u, later_u))
+    is_training = torch.tensor([True] * 3 + [False] * 4)
+
+    _, mapping = dependence_pit_scores(
+        all_u, gaussianize_pit(all_u), is_training, levels, mode="training_frequency", allow_missing=True
+    )
+
+    assert mapping is not None
+    torch.testing.assert_close(mapping, fit_training_frequency_midpoints(training_u, levels, allow_missing=True))
+    fallback = training_frequency_fallback_mask(all_u[is_training])
+    torch.testing.assert_close(fallback, torch.tensor([[False, False], [True, True]]))
+    torch.testing.assert_close(mapping[1], nominal_cell_midpoints(levels).expand(2, -1))

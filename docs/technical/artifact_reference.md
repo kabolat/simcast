@@ -96,6 +96,8 @@ final.pt                        M2/M3/M4 only
 training_metrics.csv/json       M2/M3/M4 only
 training_summary.json           M2/M3/M4 only
 training_curve.png              M2/M3/M4 only
+pit_training_frequency_map.npz          training_frequency transform only
+pit_training_frequency_diagnostics.json training_frequency transform only
 ```
 
 `run_metadata.json` records creation time, Git commit, Python and key package
@@ -105,6 +107,23 @@ resolved-config and model SHA-256
 hashes, pinned data/FM revisions, optimization and evaluation seeds, checkpoint
 criterion, and PIT dependence transform. M0's NPZ stores IDs and
 lead count. M1's stores all correlation matrices plus estimator settings.
+
+With `pit.dependence_transform: training_frequency`, the fitted map is saved
+with its fallback diagnostics. They are computed from training origins only.
+
+| Key in `pit_training_frequency_map.npz` | Shape | Meaning |
+|---|---|---|
+| `midpoints` | `[K,H,Q+1]` | train-only cell midpoints used for dependence scores |
+| `fallback_mask` | `[K,H]` | true where an entity/lead has no finite training PIT and uses nominal midpoints |
+| `fallback_count` | scalar | number of fallback entity/lead pairs |
+| `fallback_count_by_entity` | `[K]` | fallback leads per canonical entity |
+| `fallback_count_by_lead` | `[H]` | fallback entities per lead |
+| `entity_ids` | `[K]` | canonical entity order |
+
+`pit_training_frequency_diagnostics.json` and the `pit_training_frequency_fallback`
+key of `run_metadata.json` hold the same summary: `fallback_count`,
+`entity_lead_count`, `fallback_count_by_entity` keyed by entity ID, and
+`fallback_count_by_lead` keyed by one-based lead.
 
 Conditional PyTorch checkpoints contain `schema_version`, method, model
 constructor arguments, feature-builder configuration and fitted training-only
@@ -132,7 +151,6 @@ figures are written once to `evaluations/<evaluation-id>/<base-id>/figures/`
 ### `metrics.json`
 
 Top-level keys are method names. Each method includes valid and dropped case
-counts, active-entity count summaries, and exactly its declared metrics. `mean_pinball` includes per-quantile
 counts, active-entity count summaries, and exactly its declared metrics. `mean_pinball` includes per-quantile
 pinball values; `weighted_interval_score` includes coverage, width, and
 interval-score values for its configured central intervals. Values pool all
@@ -192,7 +210,10 @@ complete ordered universe and $K_g$, cardinality mode, minimum active count,
 overall and per-lead active-count summaries, scenario and selected joint
 ensemble sizes, common-random-number status, evaluation seed,
 revisions, config/model hashes, PIT mode and dependence transform, Git commit,
-and time. The declared `metrics` list is the authoritative set of metrics for
+and time. With the training-frequency transform it also records
+`pit_training_frequency_fallback`, and the directory holds the recomputed
+`pit_training_frequency_map.npz`. Evaluation refuses fitted runs whose saved
+map or fallback mask differs from the train-only recomputation. The declared `metrics` list is the authoritative set of metrics for
 that evaluation; a report may present a subset but cannot add metrics.
 
 ## Figures

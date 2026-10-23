@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 import numpy as np
 import torch
@@ -257,6 +258,36 @@ def nominal_cell_midpoints(quantile_levels: torch.Tensor) -> torch.Tensor:
     return 0.5 * (edges[:-1] + edges[1:])
 
 
+def training_frequency_fallback_mask(training_u: torch.Tensor) -> torch.Tensor:
+    """Return ``[entity, lead]`` flags for pairs without any finite training PIT observation.
+
+    Flagged pairs use nominal PIT-cell midpoints in :func:`fit_training_frequency_midpoints`.
+    """
+
+    values = torch.as_tensor(training_u)
+    if values.ndim != 3:
+        raise ValueError("training_u must have shape [origin, entity, lead]")
+    return ~torch.isfinite(values).any(dim=0)
+
+
+def training_frequency_fallback_summary(
+    fallback_mask: torch.Tensor | np.ndarray,
+    entity_ids: Sequence[str],
+) -> dict[str, Any]:
+    """JSON-ready counts of nominal-midpoint fallbacks overall, by entity, and by one-based lead."""
+
+    mask = np.asarray(fallback_mask, dtype=bool)
+    if mask.ndim != 2 or mask.shape[0] != len(entity_ids):
+        raise ValueError("fallback_mask must have shape [entity, lead] matching entity_ids")
+    return {
+        "fallback": "nominal_cell_midpoints",
+        "entity_lead_count": int(mask.size),
+        "fallback_count": int(mask.sum()),
+        "fallback_count_by_entity": dict(zip(entity_ids, mask.sum(axis=1).astype(int).tolist(), strict=True)),
+        "fallback_count_by_lead": {str(lead + 1): int(count) for lead, count in enumerate(mask.sum(axis=0))},
+    }
+
+
 def fit_training_frequency_midpoints(
     training_u: torch.Tensor,
     quantile_levels: torch.Tensor,
@@ -284,7 +315,7 @@ def fit_training_frequency_midpoints(
         dim=-1,
     ).to(torch.float64)
     totals = counts.sum(dim=-1, keepdim=True)
-    fallback = totals.squeeze(-1) == 0
+    fallback = training_frequency_fallback_mask(values)
     if bool(fallback.any()) and not allow_missing:
         raise ValueError("every entity/lead needs at least one finite training PIT cell")
     probabilities = counts / totals.clamp_min(1.0)
