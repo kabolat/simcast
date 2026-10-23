@@ -42,6 +42,7 @@ INTERVAL_CONVENTION = (
     "Raw interval boundaries are not established conclusively by v1 metadata, loader, or daily totals. "
     "Conservatively treat raw t as [t,t+15min); represent and expose the value at completed boundary t+15min."
 )
+SELECTION_SEED = 42
 SMART_METER_COLUMNS = (
     "Household_ID", "AffectsTimePoint", "Group", "Timestamp",
     TARGET_COLUMN, "kWh_received_HeatPump", "kWh_received_Other",
@@ -110,6 +111,63 @@ def household_number(entity_id: str) -> int:
     if match is None:
         raise ValueError(f"invalid HEAPO entity ID {entity_id!r}; expected household::<positive integer>")
     return int(match.group(1))
+
+
+def select_households(
+    households: pd.DataFrame,
+    weather_id: str,
+    *,
+    group: str = "control",
+    maximum: int = 128,
+    seed: int = SELECTION_SEED,
+) -> list[int]:
+    """Select using identity alone, never target coverage, lifetime, or performance."""
+
+    if group not in ("control", "treatment", "all") or maximum < 1:
+        raise ValueError("HEAPO selection requires group control/treatment/all and a positive maximum")
+    eligible = households["Weather_ID"].eq(weather_id) & households["SmartMeterData_Available_15min"]
+    if group != "all":
+        eligible &= households["Group"].eq(group)
+    ids = sorted(households.loc[eligible, "Household_ID"].astype(int).tolist())
+    if not ids:
+        raise ValueError(f"no eligible HEAPO {group} households at station {weather_id}")
+    ranked = sorted(ids, key=lambda identifier: (
+        hashlib.sha256(f"simcast-heapo-v1:{seed}:{identifier}".encode("ascii")).hexdigest(), identifier,
+    ))
+    return sorted(ranked[:maximum])
+
+
+def distribution(values: Sequence[float] | np.ndarray) -> dict[str, int | float | None]:
+    finite = np.asarray(values, dtype=float)
+    finite = finite[np.isfinite(finite)]
+    return {
+        "count": int(finite.size),
+        "min": float(finite.min()) if finite.size else None,
+        "median": float(np.median(finite)) if finite.size else None,
+        "mean": float(finite.mean()) if finite.size else None,
+        "max": float(finite.max()) if finite.size else None,
+    }
+
+
+def station_diagnostics(households: pd.DataFrame, lifetimes: pd.DataFrame) -> list[dict[str, Any]]:
+    """Report all stations, with source-lifetime summaries for their eligible controls."""
+
+    merged = households.merge(lifetimes.drop(columns=["Group"], errors="ignore"), on="Household_ID", how="left")
+    result = []
+    for station, rows in merged.groupby("Weather_ID", sort=True):
+        controls = rows.loc[rows["Group"].eq("control") & rows["SmartMeterData_Available_15min"]]
+        result.append({
+            "Weather_ID": str(station), "total": len(rows),
+            "control": int(rows["Group"].eq("control").sum()), "control_15min": len(controls),
+            "lifetime_days": distribution(controls["lifetime_days"].to_numpy(dtype=float)),
+            "available_equivalent_days": distribution(controls["equivalent_available_days"].to_numpy(dtype=float)),
+            "missing_fraction_within_lifetime": distribution(
+                controls["missing_fraction_within_lifetime"].to_numpy(dtype=float),
+            ),
+            "earliest_target_start": str(controls["start"].min()) if len(controls) else None,
+            "latest_target_end": str(controls["end"].max()) if len(controls) else None,
+        })
+    return result
 
 
 def verify_archive(path: str | Path) -> None:

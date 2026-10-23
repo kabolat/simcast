@@ -111,6 +111,20 @@ def test_adapter_enforces_group_and_weather_mapping(tmp_path: Path) -> None:
         heapo.load_adapter(_config(tmp_path, ids=(101, 707)))
 
 
+def test_selection_uses_stable_hash_not_coverage_and_filters_groups(tmp_path: Path) -> None:
+    _source(tmp_path)
+    households = read_households(tmp_path / "meta_data/households.csv")
+    chosen = heapo.select_households(households, "8jB", maximum=3)
+    assert chosen == heapo.select_households(households.iloc[::-1], "8jB", maximum=3)
+    assert chosen == sorted(chosen) and len(chosen) == 3
+    assert set(chosen) <= {101, 202, 303, 404, 505}
+    assert heapo.select_households(households, "8jB", group="treatment") == [606]
+    assert heapo.select_households(households, "8jB", group="all") == [101, 202, 303, 404, 505, 606]
+    households["lifetime_days"] = np.arange(len(households))[::-1]
+    assert heapo.select_households(households, "8jB", maximum=3) == chosen
+    assert heapo.select_households(households, "8jB", maximum=3, seed=13) != chosen
+
+
 def test_actual_v1_smart_meter_schema_and_missingness() -> None:
     frame = read_smart_meter(_meter(
         "8790869;unknown;control;2022-05-07 00:00:00+00:00;0.0;;\n"
