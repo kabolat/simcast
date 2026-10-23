@@ -27,7 +27,7 @@ Implementation: `load_base_config`, `load_method_config`,
 
 ## 2. Base configuration
 
-### 2.1 Complete group and data
+### 2.1 Canonical entity universe and data
 
 ```yaml
 kind: base
@@ -35,14 +35,18 @@ id: example_base
 protocol:
   ordered_entity_ids: [example_type::A, example_type::B]
   entity_count: 2
+  cardinality_mode: fixed
+  min_entities_per_case: 2
 data:
   entity_type: example_type
 ```
 
-`ordered_entity_ids` defines
+`ordered_entity_ids` defines the canonical universe
 $\mathcal E_g=[k_1,\ldots,k_{K_g}]$ including its order, and `entity_count`
 must equal $K_g$. Every ID must have the selected homogeneous entity-type
-prefix. Every fit and evaluation uses the complete group.
+prefix. This universe and its cache axis never shrink. `fixed` is the default
+and requires every entity at each case; opt-in `variable` uses the valid active
+subset when its size reaches `min_entities_per_case`.
 
 | Key | YAML type and admissible values | Default / supplied value | Scientific meaning |
 |---|---|---|---|
@@ -50,6 +54,8 @@ prefix. Every fit and evaluation uses the complete group.
 | `id` | safe slug: lowercase letters, digits, `_`, `-` | **required** | human-readable base identity; not a cache-compatibility claim |
 | `protocol.ordered_entity_ids` | non-empty list of unique strings | **required** | ordered definition of $\mathcal E_g$ |
 | `protocol.entity_count` | positive integer | **required** | $K_g$; must equal the list length |
+| `protocol.cardinality_mode` | `fixed` or `variable` | `fixed` | fixed complete cases over the common entity lifetime, or label-valid active subsets over the envelope of entity lifetimes |
+| `protocol.min_entities_per_case` | positive integer no larger than the universe | `2` | minimum active cardinality admitted in variable mode |
 | `data.adapter` | registered adapter identifier | adapter-specific default | selects the data reader and validation rules |
 | `data.dataset_id` | string | adapter-specific source identifier | identifies the source population |
 | `data.revision` | string | adapter-specific pinned revision | identifies the immutable data version |
@@ -58,11 +64,17 @@ prefix. Every fit and evaluation uses the complete group.
 | `data.target_column` | string validated by the selected adapter | adapter-specific | measured target $y_{k,t}$ |
 | `data.options` | mapping validated by the selected adapter | adapter-specific; often empty | adapter-specific scientific inputs; included in the cache fingerprint when non-empty |
 
-The selected adapter validates group membership, cardinality, and entity-ID
-format. The [dataset references](../datasets/README.md) document each adapter's
-source values, valid groups and target columns, allowed covariates, and every
-accepted `data.options` key and value. A case is invalid at $(i,\tau)$ if any
-member of its configured group is invalid.
+The selected adapter validates group membership, universe cardinality, and
+entity-ID format. Forecastability from required inputs is separate from
+label-derived entity validity; variable mode keeps each entity's PIT when a
+different member is invalid. All methods use the same admitted active subset.
+The [dataset references](../datasets/README.md) document each adapter's source
+values, valid groups and target columns, allowed covariates, and every accepted
+`data.options` key and value.
+
+Variable mode is part of the marginal-cache fingerprint. The default fixed
+fingerprint remains unchanged for compatibility with existing fixed-group
+caches.
 
 ### 2.2 Forecast instances and information set
 
@@ -184,8 +196,10 @@ model:
 | `model.share_across_leads` | Boolean | `false` | `false`: one training correlation per lead; `true`: pool all valid leads |
 | `model.jitter` | strictly positive real | `1.0e-6` | diagonal numerical stabilization |
 
-M1 estimates each correlation with Ledoit--Wolf covariance shrinkage and has no
-gradient optimization or conditioning features.
+Complete fixed-mode M1 estimates each correlation with Ledoit--Wolf covariance
+shrinkage. Variable-mode M1 filters cases below `min_entities_per_case`, uses
+pairwise-complete PIT observations, and records overlap counts and estimator
+mode. Neither branch has gradient optimization or conditioning features.
 
 ### 3.3 Features for M2--M4
 

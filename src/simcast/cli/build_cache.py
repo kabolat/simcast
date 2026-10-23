@@ -23,7 +23,7 @@ from simcast.config import (
     load_base_config,
     resolve_run_config,
 )
-from simcast.data.adapter import IneligibleWindow
+from simcast.data.adapter import IneligibleWindow, InsufficientTargetHistory
 from simcast.data.registry import adapter_spec
 from simcast.data.windows import ChronologicalSplit, build_aligned_group_windows, chronological_split
 from simcast.fm.cache import build_cache_dataset, save_pit_library
@@ -197,9 +197,12 @@ def build_cache_from_config(
     predictions: list[np.ndarray] = []
     embeddings: list[np.ndarray] = []
     missing_histories: list[np.ndarray] = []
+    forecastable_entities: list[np.ndarray] = []
     quantile_levels: np.ndarray | None = None
     output_patch_size: int | None = None
     skipped: list[dict[str, str]] = []
+    empty_history_rejected_origins = 0
+    empty_history_by_entity = np.zeros(len(group.entity_ids), dtype=np.int64)
 
     for window in tqdm(
         candidates,
@@ -212,11 +215,30 @@ def build_cache_from_config(
         try:
             prepared = adapter.prepare_window(window)
         except IneligibleWindow as error:
+            empty_history_rejected_origins += isinstance(error, InsufficientTargetHistory)
             skipped.append({"origin_timestamp": window.origin_timestamp.isoformat(), "reason": str(error)})
             LOGGER.warning("Skipping ineligible origin %s: %s", window.origin_timestamp, error)
             continue
+        forecastable = np.asarray(prepared.forecastable_entity, dtype=bool)
+        entity_indices = np.asarray(prepared.entity_indices, dtype=np.int64)
+        if forecastable.shape != (len(group.entity_ids),) or not np.array_equal(
+            np.flatnonzero(forecastable), entity_indices
+        ):
+            raise ValueError("prepared window forecastability does not match its canonical entity indices")
+        if prepared.empty_history is not None:
+            empty_history = np.asarray(prepared.empty_history, dtype=bool)
+            if empty_history.shape != forecastable.shape or np.any(empty_history & forecastable):
+                raise ValueError("an entity without usable target history was marked forecastable")
+            empty_history_by_entity += empty_history
+        if entity_indices.size == 0:
+            skipped.append(
+                {"origin_timestamp": window.origin_timestamp.isoformat(), "reason": "no forecastable entities"}
+            )
+            LOGGER.warning("Skipping origin %s: no entities have usable forecast inputs", window.origin_timestamp)
+            continue
+        forecast_entity_ids = [group.entity_ids[index] for index in entity_indices]
         result = model.predict(
-            group.entity_ids,
+            forecast_entity_ids,
             prepared.inputs,
             config.forecast.horizon_steps,
             batch_size=config.chronos.batch_size,
@@ -224,22 +246,35 @@ def build_cache_from_config(
         )
         forecast, embedding, levels, patch_size = _validate_forecast(
             result,
-            entity_ids=group.entity_ids,
+            entity_ids=forecast_entity_ids,
             horizon=config.forecast.horizon_steps,
         )
+        full_forecast = np.full(
+            (len(group.entity_ids), *forecast.shape[1:]),
+            np.nan,
+            dtype=np.float32,
+        )
+        full_embedding = np.full(
+            (len(group.entity_ids), *embedding.shape[1:]),
+            np.nan,
+            dtype=np.float32,
+        )
+        full_forecast[entity_indices] = forecast
+        full_embedding[entity_indices] = embedding
         if quantile_levels is not None and not np.array_equal(levels, quantile_levels):
             raise ValueError("native quantile levels changed between forecast origins")
         if output_patch_size is not None and patch_size != output_patch_size:
             raise ValueError("output patch size changed between forecast origins")
-        if embeddings and embedding.shape != embeddings[0].shape:
+        if embeddings and full_embedding.shape != embeddings[0].shape:
             raise ValueError("forecast embedding shape changed between forecast origins")
         quantile_levels = levels
         output_patch_size = patch_size
         origins.append(window.origin_timestamp)
         truths.append(prepared.true_y)
-        predictions.append(forecast)
-        embeddings.append(embedding)
+        predictions.append(full_forecast)
+        embeddings.append(full_embedding)
         missing_histories.append(prepared.history_missing)
+        forecastable_entities.append(forecastable)
 
     if not origins or quantile_levels is None or output_patch_size is None:
         raise ValueError("no aligned forecast origins have complete available covariates")
@@ -255,6 +290,7 @@ def build_cache_from_config(
     quantile_predictions = np.stack([predictions[idx] for idx in kept_indices]).astype(np.float32, copy=False)
     forecast_embeddings = np.stack([embeddings[idx] for idx in kept_indices]).astype(np.float16)
     history_missing = np.stack([missing_histories[idx] for idx in kept_indices])
+    forecastable_entity = np.stack([forecastable_entities[idx] for idx in kept_indices])
 
     raw_pit = build_group_pit(
         torch.from_numpy(true_y),
@@ -263,6 +299,9 @@ def build_cache_from_config(
         mode=config.pit.mode,
         monotone_repair="none",
         eps=config.pit.eps,
+        forecastable_entity=torch.from_numpy(forecastable_entity),
+        cardinality_mode=config.protocol.cardinality_mode,
+        min_entities_per_case=config.protocol.min_entities_per_case,
     )
     pit = (
         raw_pit
@@ -274,6 +313,9 @@ def build_cache_from_config(
             mode=config.pit.mode,
             monotone_repair=config.pit.monotone_repair,
             eps=config.pit.eps,
+            forecastable_entity=torch.from_numpy(forecastable_entity),
+            cardinality_mode=config.protocol.cardinality_mode,
+            min_entities_per_case=config.protocol.min_entities_per_case,
         )
     )
     pit_u = pit.u.cpu().numpy().astype(np.float32, copy=False)
@@ -287,7 +329,9 @@ def build_cache_from_config(
             repair_quantiles_isotonic(torch.from_numpy(quantile_predictions)).numpy().astype(np.float32, copy=False)
         )
     valid_origin_lead = pit.valid_origin_lead.cpu().numpy()
-    dropped_vectors = int((~valid_origin_lead).sum())
+    tune_mask = np.asarray(split_labels) != "test"
+    tune_valid_origin_lead = valid_origin_lead[tune_mask]
+    dropped_cases = int((~tune_valid_origin_lead).sum())
     diagnostics = pit.crossing_diagnostics
     crossing_by_entity = {
         entity_id: float(diagnostics.by_entity[idx]) for idx, entity_id in enumerate(group.entity_ids)
@@ -299,9 +343,16 @@ def build_cache_from_config(
     )
     LOGGER.info("Quantile crossing frequency by lead: %s", diagnostics.by_lead.tolist())
     LOGGER.info(
-        "Dropped %d/%d complete (origin, lead) PIT vectors due to missing truth, non-finite forecasts, or crossings",
-        dropped_vectors,
-        valid_origin_lead.size,
+        "Excluded %d/%d train/validation origin-lead cases under %s cardinality rules",
+        dropped_cases,
+        tune_valid_origin_lead.size,
+        config.protocol.cardinality_mode,
+    )
+    LOGGER.info(
+        "Target-history rule: %d origins rejected (fixed) and %d entity-origins non-forecastable (variable) "
+        "for lacking any finite lookback target",
+        empty_history_rejected_origins,
+        int(empty_history_by_entity.sum()),
     )
     LOGGER.info(
         "Retained origins %s to %s; train=%d validation=%d test=%d; masked historical targets by entity=%s",
@@ -326,6 +377,7 @@ def build_cache_from_config(
         pit_u=pit_u,
         pit_z=pit_z,
         forecast_embeddings=forecast_embeddings,
+        forecastable_entity=forecastable_entity,
         quantile_levels=quantile_levels,
         split=split_labels,
         latitude=latitudes,
@@ -340,7 +392,7 @@ def build_cache_from_config(
         }
     )
 
-    truth_missing_by_entity = np.isnan(true_y).sum(axis=(0, 2)).astype(int)
+    truth_missing_by_entity = np.isnan(true_y[tune_mask]).sum(axis=(0, 2)).astype(int)
     metadata: dict[str, Any] = {
         "dataset": {
             "adapter": config.data.adapter,
@@ -374,6 +426,10 @@ def build_cache_from_config(
             "coverage_end": coverage_end.isoformat(),
         },
         "covariates": config.covariates.model_dump(mode="json"),
+        "protocol": {
+            "cardinality_mode": config.protocol.cardinality_mode,
+            "min_entities_per_case": config.protocol.min_entities_per_case,
+        },
         "pit": {
             "method": config.pit.mode,
             "monotone_repair": config.pit.monotone_repair,
@@ -381,14 +437,30 @@ def build_cache_from_config(
             "crossing_frequency": diagnostics.overall,
             "crossing_frequency_by_entity": crossing_by_entity,
             "crossing_frequency_by_lead": diagnostics.by_lead.tolist(),
-            "dropped_complete_vector_count": dropped_vectors,
-            "dropped_complete_vector_fraction": dropped_vectors / valid_origin_lead.size,
-            "complete_case_count_without_repair": int(raw_pit.valid_origin_lead.sum()),
-            "complete_case_count_with_configured_repair": int(pit.valid_origin_lead.sum()),
+            "excluded_train_validation_case_count": dropped_cases,
+            "excluded_train_validation_case_fraction": dropped_cases / tune_valid_origin_lead.size,
+            "valid_train_validation_case_count_without_repair": int(
+                raw_pit.valid_origin_lead.cpu().numpy()[tune_mask].sum()
+            ),
+            "valid_train_validation_case_count_with_configured_repair": int(tune_valid_origin_lead.sum()),
         },
         "missingness": {
+            "history_rule": "at_least_one_finite_lookback_target",
+            "masked_history_count": int(history_missing.sum()),
             "masked_history_count_by_entity": dict(
                 zip(group.entity_ids, history_missing.sum(axis=0).astype(int).tolist(), strict=True)
+            ),
+            "masked_history_count_forecastable_by_entity": dict(
+                zip(
+                    group.entity_ids,
+                    (history_missing * forecastable_entity).sum(axis=0).astype(int).tolist(),
+                    strict=True,
+                )
+            ),
+            "empty_history_rejected_origin_count": empty_history_rejected_origins,
+            "empty_history_non_forecastable_count": int(empty_history_by_entity.sum()),
+            "empty_history_non_forecastable_count_by_entity": dict(
+                zip(group.entity_ids, empty_history_by_entity.astype(int).tolist(), strict=True)
             ),
             "future_truth_count_by_entity": dict(zip(group.entity_ids, truth_missing_by_entity.tolist(), strict=True)),
         },
@@ -408,7 +480,6 @@ def build_cache_from_config(
 
     # Diagnostics created during cache construction are tune-only: test labels
     # remain sealed until the explicit evaluation access path is requested.
-    tune_mask = np.asarray(split_labels) != "test"
     marginal_report = asdict(compute_marginal_diagnostics(
         true_y[tune_mask],
         quantile_predictions[tune_mask],

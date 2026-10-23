@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal, cast
 
 import numpy as np
 import torch
@@ -21,6 +22,7 @@ class CrossingDiagnostics:
     by_entity: np.ndarray
     by_lead: np.ndarray
     crossed: np.ndarray
+    eligible: np.ndarray
 
 
 @dataclass(frozen=True)
@@ -34,6 +36,7 @@ class PITResult:
 
     u: torch.Tensor
     z: torch.Tensor
+    entity_valid: torch.Tensor
     valid_origin_lead: torch.Tensor
     crossing_diagnostics: CrossingDiagnostics
 
@@ -62,18 +65,43 @@ def quantile_crossings(quantile_predictions: torch.Tensor) -> torch.Tensor:
     return (predictions[..., :-1] > predictions[..., 1:]).any(dim=-1)
 
 
-def crossing_diagnostics(quantile_predictions: torch.Tensor) -> CrossingDiagnostics:
+def crossing_diagnostics(
+    quantile_predictions: torch.Tensor,
+    forecastable_entity: torch.Tensor | None = None,
+) -> CrossingDiagnostics:
     """Summarize crossings for ``[origin, entity, lead, quantile]`` forecasts."""
 
     predictions = torch.as_tensor(quantile_predictions)
     if predictions.ndim != 4:
         raise ValueError("expected predictions shaped [origin, entity, lead, quantile]")
-    crossed = quantile_crossings(predictions).detach().cpu().numpy()
+    eligible = torch.isfinite(predictions).all(dim=-1)
+    if forecastable_entity is not None:
+        available = torch.as_tensor(forecastable_entity, dtype=torch.bool, device=predictions.device)
+        if available.shape == predictions.shape[:2]:
+            available = available.unsqueeze(-1)
+        if available.shape not in {predictions.shape[:3], predictions.shape[:2] + (1,)}:
+            raise ValueError("forecastable_entity must have shape [origin, entity] or [origin, entity, lead]")
+        eligible &= available
+    crossed = (quantile_crossings(predictions) & eligible).detach().cpu().numpy()
+    eligible_array = eligible.detach().cpu().numpy()
+
+    def rate(numerator: np.ndarray, denominator: np.ndarray) -> np.ndarray:
+        return cast(
+            np.ndarray,
+            np.divide(
+                numerator,
+                denominator,
+                out=np.zeros_like(numerator, dtype=np.float64),
+                where=denominator > 0,
+            ),
+        )
+
     return CrossingDiagnostics(
-        overall=float(crossed.mean()) if crossed.size else 0.0,
-        by_entity=crossed.mean(axis=(0, 2)),
-        by_lead=crossed.mean(axis=(0, 1)),
+        overall=float(crossed.sum() / eligible_array.sum()) if eligible_array.any() else 0.0,
+        by_entity=rate(crossed.sum(axis=(0, 2)), eligible_array.sum(axis=(0, 2))),
+        by_lead=rate(crossed.sum(axis=(0, 1)), eligible_array.sum(axis=(0, 1))),
         crossed=crossed,
+        eligible=eligible_array,
     )
 
 
@@ -230,16 +258,49 @@ def nominal_cell_midpoints(quantile_levels: torch.Tensor) -> torch.Tensor:
     return 0.5 * (edges[:-1] + edges[1:])
 
 
+def training_frequency_fallback_mask(training_u: torch.Tensor) -> torch.Tensor:
+    """Return ``[entity, lead]`` flags for pairs without any finite training PIT observation.
+
+    Flagged pairs use nominal PIT-cell midpoints in :func:`fit_training_frequency_midpoints`.
+    """
+
+    values = torch.as_tensor(training_u)
+    if values.ndim != 3:
+        raise ValueError("training_u must have shape [origin, entity, lead]")
+    return ~torch.isfinite(values).any(dim=0)
+
+
+def training_frequency_fallback_summary(
+    fallback_mask: torch.Tensor | np.ndarray,
+    entity_ids: Sequence[str],
+) -> dict[str, Any]:
+    """JSON-ready counts of nominal-midpoint fallbacks overall, by entity, and by one-based lead."""
+
+    mask = np.asarray(fallback_mask, dtype=bool)
+    if mask.ndim != 2 or mask.shape[0] != len(entity_ids):
+        raise ValueError("fallback_mask must have shape [entity, lead] matching entity_ids")
+    return {
+        "fallback": "nominal_cell_midpoints",
+        "entity_lead_count": int(mask.size),
+        "fallback_count": int(mask.sum()),
+        "fallback_count_by_entity": dict(zip(entity_ids, mask.sum(axis=1).astype(int).tolist(), strict=True)),
+        "fallback_count_by_lead": {str(lead + 1): int(count) for lead, count in enumerate(mask.sum(axis=0))},
+    }
+
+
 def fit_training_frequency_midpoints(
     training_u: torch.Tensor,
     quantile_levels: torch.Tensor,
+    *,
+    allow_missing: bool = False,
 ) -> torch.Tensor:
     """Fit empirical PIT-cell midpoints using training origins only.
 
     ``training_u`` has shape ``[origin, entity, lead]``.  The returned table
     has shape ``[entity, lead, Q + 1]`` and contains cumulative empirical-mass
-    midpoints. Missing complete vectors are ignored; each entity/lead must
-    retain at least one training observation.
+    midpoints. Non-finite entity observations are ignored. Each entity/lead
+    without training observations raises by default or uses nominal cell
+    midpoints when ``allow_missing`` is enabled.
     """
 
     values = torch.as_tensor(training_u)
@@ -254,10 +315,15 @@ def fit_training_frequency_midpoints(
         dim=-1,
     ).to(torch.float64)
     totals = counts.sum(dim=-1, keepdim=True)
-    if bool((totals == 0).any()):
+    fallback = training_frequency_fallback_mask(values)
+    if bool(fallback.any()) and not allow_missing:
         raise ValueError("every entity/lead needs at least one finite training PIT cell")
-    probabilities = counts / totals
-    return (probabilities.cumsum(dim=-1) - 0.5 * probabilities).to(values.dtype)
+    probabilities = counts / totals.clamp_min(1.0)
+    mapping = probabilities.cumsum(dim=-1) - 0.5 * probabilities
+    if allow_missing:
+        nominal_by_entity_lead = nominal.view(1, 1, -1).expand_as(mapping)
+        mapping = torch.where(fallback.unsqueeze(-1), nominal_by_entity_lead, mapping)
+    return mapping.to(values.dtype)
 
 
 def apply_training_frequency_midpoints(
@@ -289,6 +355,7 @@ def dependence_pit_scores(
     *,
     mode: Literal["nominal_cells", "training_frequency"] = "nominal_cells",
     eps: float = 1.0e-7,
+    allow_missing: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor | None]:
     """Return dependence scores and the optional train-only calibration map."""
 
@@ -301,7 +368,7 @@ def dependence_pit_scores(
         return z, None
     if mode != "training_frequency":
         raise ValueError(f"unknown dependence PIT transform: {mode}")
-    mapping = fit_training_frequency_midpoints(u[training], quantile_levels)
+    mapping = fit_training_frequency_midpoints(u[training], quantile_levels, allow_missing=allow_missing)
     calibrated_u = apply_training_frequency_midpoints(u, quantile_levels, mapping)
     return gaussianize_pit(calibrated_u, eps=eps), mapping
 
@@ -314,19 +381,33 @@ def build_group_pit(
     mode: PITMode = "discretized",
     monotone_repair: MonotoneRepair = "isotonic",
     eps: float = 1e-7,
+    forecastable_entity: torch.Tensor | None = None,
+    cardinality_mode: Literal["fixed", "variable"] = "fixed",
+    min_entities_per_case: int = 2,
 ) -> PITResult:
-    """Build PIT arrays while retaining only complete ``(origin, lead)`` vectors.
+    """Build PIT arrays using fixed complete vectors or variable active subsets.
 
     Expected shapes are ``true_y: [N, K, H]`` and quantile predictions
-    ``[N, K, H, Q]``. Invalidity of one entity invalidates all ``K`` entries at
-    the same forecast instance and lead.
+    ``[N, K, H, Q]``. Variable mode keeps each valid entity PIT independently;
+    fixed mode retains the historical complete-vector rule.
     """
 
-    truth = torch.as_tensor(true_y)
     predictions = torch.as_tensor(quantile_predictions)
+    truth = torch.as_tensor(true_y, device=predictions.device, dtype=predictions.dtype)
     if truth.ndim != 3 or predictions.ndim != 4 or predictions.shape[:-1] != truth.shape:
         raise ValueError("expected true_y [origin, entity, lead] and predictions [origin, entity, lead, quantile]")
-    diagnostics = crossing_diagnostics(predictions)
+    if min_entities_per_case < 1:
+        raise ValueError("min_entities_per_case must be positive")
+    if cardinality_mode not in {"fixed", "variable"}:
+        raise ValueError(f"unknown cardinality mode: {cardinality_mode}")
+    forecastable = (
+        torch.ones(truth.shape[:2], dtype=torch.bool, device=truth.device)
+        if forecastable_entity is None
+        else torch.as_tensor(forecastable_entity, dtype=torch.bool, device=truth.device)
+    )
+    if forecastable.shape != truth.shape[:2]:
+        raise ValueError("forecastable_entity must have shape [origin, entity]")
+    diagnostics = crossing_diagnostics(predictions, forecastable)
     pit_function = {
         "discretized": discretized_pit,
         "linear_interpolation": interpolated_pit,
@@ -339,8 +420,18 @@ def build_group_pit(
         quantile_levels,
         monotone_repair=monotone_repair,
     )
-    valid_origin_lead = valid_entity.all(dim=1)  # [origin, lead]
-    complete_mask = valid_origin_lead[:, None, :]
-    u = torch.where(complete_mask, u, torch.full_like(u, torch.nan))
+    entity_valid = valid_entity & forecastable.unsqueeze(-1)
+    if cardinality_mode == "fixed":
+        valid_origin_lead = entity_valid.all(dim=1)
+        entity_valid = entity_valid & valid_origin_lead[:, None, :]
+    else:
+        valid_origin_lead = entity_valid.sum(dim=1) >= min_entities_per_case
+    u = torch.where(entity_valid, u, torch.full_like(u, torch.nan))
     z = gaussianize_pit(u, eps=eps)
-    return PITResult(u=u, z=z, valid_origin_lead=valid_origin_lead, crossing_diagnostics=diagnostics)
+    return PITResult(
+        u=u,
+        z=z,
+        entity_valid=entity_valid,
+        valid_origin_lead=valid_origin_lead,
+        crossing_diagnostics=diagnostics,
+    )

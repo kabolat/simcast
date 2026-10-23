@@ -17,7 +17,7 @@ The canonical location is
 
 ```text
 dataset.zarr/                 public arrays; test labels replaced by NaN
-test_labels.zarr/             true_y, pit_u, pit_z for test origins only
+test_labels.zarr/             label values and validity masks for test origins only
 metadata.json                 provenance, protocol, missingness, crossings
 marginal_diagnostics.json     train+validation marginal diagnostics only
 resolved_config.json          internal numerical view used to build the record
@@ -25,7 +25,8 @@ resolved_config.json          internal numerical view used to build the record
 
 ### `dataset.zarr`
 
-The xarray schema is `simcast.pit_library`, version 1.
+The xarray schema is `simcast.pit_library`, version 2. The canonical `entity`
+axis always represents the complete ordered universe.
 
 | Variable/coordinate | Dimensions | Typical dtype | Meaning |
 |---|---|---|---|
@@ -40,27 +41,41 @@ The xarray schema is `simcast.pit_library`, version 1.
 | `hidden` | `[D]` | int64 | embedding channel |
 | `true_y` | `[N,K,H]` | float | realization; test slice masked publicly |
 | `quantile_prediction` | `[N,K,H,Q]` | float32 | fixed native marginal; never test-masked |
+| `forecastable_entity` | `[N,K]` | bool | required inputs and forecast available; public because known at forecast time |
 | `crossing_{origin,entity,lead}_index` | `[C]` | int64 | coordinates of the `C` raw quantile rows that cross, retained only with isotonic repair |
 | `crossing_raw_quantile_prediction` | `[C,Q]` | float32 | raw Chronos values for those crossed rows; the matching repaired row is addressed in `quantile_prediction` by its stored coordinates |
 | `pit_u` | `[N,K,H]` | float32 | configured finite-quantile PIT; test slice masked publicly |
 | `pit_z` | `[N,K,H]` | float32 | Gaussian score; test slice masked publicly |
+| `entity_valid` | `[N,K,H]` | bool/float32 | label-derived per-entity PIT validity; test slice masked publicly |
 | `forecast_embedding` | `[N,K,P,D]` | float16 | frozen output-patch representation |
-| `pit_valid` | `[N,H]` | bool | complete-vector gate |
+| `pit_valid` | `[N,H]` | bool/float32 | case-validity gate under the configured cardinality mode; test slice masked publicly |
 | `latitude`, `longitude` | `[K]` | float32 | static location |
 
-`test_labels.zarr` stores only label variables for test `origin` positions.
-Training access leaves public NaNs intact. Evaluation access loads the separate
-group and inserts those arrays at their original integer positions.
+`test_labels.zarr` stores `true_y`, `pit_u`, `pit_z`, `entity_valid`, and
+`pit_valid` only for test `origin` positions. Training access leaves public
+NaNs intact. Evaluation access loads the separate group and inserts those
+arrays at their original integer positions. `forecastable_entity` remains
+visible in both modes.
 
 ### Cache metadata
 
 `metadata.json` contains adapter ID, dataset ID/revision, adapter-reported
 source provenance (including any explicit availability assumptions), group
 membership/names and optional coordinates, Chronos source/model revisions and native output structure,
-forecast window protocol, covariate config, raw crossing diagnostics, invalid
-vector counts, historical/future missingness, eligible/skipped/retained origin
+forecast window protocol, covariate config, raw crossing diagnostics,
+train/validation-only PIT validity counts, historical and train/validation
+future-truth missingness, target-history-rule counts, eligible/skipped/retained origin
 counts, purged boundary timestamps, full resolved config, schema version, and
 `test_labels_sealed: true`.
+
+The `missingness` block separates two quantities. `masked_history_count*`
+counts missing historical target values over retained origins (in total, by
+entity, and restricted to forecastable entity-origins). The minimum-history
+rule (`history_rule: at_least_one_finite_lookback_target`) is reported as
+`empty_history_rejected_origin_count` (fixed-mode candidate origins rejected
+because some entity had no finite lookback target) and
+`empty_history_non_forecastable_count[_by_entity]` (variable-mode entity-origins
+marked non-forecastable for that reason), both over candidate origins.
 
 `marginal_diagnostics.json` is explicitly scoped `train_and_validation`. It
 contains overall and per-entity median MAE, native-level pinball losses,
@@ -75,11 +90,14 @@ Every fitted method directory contains:
 resolved_config.yaml
 run_metadata.json
 model.npz                       M0/M1 only
+m1_diagnostics.json             M1 estimator and pairwise overlaps
 best.pt                         M2/M3/M4 only
 final.pt                        M2/M3/M4 only
 training_metrics.csv/json       M2/M3/M4 only
 training_summary.json           M2/M3/M4 only
 training_curve.png              M2/M3/M4 only
+pit_training_frequency_map.npz          training_frequency transform only
+pit_training_frequency_diagnostics.json training_frequency transform only
 ```
 
 `run_metadata.json` records creation time, Git commit, Python and key package
@@ -89,6 +107,23 @@ resolved-config and model SHA-256
 hashes, pinned data/FM revisions, optimization and evaluation seeds, checkpoint
 criterion, and PIT dependence transform. M0's NPZ stores IDs and
 lead count. M1's stores all correlation matrices plus estimator settings.
+
+With `pit.dependence_transform: training_frequency`, the fitted map is saved
+with its fallback diagnostics. They are computed from training origins only.
+
+| Key in `pit_training_frequency_map.npz` | Shape | Meaning |
+|---|---|---|
+| `midpoints` | `[K,H,Q+1]` | train-only cell midpoints used for dependence scores |
+| `fallback_mask` | `[K,H]` | true where an entity/lead has no finite training PIT and uses nominal midpoints |
+| `fallback_count` | scalar | number of fallback entity/lead pairs |
+| `fallback_count_by_entity` | `[K]` | fallback leads per canonical entity |
+| `fallback_count_by_lead` | `[H]` | fallback entities per lead |
+| `entity_ids` | `[K]` | canonical entity order |
+
+`pit_training_frequency_diagnostics.json` and the `pit_training_frequency_fallback`
+key of `run_metadata.json` hold the same summary: `fallback_count`,
+`entity_lead_count`, `fallback_count_by_entity` keyed by entity ID, and
+`fallback_count_by_lead` keyed by one-based lead.
 
 Conditional PyTorch checkpoints contain `schema_version`, method, model
 constructor arguments, feature-builder configuration and fitted training-only
@@ -116,17 +151,18 @@ figures are written once to `evaluations/<evaluation-id>/<base-id>/figures/`
 ### `metrics.json`
 
 Top-level keys are method names. Each method includes valid and dropped case
-counts plus exactly its declared metrics. `mean_pinball` includes per-quantile
+counts, active-entity count summaries, and exactly its declared metrics. `mean_pinball` includes per-quantile
 pinball values; `weighted_interval_score` includes coverage, width, and
 interval-score values for its configured central intervals. Values pool all
 valid test origins and leads.
 
 ### Tidy per-case tables
 
-`per_origin_lead_metrics.parquet` has one row per complete declared group,
-method, neural seed, origin, and lead. It records $K_g$, validity, observed and
-forecast aggregate quantiles, and exactly the declared metrics. Invalid rows
-remain present with `valid: false`; the group never shrinks. The existing
+`per_origin_lead_metrics.parquet` has one row per canonical universe, method,
+neural seed, origin, and lead. It records universe size $K_g$, active entity
+count, validity, observed and forecast aggregate quantiles, and exactly the
+declared metrics. Invalid rows remain present with `valid: false`; the
+canonical universe never shrinks. The existing
 `observed_aggregate` and `aggregate_q*` columns refer
 to the configured cross-entity statistic (sum, absolute sum, max, or absolute max).
 `per_origin_metrics.parquet` averages metrics across valid leads within each
@@ -144,20 +180,23 @@ uncertainty bands; interpretation and formulas are in
 
 ### `metrics_by_lead.csv`
 
-Each row is `(lead, method)`. It holds exactly the declared metrics and the
-diagnostics implied by `mean_pinball` or `weighted_interval_score` for that
-one-based lead. Invalid cases at a lead are omitted. The table is always written.
+Each row is `(lead, method)`. It holds declared metrics, active-entity count
+summaries, and the diagnostics implied by `mean_pinball` or
+`weighted_interval_score` for that one-based lead. Invalid cases at a lead are
+omitted from summaries. The table is always written.
 
 ### Per-method NPZ
 
 | Array | Shape | Meaning |
 |---|---|---|
 | `quantile_predictions` | `[N_test,H,Q_eval]` | empirical aggregate quantiles |
-| `correlations` | `[N_test,H,K,K]` | evaluated copula correlations |
-| `energy_score` | `[N_test,H]` | empirical all-pairs score on the selected joint ensemble; present only when declared |
-| `variogram_score` | `[N_test,H]` | score; present only when declared |
+| `correlations` | `[N_test,H,K,K]` | canonical-axis correlations; M0/M1 store their universe matrix, M2/M3/M4 scatter the predicted active submatrix with identity inactive rows/columns. Sampling and scoring use only the active submatrix |
+| `active_entity_mask` | `[N_test,K,H]` | common forecastable and label-valid entities used at each case |
+| `active_entity_count` | `[N_test,H]` | active set size, including invalid cases |
+| `energy_score` | `[N_test,H]` | empirical all-pairs score on the selected active joint ensemble; present only when declared |
+| `variogram_score` | `[N_test,H]` | active-set score; present only when declared |
 | `pseudo_nll` | `[N_test,H]` | finite-quantile Gaussian-copula pseudo-NLL; present only when declared |
-| `valid` | `[N_test,H]` | common evaluation mask |
+| `valid` | `[N_test,H]` | common evaluation mask enforcing the configured cardinality threshold |
 
 Entity-level and aggregate Monte Carlo samples are not persisted, which keeps
 artifacts manageable but means exact secondary analyses requiring raw scenarios
@@ -167,10 +206,14 @@ must regenerate them.
 
 `evaluation_manifest.json` records cache path, method-run paths, methods, the
 declared `metrics`, the `cross_entity_statistic`, test-origin/case counts, the
-complete ordered group and $K_g$, full-group protocol flags, scenario and
-selected joint ensemble sizes, common-random-number status, evaluation seed,
+complete ordered universe and $K_g$, cardinality mode, minimum active count,
+overall and per-lead active-count summaries, scenario and selected joint
+ensemble sizes, common-random-number status, evaluation seed,
 revisions, config/model hashes, PIT mode and dependence transform, Git commit,
-and time. The declared `metrics` list is the authoritative set of metrics for
+and time. With the training-frequency transform it also records
+`pit_training_frequency_fallback`, and the directory holds the recomputed
+`pit_training_frequency_map.npz`. Evaluation refuses fitted runs whose saved
+map or fallback mask differs from the train-only recomputation. The declared `metrics` list is the authoritative set of metrics for
 that evaluation; a report may present a subset but cannot add metrics.
 
 ## Figures

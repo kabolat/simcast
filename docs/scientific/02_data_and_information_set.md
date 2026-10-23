@@ -12,15 +12,30 @@ availability assumptions, and adapter options are documented in the separate
 
 The pipeline consumes a configured adapter rather than assuming one source
 schema. An adapter supplies an ordered, static entity group, UTC target and
-covariate frames, common coverage, point-in-time input assembly, and
+covariate frames, candidate coverage, point-in-time input assembly, and
 provenance. Forecast frequency, origin phase and stride, lookback, horizon,
 and chronological split use shared window and split logic. See the generic
 [adapter interface](../technical/data_adapter_interface.md) for the contract.
 
-Each experiment retains its complete group. If a member or required input is
-invalid, eligibility is evaluated for the full group rather than silently
-reducing its cardinality. Adapter-specific group definitions and exceptions
-are documented in the corresponding dataset reference.
+Each experiment retains its complete ordered canonical group. The default
+`protocol.cardinality_mode: fixed` invalidates a case if any member is missing
+or invalid. In opt-in `variable` mode, an entity with unavailable forecast-time
+inputs is marked non-forecastable; it remains on the canonical cache axis but
+is excluded from compact inference. Label validity is recorded separately.
+
+Variable mode supports two missingness patterns with the same machinery:
+
+1. intermittent missing entities within a shared observation period, such as
+   gaps in a target or covariate series; and
+2. staggered entity lifetimes, where entities enter or leave the population at
+   different dates.
+
+In both cases an entity is forecastable at an origin only if its forecast-time
+inputs are available and its lookback satisfies the
+[minimum target history](#minimum-target-history) rule. Candidate coverage for
+staggered lifetimes is defined [below](#forecast-windows).
+Adapter-specific group definitions and exceptions are documented in the
+corresponding dataset reference.
 
 ## Timestamp normalization
 
@@ -52,8 +67,27 @@ $$
 
 Thus lead $\tau$ corresponds to $t^{(i)}+\tau\Delta$ and is one-based in public
 interfaces. Candidate origins follow the configured time, phase, and stride;
-a candidate is created only when common target coverage contains both
-complete timestamp grids.
+a candidate is created only when the adapter's candidate coverage contains
+both complete timestamp grids. If entity $k$ has target rows from
+$t_k^{\min}$ to $t_k^{\max}$, the candidate coverage depends on the
+cardinality policy:
+
+$$
+\text{fixed:}\quad
+[t_{\mathrm{start}},t_{\mathrm{end}}]
+=[\max_k t_k^{\min},\ \min_k t_k^{\max}],
+$$
+
+$$
+\text{variable:}\quad
+[t_{\mathrm{start}},t_{\mathrm{end}}]
+=[\min_k t_k^{\min},\ \max_k t_k^{\max}].
+$$
+
+Fixed mode therefore uses only the period shared by every entity. Variable
+mode spans the envelope of all entity lifetimes; the canonical entity universe
+is unchanged, and an entity that does not yet exist, or no longer has usable
+data, at an origin is simply non-forecastable there.
 
 ## The point-in-time information set
 
@@ -77,6 +111,23 @@ handled by its adapter and documented in that source's reference.
 Future target values are retained solely as labels. They are not passed to the
 Chronos test-mode dataset.
 
+### Minimum target history
+
+An entity is forecastable at origin $i$ only if its lookback contains at
+least one finite target observation:
+
+$$
+\sum_{t\in\mathcal T_{\mathrm{past}}^{(i)}}
+\mathbf 1\{Y_{k,t}\ \text{finite}\}\ge 1.
+$$
+
+Partially missing histories are passed to Chronos with `NaN` at the missing
+positions; a completely missing history is never filled with zeros or other
+fabricated values. In variable mode such an entity has
+$A_{i,k}^{\mathrm{forecast}}=0$ and is not sent to Chronos; in fixed mode the
+whole origin is ineligible. The cache metadata counts both outcomes
+separately from the number of masked historical values.
+
 ### Historical weather
 
 Measured weather without a separate publication timestamp is treated as
@@ -96,9 +147,10 @@ measurement rows on the horizon grid. This deliberately uses information
 unavailable at the forecast origin and is therefore an oracle diagnostic,
 not a leakage-safe forecasting configuration.
 
-If any configured past or future covariate is non-finite for any entity, the
-entire origin is skipped before Chronos inference. This is stricter than
-imputing unknown exogenous information.
+If a configured past or future covariate is missing or non-finite, fixed mode
+skips the entire origin before Chronos inference. Variable mode marks only the
+affected entity non-forecastable and forecasts the remaining available
+entities. It never imputes unknown exogenous information.
 
 ## Covariates
 
@@ -150,20 +202,28 @@ partition boundary when the origin stride is shorter than the horizon. The
 purge can remove boundary origins; the configured split and retained counts
 are saved with each run.
 
-## Missingness and complete-vector policy
+## Missingness and cardinality policy
 
-There are two different eligibility gates:
+There are two distinct masks:
 
-- an **origin gate** before Chronos: all requested covariates must exist for
-  all group members;
-- an **origin-lead gate** after forecasts: all $K$ truths and forecasts must be
-  finite and every marginal quantile row must be nondecreasing.
+- `forecastable_entity[i,k]` is forecast-time information: the entity lies
+  within its lifetime, the required inputs and entity forecast are finite and
+  available, and the lookback has at least one finite target;
+- `entity_valid[i,k,tau]` is label-derived: truth, marginal forecast, PIT, and
+  monotonicity validity all hold for that entity and lead.
 
-If entity $k$ is invalid at $(i,\tau)$, all $K$ PIT entries at that same case
-are set to `NaN`. This complete-case policy keeps the estimand tied to the
-physical group and gives every dependence model the same cases. It can,
-however, induce selection bias if missingness is informative; that limitation
-must be considered in scientific interpretation.
+In fixed mode, one invalid entity invalidates the origin-lead case and all
+group PIT scores for it are missing. In variable mode, each entity PIT is kept
+independently. The active set is the intersection of forecastable and
+label-valid entities, and a case is admitted only when its active count reaches
+`protocol.min_entities_per_case`. This same active set is shared by all
+methods. `forecastable_entity` is visible in training access because it is
+known at forecast time; `entity_valid` and case-level `pit_valid` are sealed
+with the test labels.
+
+The variable-mode estimand is conditional on this admission rule. Informative
+missingness can still induce selection bias and must be considered in
+scientific interpretation.
 
 ## Leakage audit checklist
 

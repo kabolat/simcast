@@ -35,9 +35,10 @@ type and preserves the source YAML order. Entity IDs use
 | `solar_park` | 5 | Anonymized individual solar parks | `load`, source-normalized |
 | `wind_park` | 5 | Anonymized individual wind parks | `load`, source-normalized |
 
-Group membership does not change by forecast origin. Missing observations do
-not reduce group cardinality; an origin that fails the complete-group
-eligibility rules is excluded as a whole.
+Group membership does not change by forecast origin. The supplied bases use
+the default fixed-cardinality mode: a missing observation excludes that
+origin-lead case as a whole. The generic opt-in variable mode can retain other
+valid entities without changing this group's canonical membership.
 
 Metadata coordinates are approximate locations inferred from asset names, not
 surveyed facility coordinates. Location-conditioned results therefore use

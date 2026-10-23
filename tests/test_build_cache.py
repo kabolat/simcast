@@ -9,7 +9,7 @@ import pytest
 import torch
 
 import simcast.cli.build_cache as cache_cli
-from simcast.config import ResolvedExperimentConfig
+from simcast.config import ProtocolConfig, ResolvedExperimentConfig
 from simcast.data.adapter import EntityFrames, FrameDatasetAdapter
 from simcast.fm.cache import load_pit_library
 from simcast.sampling.gaussian_copula import generate_scenarios
@@ -172,6 +172,59 @@ def test_isotonic_cache_persists_repaired_quantiles(monkeypatch, tmp_path: Path)
     scenarios = generate_scenarios(torch.eye(3), marginal, levels, num_samples=256)
     for entity in range(3):
         assert set(scenarios.entity_samples[:, entity].tolist()).issubset(set(marginal[entity].tolist()))
+
+
+def test_variable_cache_keeps_forecastability_separate_from_label_validity(monkeypatch, tmp_path: Path) -> None:
+    config = _config(tmp_path).model_copy(
+        update={"protocol": ProtocolConfig(cardinality_mode="variable", min_entities_per_case=2)}
+    )
+    adapter = _fixtures(config)
+    adapter.frames[1].future_weather.loc[:, "temperature_2m"] = np.nan
+    adapter.frames[2].target.loc[adapter.frames[2].target.index[10], "load"] = np.nan
+    _inject_adapter(monkeypatch, adapter)
+
+    destination = cache_cli.build_cache_from_config(
+        config,
+        forecaster=_MockForecaster(),
+        output_dir=tmp_path / "variable-library",
+    )
+
+    training = load_pit_library(destination)
+    test = load_pit_library(destination, access="evaluation").test_data()
+    assert training.dataset["entity_id"].values.tolist() == adapter.group.entity_ids
+    assert np.isnan(training.dataset["entity_valid"].isel(origin=-1)).all()
+    assert np.isnan(training.dataset["pit_valid"].isel(origin=-1)).all()
+    assert training.metadata["pit"]["valid_train_validation_case_count_with_configured_repair"] == 6
+    assert "dropped_complete_vector_count" not in training.metadata["pit"]
+    assert (
+        training.metadata["missingness"]["future_truth_count_by_entity"][adapter.group.entity_ids[2]] == 0
+    )
+    np.testing.assert_array_equal(test["forecastable_entity"].values[0], [True, False, True])
+    assert np.isfinite(test["true_y"].values[0, 1]).all()
+    assert np.isnan(test["quantile_prediction"].values[0, 1]).all()
+    assert test["entity_valid"].values[0, 0, 0]
+    assert not test["entity_valid"].values[0, 2, 0]
+    assert test["forecastable_entity"].values[0, 2]
+    assert test["pit_valid"].values[0].tolist() == [False, True]
+
+
+def test_variable_cache_marks_missing_covariate_column_unforecastable(monkeypatch, tmp_path: Path) -> None:
+    config = _config(tmp_path).model_copy(
+        update={"protocol": ProtocolConfig(cardinality_mode="variable", min_entities_per_case=2)}
+    )
+    adapter = _fixtures(config)
+    adapter.frames[1].future_weather.drop(columns=["temperature_2m"], inplace=True)
+    _inject_adapter(monkeypatch, adapter)
+
+    destination = cache_cli.build_cache_from_config(
+        config,
+        forecaster=_MockForecaster(),
+        output_dir=tmp_path / "missing-column-library",
+    )
+
+    test = load_pit_library(destination, access="evaluation").test_data()
+    assert test["forecastable_entity"].values[0].tolist() == [True, False, True]
+    assert np.isnan(test["quantile_prediction"].values[:, 1]).all()
 
 
 def test_existing_cache_fails_before_loading_data_or_forecasting(monkeypatch, tmp_path: Path) -> None:

@@ -144,8 +144,9 @@ def compute_marginal_diagnostics(
 
     Parameters use cache layout: truth and PIT are ``[origin, entity, lead]``
     and predictions are ``[origin, entity, lead, quantile]``.  Missing or
-    invalid rows are omitted metric-by-metric.  In particular, a PIT value
-    dropped by complete-vector gating is not counted in the PIT summaries.
+    invalid rows are omitted metric-by-metric. Variable mode retains an
+    entity PIT when that row is valid even if its origin-lead case falls below
+    the configured minimum cardinality; only invalid entity rows are omitted.
     """
 
     truth = np.asarray(true_y, dtype=np.float64)

@@ -41,8 +41,38 @@ def _covariance_to_correlation(covariance: np.ndarray, jitter: float) -> np.ndar
     return np.asarray(correlation, dtype=np.float64)
 
 
+def _pairwise_complete_correlation(samples: np.ndarray, jitter: float) -> tuple[np.ndarray, np.ndarray]:
+    """Estimate pairwise correlations without imputing missing entity scores."""
+
+    values = np.asarray(samples, dtype=np.float64)
+    if values.ndim != 2 or values.shape[1] < 2:
+        raise ValueError("pairwise samples must have shape [case, entity] with at least two entities")
+    entity_count = values.shape[1]
+    correlation = np.eye(entity_count, dtype=np.float64)
+    overlap = np.zeros((entity_count, entity_count), dtype=np.int64)
+    for entity_left in range(entity_count):
+        finite_left = np.isfinite(values[:, entity_left])
+        overlap[entity_left, entity_left] = int(finite_left.sum())
+        for entity_right in range(entity_left + 1, entity_count):
+            jointly_finite = finite_left & np.isfinite(values[:, entity_right])
+            count = int(jointly_finite.sum())
+            overlap[entity_left, entity_right] = count
+            overlap[entity_right, entity_left] = count
+            if count < 2:
+                continue
+            left_values = values[jointly_finite, entity_left]
+            right_values = values[jointly_finite, entity_right]
+            if np.std(left_values) <= np.finfo(np.float64).eps or np.std(right_values) <= np.finfo(np.float64).eps:
+                continue
+            pair_correlation = float(np.corrcoef(left_values, right_values)[0, 1])
+            if np.isfinite(pair_correlation):
+                correlation[entity_left, entity_right] = pair_correlation
+                correlation[entity_right, entity_left] = pair_correlation
+    return _covariance_to_correlation(correlation, jitter), overlap
+
+
 class StaticGaussianCopula:
-    """M1: Ledoit-Wolf spatial correlation, per lead or pooled over leads."""
+    """M1: Ledoit-Wolf on complete data or pairwise-complete on masked data."""
 
     def __init__(
         self,
@@ -57,6 +87,8 @@ class StaticGaussianCopula:
         self.entity_ids: tuple[str, ...] = ()
         self.n_leads = 0
         self._correlations: torch.Tensor | None = None
+        self.estimator_mode = "ledoit_wolf"
+        self.pairwise_overlap_counts: np.ndarray | None = None
 
     def _estimate(self, samples: np.ndarray) -> np.ndarray:
         if samples.shape[0] < 2:
@@ -69,26 +101,54 @@ class StaticGaussianCopula:
         train_z: ArrayLike,
         entity_ids: Sequence[str],
         valid_mask: ArrayLike | None = None,
+        *,
+        allow_incomplete: bool = False,
         **training_data: object,
     ) -> Self:
         """Estimate correlations from an already selected training-only slice.
 
-        Any ``(origin, lead)`` containing a non-finite entity is discarded as a
-        whole vector; group membership is never changed to accommodate gaps.
+        By default, any ``(origin, lead)`` containing a non-finite entity is
+        discarded as a whole vector. With ``allow_incomplete=True``, finite
+        entity pairs are estimated from their joint observations without
+        changing the canonical entity order.
         """
 
         del training_data
         values, ids, complete = validate_training_data(train_z, entity_ids, valid_mask)
         n_leads = values.shape[2]
-        if self.share_across_leads:
-            pooled = np.transpose(values, (0, 2, 1))[complete]
-            estimate = self._estimate(pooled)
-            correlations = np.repeat(estimate[None, :, :], n_leads, axis=0)
+        pairwise_values = values
+        if valid_mask is not None:
+            supplied = np.asarray(valid_mask, dtype=bool)
+            pairwise_values = np.where(supplied[:, None, :], values, np.nan)
+        if allow_incomplete and not np.isfinite(pairwise_values).all():
+            if self.share_across_leads:
+                pooled = np.transpose(pairwise_values, (0, 2, 1)).reshape(-1, values.shape[1])
+                estimate, overlap = _pairwise_complete_correlation(pooled, self.jitter)
+                correlations = np.repeat(estimate[None, :, :], n_leads, axis=0)
+                overlap_counts = overlap[None, :, :]
+            else:
+                estimates: list[np.ndarray] = []
+                overlaps: list[np.ndarray] = []
+                for lead_index in range(n_leads):
+                    estimate, overlap = _pairwise_complete_correlation(pairwise_values[:, :, lead_index], self.jitter)
+                    estimates.append(estimate)
+                    overlaps.append(overlap)
+                correlations = np.stack(estimates)
+                overlap_counts = np.stack(overlaps)
+            self.estimator_mode = "pairwise_complete"
+            self.pairwise_overlap_counts = overlap_counts
         else:
-            correlations = np.stack(
-                [self._estimate(values[complete[:, lead], :, lead]) for lead in range(n_leads)],
-                axis=0,
-            )
+            if self.share_across_leads:
+                pooled = np.transpose(values, (0, 2, 1))[complete]
+                estimate = self._estimate(pooled)
+                correlations = np.repeat(estimate[None, :, :], n_leads, axis=0)
+            else:
+                correlations = np.stack(
+                    [self._estimate(values[complete[:, lead], :, lead]) for lead in range(n_leads)],
+                    axis=0,
+                )
+            self.estimator_mode = "ledoit_wolf"
+            self.pairwise_overlap_counts = None
         self.entity_ids = ids
         self.n_leads = n_leads
         self._correlations = torch.from_numpy(correlations)
@@ -118,19 +178,26 @@ class StaticGaussianCopula:
         with destination.open("wb") as handle:
             np.savez_compressed(
                 handle,
-                schema_version=np.asarray(1, dtype=np.int64),
+                schema_version=np.asarray(2, dtype=np.int64),
                 model=np.asarray("static_gaussian"),
                 entity_ids=np.asarray(self.entity_ids, dtype=np.str_),
                 correlations=self._correlations.numpy(),
                 share_across_leads=np.asarray(self.share_across_leads),
                 jitter=np.asarray(self.jitter, dtype=np.float64),
+                estimator_mode=np.asarray(self.estimator_mode),
+                pairwise_overlap_counts=(
+                    np.empty((0,), dtype=np.int64)
+                    if self.pairwise_overlap_counts is None
+                    else self.pairwise_overlap_counts
+                ),
             )
         return destination
 
     @classmethod
     def load(cls, path: str | Path) -> Self:
         with np.load(Path(path), allow_pickle=False) as saved:
-            if int(saved["schema_version"]) != 1 or str(saved["model"]) != "static_gaussian":
+            schema_version = int(saved["schema_version"])
+            if schema_version not in {1, 2} or str(saved["model"]) != "static_gaussian":
                 raise ValueError("not a supported static-Gaussian-copula model")
             model = cls(
                 share_across_leads=bool(saved["share_across_leads"]),
@@ -138,6 +205,12 @@ class StaticGaussianCopula:
             )
             correlations = np.asarray(saved["correlations"], dtype=np.float64)
             ids = tuple(str(item) for item in saved["entity_ids"].tolist())
+            estimator_mode = str(saved["estimator_mode"]) if schema_version >= 2 else "ledoit_wolf"
+            overlap_counts = (
+                np.asarray(saved["pairwise_overlap_counts"], dtype=np.int64)
+                if schema_version >= 2
+                else np.empty((0,), dtype=np.int64)
+            )
         if correlations.ndim != 3 or correlations.shape[1:] != (len(ids), len(ids)) or correlations.shape[0] == 0:
             raise ValueError("saved correlations have invalid dimensions")
         if not np.isfinite(correlations).all():
@@ -145,4 +218,6 @@ class StaticGaussianCopula:
         model.entity_ids = ids
         model.n_leads = correlations.shape[0]
         model._correlations = torch.from_numpy(correlations.copy())
+        model.estimator_mode = estimator_mode
+        model.pairwise_overlap_counts = None if overlap_counts.size == 0 else overlap_counts.copy()
         return model

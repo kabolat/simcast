@@ -81,7 +81,8 @@ Dataset adapter: ordered targets + point-in-time covariates + entity metadata
              +--> fixed feature construction <------ embeddings + location
                            |
                            v
-       full-group M0 independent / M1 static / M2--M4 conditional
+     canonical-universe M0 independent / M1 static / M2--M4 conditional
+     (variable mode: shared compact active set per case)
                            |
                            v
           same-lead Gaussian-copula uniforms [M,K]

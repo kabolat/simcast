@@ -15,7 +15,7 @@ import numpy as np
 import xarray as xr
 
 CacheAccess = Literal["training", "evaluation"]
-LABEL_VARIABLES = ("true_y", "pit_u", "pit_z")
+LABEL_VARIABLES = ("true_y", "pit_u", "pit_z", "entity_valid", "pit_valid")
 
 
 @dataclass
@@ -56,6 +56,8 @@ def build_cache_dataset(
     pit_u: np.ndarray,
     pit_z: np.ndarray,
     forecast_embeddings: np.ndarray,
+    forecastable_entity: np.ndarray | None = None,
+    entity_valid: np.ndarray | None = None,
     quantile_levels: Sequence[float] | np.ndarray,
     split: Sequence[str] | np.ndarray,
     latitude: Sequence[float] | np.ndarray | None = None,
@@ -97,6 +99,24 @@ def build_cache_dataset(
         raise ValueError("pit_u and pit_z must match true_y")
     if embeddings.ndim != 4 or embeddings.shape[:2] != (n_origin, n_entity):
         raise ValueError("forecast_embeddings must have shape [origin, entity, patch, hidden]")
+    forecastable = (
+        np.isfinite(predictions).all(axis=(2, 3)) & np.isfinite(embeddings).all(axis=(2, 3))
+        if forecastable_entity is None
+        else np.asarray(forecastable_entity, dtype=bool)
+    )
+    if forecastable.shape != (n_origin, n_entity):
+        raise ValueError("forecastable_entity must have shape [origin, entity]")
+    valid_entity = (
+        np.isfinite(truth)
+        & np.isfinite(predictions).all(axis=-1)
+        & np.isfinite(u)
+        & np.isfinite(z)
+        & forecastable[:, :, None]
+        if entity_valid is None
+        else np.asarray(entity_valid, dtype=bool)
+    )
+    if valid_entity.shape != truth.shape:
+        raise ValueError("entity_valid must have shape [origin, entity, lead]")
     if timestamps.shape != (n_origin,) or split_array.shape != (n_origin,):
         raise ValueError("one timestamp and split label are required per origin")
     if len(entity_ids) != n_entity or len(set(entity_ids)) != n_entity:
@@ -111,6 +131,8 @@ def build_cache_dataset(
         "origin_timestamp": (("origin",), timestamps),
         "entity_id": (("entity",), np.asarray(entity_ids, dtype=str)),
         "split": (("origin",), split_array),
+        "forecastable_entity": (("origin", "entity"), forecastable),
+        "entity_valid": (("origin", "entity", "lead"), valid_entity),
         "true_y": (("origin", "entity", "lead"), truth),
         "quantile_prediction": (("origin", "entity", "lead", "quantile"), predictions),
         "pit_u": (("origin", "entity", "lead"), u),
@@ -147,7 +169,7 @@ def build_cache_dataset(
             "patch": np.arange(n_patch, dtype=np.int64),
             "hidden": np.arange(hidden_dim, dtype=np.int64),
         },
-        attrs={"schema": "simcast.pit_library", "schema_version": 1},
+        attrs={"schema": "simcast.pit_library", "schema_version": 2},
     )
 
 
@@ -180,14 +202,19 @@ def save_pit_library(
         public = dataset.copy(deep=True)
         if test_mask.any():
             for name in LABEL_VARIABLES:
+                if name not in public:
+                    continue
                 values = np.asarray(public[name].values).copy()
+                if name in {"entity_valid", "pit_valid"}:
+                    values = values.astype(np.float32)
                 values[test_mask] = np.nan
                 public[name] = (public[name].dims, values)
-            labels = dataset[list(LABEL_VARIABLES)].isel(origin=np.flatnonzero(test_mask))
+            label_names = [name for name in LABEL_VARIABLES if name in dataset]
+            labels = dataset[label_names].isel(origin=np.flatnonzero(test_mask))
             labels.to_zarr(temp_dir / "test_labels.zarr", mode="w", consolidated=True)
         public.to_zarr(temp_dir / "dataset.zarr", mode="w", consolidated=True)
         payload = dict(metadata)
-        payload.update({"schema": "simcast.pit_library", "schema_version": 1, "test_labels_sealed": True})
+        payload.update({"schema": "simcast.pit_library", "schema_version": 2, "test_labels_sealed": True})
         (temp_dir / "metadata.json").write_text(
             json.dumps(payload, indent=2, sort_keys=True, default=_jsonable) + "\n", encoding="utf-8"
         )
@@ -212,7 +239,33 @@ def load_pit_library(library_dir: str | Path, *, access: CacheAccess = "training
         labels = xr.open_zarr(path / "test_labels.zarr", consolidated=True).load()
         positions = np.asarray(labels["origin"].values, dtype=np.int64)
         for name in LABEL_VARIABLES:
+            if name not in labels or name not in dataset:
+                continue
             values = np.asarray(dataset[name].values).copy()
             values[positions] = np.asarray(labels[name].values)
             dataset[name] = (dataset[name].dims, values)
+    if access == "training" and "pit_valid" in dataset:
+        values = np.asarray(dataset["pit_valid"].values, dtype=np.float32).copy()
+        values[np.asarray(dataset["split"].values) == "test"] = np.nan
+        dataset["pit_valid"] = (dataset["pit_valid"].dims, values)
+    if "forecastable_entity" not in dataset:
+        forecasts = np.asarray(dataset["quantile_prediction"].values)
+        embeddings = np.asarray(dataset["forecast_embedding"].values)
+        dataset["forecastable_entity"] = (
+            ("origin", "entity"),
+            np.isfinite(forecasts).all(axis=(2, 3)) & np.isfinite(embeddings).all(axis=(2, 3)),
+        )
+    if "entity_valid" not in dataset:
+        truth = np.asarray(dataset["true_y"].values)
+        predictions = np.asarray(dataset["quantile_prediction"].values)
+        valid = (
+            np.isfinite(truth)
+            & np.isfinite(predictions).all(axis=-1)
+            & np.isfinite(np.asarray(dataset["pit_u"].values))
+            & np.isfinite(np.asarray(dataset["pit_z"].values))
+        )
+        if "pit_valid" in dataset:
+            pit_valid = np.asarray(dataset["pit_valid"].values)
+            valid &= (np.isfinite(pit_valid) & (pit_valid > 0.5))[:, None, :]
+        dataset["entity_valid"] = (("origin", "entity", "lead"), valid)
     return PITLibrary(dataset=dataset, metadata=metadata, access=access)

@@ -33,17 +33,48 @@ def test_cache_dimensions_and_patch_storage() -> None:
 
 def test_test_labels_are_physically_sealed_and_api_gated(tmp_path: Path) -> None:
     dataset = _dataset()
+    pit_valid = np.ones((4, 2), dtype=bool)
+    pit_valid[3, 1] = False
+    dataset["pit_valid"] = (("origin", "lead"), pit_valid)
     expected = dataset["true_y"].isel(origin=3).values.copy()
     path = save_pit_library(tmp_path / "pit", dataset, {"chronos_commit": "abc"})
     training = load_pit_library(path)
     assert np.isnan(training.dataset["true_y"].isel(origin=3)).all()
+    assert np.isnan(training.dataset["entity_valid"].isel(origin=3)).all()
+    assert np.isnan(training.dataset["pit_valid"].isel(origin=3)).all()
+    assert training.dataset["forecastable_entity"].isel(origin=3).all()
     with pytest.raises(PermissionError):
         training.test_data()
     assert training.dependence_data().sizes["origin"] == 2
 
     evaluation = load_pit_library(path, access="evaluation")
     np.testing.assert_allclose(evaluation.test_data()["true_y"].values[0], expected)
+    assert evaluation.test_data()["entity_valid"].values.all()
+    np.testing.assert_array_equal(evaluation.test_data()["pit_valid"].values[0], pit_valid[3])
     assert evaluation.metadata["chronos_commit"] == "abc"
+
+
+def test_legacy_cache_derives_masks_without_changing_sealed_test_access(tmp_path: Path) -> None:
+    dataset = _dataset()
+    pit_valid = np.ones((4, 2), dtype=bool)
+    pit_valid[3, 1] = False
+    dataset["pit_valid"] = (("origin", "lead"), pit_valid)
+    dataset = dataset.drop_vars(["forecastable_entity", "entity_valid"])
+    dataset.attrs["schema_version"] = 1
+    path = save_pit_library(tmp_path / "legacy-pit", dataset, {})
+
+    training = load_pit_library(path)
+    assert training.dataset["forecastable_entity"].all()
+    assert training.dataset["entity_valid"].isel(origin=slice(0, 3)).all()
+    assert not training.dataset["entity_valid"].isel(origin=3).any()
+    assert np.isnan(training.dataset["pit_valid"].isel(origin=3)).all()
+    with pytest.raises(PermissionError):
+        training.test_data()
+
+    evaluation = load_pit_library(path, access="evaluation")
+    assert evaluation.test_data()["entity_valid"].values[0, :, 0].all()
+    assert not evaluation.test_data()["entity_valid"].values[0, :, 1].any()
+    np.testing.assert_array_equal(evaluation.test_data()["pit_valid"].values[0], pit_valid[3])
 
 
 def test_cache_refuses_accidental_overwrite(tmp_path: Path) -> None:

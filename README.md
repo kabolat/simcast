@@ -2,7 +2,7 @@
 
 Simcast studies same-lead, cross-entity forecast-error dependence while holding
 Chronos-2 marginal forecasts fixed. For forecast instance $i$, lead
-$\tau\in[H]$, and complete static physical group
+$\tau\in[H]$, and canonical static physical entity universe
 $\mathcal E_g=\{k_1,\ldots,k_{K_g}\}$, Chronos supplies fixed marginal
 quantile grids for the random variables $Y_{k,\tau}^{(i)}$. A dependence method
 supplies only the copula $C_{g,\tau}^{(i)}$:
@@ -12,14 +12,24 @@ P(Y_{k,\tau}^{(i)}\le y_k,\ k\in\mathcal E_g\mid\mathcal I^{(i)})
 =C_{g,\tau}^{(i)}(\{F_{k,\tau}^{(i)}(y_k)\}_{k\in\mathcal E_g}).
 $$
 
-The evaluation targets a cross-entity statistic of the complete group: the
+The default `protocol.cardinality_mode: fixed` uses the full universe at every
+case. Opt-in `variable` mode uses the forecastable, label-valid active set
+$\mathcal A_{g,\tau}^{(i)}\subseteq\mathcal E_g$ when it has at least
+`protocol.min_entities_per_case` members. Entity IDs and cache axes always
+retain the complete canonical universe. Evaluation targets a cross-entity statistic of the active set: the
 simple sum $\sum_k Y_k$, absolute sum $\sum_k |Y_k|$, maximum $\max_k Y_k$,
 or absolute maximum $\max_k |Y_k|$. The evaluation YAML selects the statistic;
 `sum` is the default.
 
-Every training, validation, and test case uses all $K_g$ entities. If one
-entity is invalid at $(i,\tau)$, the complete vector is invalid; the group is
-never reduced.
+In fixed mode, one invalid entity invalidates the complete case. In variable
+mode, valid entity PITs are retained independently and all methods use the same
+active subset for fitting, scenarios, and scoring. Test-label validity remains
+sealed until evaluation. Variable mode covers both entities that are
+intermittently missing within a shared period and entities with staggered
+observation lifetimes; candidate origins then span the envelope of all
+lifetimes, and an entity is forecastable only with at least one finite lookback
+target (see
+[Chapter 2](docs/scientific/02_data_and_information_set.md#minimum-target-history)).
 
 Detailed scientific documentation begins at
 [`docs/README.md`](docs/README.md). Executable explanations are in
@@ -33,13 +43,13 @@ Detailed scientific documentation begins at
 - M2: conditional low-rank Gaussian copula whose shared entity-wise network
   predicts factor parameters from FM-derived features.
 - M3: set-aware conditional low-rank Gaussian copula that contextualizes the
-  complete group with position-free entity self-attention.
+  active entity set with position-free entity self-attention.
 - M4: conditional RBF-kernel Gaussian copula in a learned embedding space.
 
-M4 has the same experimental status as M2 and M3. All three use the complete
-training partition, chronological validation, and explicitly configured
-optimization budgets. A reduced laboratory budget is a property of a
-composite experiment, not of a method.
+M4 has the same experimental status as M2 and M3. All three use the same
+chronological training and validation partitions; variable mode compacts each
+case to its active entities. Optimization budgets are explicit. A reduced
+laboratory budget is a property of a composite experiment, not of a method.
 
 FM-derived marginal grids are fixed across all five methods. Three entity groups
 use raw native Chronos-2 quantiles. The transformer and solar bases use
@@ -149,14 +159,14 @@ Aggregate quantiles, pinball loss, CRPS, interval coverage, width, and score,
 and WIS are evaluated on the selected cross-entity statistic of the scenarios
 $\widetilde A_{g,\tau}^{(i,m)}$. Energy Score uses the empirical all-pairs
 estimator on the selected 512-member joint ensemble; Variogram Score assesses
-pairwise contrasts. Each method is evaluated independently under the same
+pairwise contrasts on the active subset. Each method is evaluated independently under the same
 declared sampling design with common random numbers. Cross-method effects are
 a reporting concern: the report selects the reference method and uses an
 origin-level moving-block bootstrap to retain temporal dependence.
 
-Every run records the complete ordered entity set, revisions, resolved
+Every run records the complete ordered entity universe, revisions, resolved
 configurations, hashes, seeds, environment and Git metadata, fitted methods,
-evaluation manifests, and completion state.
+per-case active counts, evaluation manifests, and completion state.
 
 ## Validation
 

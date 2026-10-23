@@ -20,7 +20,7 @@ $R_{g,\tau}^{(i)}$. The principal hierarchy asks:
 1. Does residual spatial dependence matter? Compare M1--M4 with M0.
 2. Is a persistent lead-specific structure sufficient? Compare conditional
    M2--M4 with M1.
-3. Does full-group contextualization help within the low-rank family? Compare
+3. Does active-set contextualization help within the low-rank family? Compare
    M3 with M2.
 4. How does a learned nonnegative RBF similarity restriction compare with the
    signed low-rank families? Compare M4 with M2/M3.
@@ -77,7 +77,7 @@ A row can enter one comparison only if the following are identical:
 
 - base fingerprint and ordered entity IDs;
 - test origin and lead identities;
-- complete-vector validity mask;
+- common active-set mask and cardinality threshold;
 - repaired or raw marginal quantile grid;
 - scenario count, evaluation seed, and projection rule;
 - score estimator.
@@ -136,7 +136,7 @@ factor rank to M4 or conditional features to M0.
 
 This chapter reports no numerical headline table. A table becomes
 scientifically admissible only after the explicit composite is run to
-completion and its manifest verifies the full-group design.
+completion and its manifest verifies the declared cardinality design.
 
 evaluations.
 Implementation: `uv run composite` creates the fits, declared evaluations,
@@ -170,8 +170,9 @@ At minimum, report the following in the order that lets a reader assess the
 claim rather than merely reproduce a number:
 
 1. **Scope of the comparison.** Name the physical group, its ordered entity
-   list and $K_g$, the forecast-origin population, and the complete-vector
-   validity rule. These establish what the result describes.
+   list and $K_g$, the forecast-origin population, cardinality mode, minimum
+   active count, and active-count diagnostics. These establish what the result
+   describes.
 2. **Fixed marginal experiment.** State the Chronos revision, the weather
    information policy, any isotonic repair, configured finite-quantile PIT law, and
    common scenario design. These are properties of the base, not of the

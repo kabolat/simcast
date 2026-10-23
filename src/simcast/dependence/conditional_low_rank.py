@@ -107,24 +107,47 @@ class ConditionalLowRankGaussianCopula(nn.Module):
             "jitter": jitter,
         }
 
-    def factor_parameters(self, features: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def factor_parameters(
+        self,
+        features: torch.Tensor,
+        *,
+        padding_mask: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Return entity-wise factor loadings and strictly positive noise scales."""
 
         values = torch.as_tensor(features)
         if values.ndim < 2 or values.shape[-1] != self.input_dim:
             raise ValueError(f"features must have shape [..., entity, {self.input_dim}]")
+        mask: torch.Tensor | None = None
+        if padding_mask is not None:
+            mask = torch.as_tensor(padding_mask, dtype=torch.bool, device=values.device)
+            if mask.shape != values.shape[:-1]:
+                raise ValueError("padding_mask must match the feature entity dimensions")
+            if bool(mask.all(dim=-1).any()):
+                raise ValueError("each set must contain at least one active entity")
+            values = torch.where(mask.unsqueeze(-1), torch.zeros_like(values), values)
+            if not bool(torch.isfinite(values).all()):
+                raise ValueError("active entity features must be finite")
         raw = self.network(self.input_norm(values))
         loadings = raw[..., : self.latent_rank]
         sigma = F.softplus(raw[..., self.latent_rank]) + self.sigma_floor
+        if mask is not None:
+            loadings = loadings.masked_fill(mask.unsqueeze(-1), 0.0)
+            sigma = torch.where(mask, torch.ones_like(sigma), sigma)
         return loadings, sigma
 
-    def forward(self, features: torch.Tensor) -> torch.Tensor:
+    def forward(self, features: torch.Tensor, *, padding_mask: torch.Tensor | None = None) -> torch.Tensor:
         """Return conditional correlations shaped ``[..., K, K]``."""
 
-        loadings, sigma = self.factor_parameters(features)
+        loadings, sigma = self.factor_parameters(features, padding_mask=padding_mask)
         return low_rank_correlation(loadings, sigma, jitter=self.jitter)
 
-    def correlation_matrix(self, features: torch.Tensor) -> torch.Tensor:
+    def correlation_matrix(
+        self,
+        features: torch.Tensor,
+        *,
+        padding_mask: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         """Named alias matching the dependence-model inference vocabulary."""
 
-        return self.forward(features)
+        return self.forward(features, padding_mask=padding_mask)

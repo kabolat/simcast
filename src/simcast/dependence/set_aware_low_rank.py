@@ -13,9 +13,9 @@ class SetAwareLowRankGaussianCopula(nn.Module):
     """Inspect the current entity set before producing shared factor loadings.
 
     No positional or physical entity-ID embedding is used, so reordering the
-    entities reorders the output correlation as ``P R P^T``. A padding mask is
-    accepted solely as a possible software extension outside the full-group
-    protocol, which always supplies the complete static group.
+    entities reorders the output correlation as ``P R P^T``. Variable-length
+    active sets may be padded within a batch; the padding mask prevents those
+    rows from affecting the unpadded entities.
     """
 
     def __init__(
@@ -87,6 +87,7 @@ class SetAwareLowRankGaussianCopula(nn.Module):
                 raise ValueError("padding_mask must have shape [batch, entity]")
             if bool(mask.all(dim=-1).any()):
                 raise ValueError("each set must contain at least one unmasked entity")
+            values = torch.where(mask.unsqueeze(-1), torch.zeros_like(values), values)
         contextual = self.set_encoder(self.input_projection(values), src_key_padding_mask=mask)
         raw = self.head(contextual)
         loadings = raw[..., : self.latent_rank]

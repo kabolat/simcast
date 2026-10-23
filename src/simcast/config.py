@@ -156,6 +156,8 @@ class PitConfig(ConfigModel):
 class ProtocolConfig(ConfigModel):
     ordered_entity_ids: list[str] = Field(default_factory=list)
     entity_count: PositiveInt | None = None
+    cardinality_mode: Literal["fixed", "variable"] = "fixed"
+    min_entities_per_case: PositiveInt = 2
 
     @field_validator("ordered_entity_ids")
     @classmethod
@@ -163,6 +165,12 @@ class ProtocolConfig(ConfigModel):
         if any(not entity_id.strip() for entity_id in value) or len(value) != len(set(value)):
             raise ValueError("protocol.ordered_entity_ids must be non-empty unique strings when supplied")
         return value
+
+    @model_validator(mode="after")
+    def minimum_fits_universe(self) -> Self:
+        if self.ordered_entity_ids and self.min_entities_per_case > len(self.ordered_entity_ids):
+            raise ValueError("protocol.min_entities_per_case cannot exceed the entity universe")
+        return self
 
 
 class FeaturesConfig(ConfigModel):
@@ -789,13 +797,21 @@ def marginal_fingerprint(values: Mapping[str, Any]) -> str:
     """Hash the normalized scientific inputs that determine a marginal cache."""
 
     protocol = values["protocol"]
+    protocol_payload = {
+        "ordered_entity_ids": protocol["ordered_entity_ids"],
+        "entity_count": protocol["entity_count"],
+    }
+    if protocol.get("cardinality_mode", "fixed") == "variable":
+        protocol_payload.update(
+            {
+                "cardinality_mode": "variable",
+                "min_entities_per_case": protocol.get("min_entities_per_case", 2),
+            }
+        )
     data = values["data"]
     chronos = values["chronos"]
     payload = {
-        "protocol": {
-            "ordered_entity_ids": protocol["ordered_entity_ids"],
-            "entity_count": protocol["entity_count"],
-        },
+        "protocol": protocol_payload,
         "data": {
             key: value
             for key, value in data.items()
